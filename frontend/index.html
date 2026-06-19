@@ -756,6 +756,25 @@
   /* Insights tab (not wrapped in .history-wrap, so it needs its own insets) */
   .analysis-period { display: flex; gap: 6px; padding: 16px 20px 0; margin-bottom: 16px; }
   #analysisContent { padding: 0 20px; }
+  .coach-wrap { padding: 4px 20px 10px; }
+  .coach-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px; margin-top: 12px;
+  }
+  .coach-headline { font-size: 14px; font-weight: 600; line-height: 1.4; margin-bottom: 4px; }
+  .coach-h {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    margin: 14px 0 6px; display: flex; align-items: center; gap: 6px;
+  }
+  .coach-li { font-size: 13px; line-height: 1.45; color: var(--text); display: flex; gap: 8px; margin-bottom: 5px; }
+  .coach-li .dotmark { flex-shrink: 0; }
+  .coach-sugg { background: var(--surface2); border-radius: 10px; padding: 9px 11px; margin-bottom: 6px; }
+  .coach-sugg .cs-food { font-size: 13px; font-weight: 600; }
+  .coach-sugg .cs-why { font-size: 12px; color: var(--muted); margin-top: 1px; line-height: 1.4; }
+  .coach-loading { text-align: center; color: var(--muted); font-size: 13px; padding: 16px; }
+  .coach-loading .spin { margin: 0 auto 8px; display: block; }
+  .coach-err { color: #fca5a5; font-size: 13px; padding: 12px; text-align: center; }
+  .coach-note { font-size: 10px; color: var(--muted); font-style: italic; margin-top: 10px; }
   .analysis-section { margin-bottom: 18px; }
   .analysis-section h3 {
     font-size: 13px; font-weight: 600; color: var(--muted);
@@ -1314,6 +1333,10 @@
     <button class="period-btn active" onclick="setAnalysisPeriod(7,this)">7 days</button>
     <button class="period-btn" onclick="setAnalysisPeriod(14,this)">14 days</button>
     <button class="period-btn" onclick="setAnalysisPeriod(30,this)">30 days</button>
+  </div>
+  <div class="coach-wrap">
+    <button class="btn-primary blue" id="coachBtn" onclick="analyzeDiet()">🤖 Analyze my diet</button>
+    <div id="dietCoach"></div>
   </div>
   <div id="analysisContent"></div>
   <div id="analysisEmpty" class="hist-empty" style="display:none">
@@ -3415,6 +3438,65 @@ async function renderAnalysis() {
         <div class="ab-track"><div class="ab-fill" style="width:${(f.count/byCount[0].count*100).toFixed(1)}%;background:#a78bfa"></div></div>
         <span class="ab-val">${f.count}×</span>
       </div>`).join('')}</div>`;
+}
+
+// ---- AI diet coach (Insights tab) ----
+function gatherDietSummary(days) {
+  const data = getHistoryData(days);
+  const withData = data.filter(d => d.hasData);
+  const n = withData.length || 1;
+  const avg = key => Math.round(withData.reduce((s, d) => s + (d[key] || 0), 0) / n);
+  const map = {};
+  for (let i = 0; i < days; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const raw = window.localStorage.getItem(STORAGE_KEYS.log + d.toISOString().split('T')[0]);
+    if (raw) { try { JSON.parse(raw).forEach(e => { const k = (e.name || '').trim(); if (k) map[k] = (map[k] || 0) + 1; }); } catch (e) {} }
+  }
+  const topFoods = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([name, count]) => `${name} (${count}x)`);
+  return {
+    period_days: days,
+    days_logged: withData.length,
+    daily_averages: { calories: avg('cal'), protein_g: avg('protein'), carbs_g: avg('carbs'), fat_g: avg('fat'), fiber_g: avg('fiber') },
+    daily_goals: { calories: goals.cal, protein_g: goals.protein, carbs_g: goals.carbs, fat_g: goals.fat, fiber_g: goals.fiber || defaultGoals.fiber },
+    most_eaten_foods: topFoods
+  };
+}
+
+async function analyzeDiet() {
+  const out = document.getElementById('dietCoach');
+  const btn = document.getElementById('coachBtn');
+  await ensureHistory();
+  const summary = gatherDietSummary(analysisPeriod);
+  if (!summary.days_logged) {
+    out.innerHTML = '<div class="coach-err">Log a few days of food first, then I can analyze your diet.</div>';
+    return;
+  }
+  btn.disabled = true;
+  out.innerHTML = `<div class="coach-loading"><span class="spin"></span>Analyzing your last ${summary.period_days} days…</div>`;
+  try {
+    const result = await apiRequest('/coach', { method: 'POST', body: JSON.stringify({ summary }) });
+    if (!result.ok || !result.body || result.body.error) throw new Error(result.body?.error || 'failed');
+    renderDietCoach(result.body);
+  } catch (e) {
+    out.innerHTML = '<div class="coach-err">Could not analyze right now. Please try again.</div>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderDietCoach(r) {
+  const out = document.getElementById('dietCoach');
+  const list = arr => (arr || []).map(x => `<div class="coach-li"><span class="dotmark">•</span><span>${cfEsc(typeof x === 'string' ? x : (x.text || ''))}</span></div>`).join('');
+  let html = '<div class="coach-card">';
+  if (r.headline) html += `<div class="coach-headline">${cfEsc(r.headline)}</div>`;
+  if (r.wins && r.wins.length) html += '<div class="coach-h">✅ Doing well</div>' + list(r.wins);
+  if (r.issues && r.issues.length) html += '<div class="coach-h">⚠️ Worth improving</div>' + list(r.issues);
+  if (r.suggestions && r.suggestions.length) {
+    html += '<div class="coach-h">🍽️ Try adding</div>';
+    html += r.suggestions.map(s => `<div class="coach-sugg"><div class="cs-food">${cfEsc(s.food || '')}</div><div class="cs-why">${cfEsc(s.reason || '')}</div></div>`).join('');
+  }
+  html += '<div class="coach-note">AI guidance based on your logged averages — not medical advice.</div></div>';
+  out.innerHTML = html;
 }
 
 function openSettings() {

@@ -140,6 +140,15 @@ const NUTRITION_SYSTEM_PROMPT = `You are a nutrition analysis assistant. Given a
 }
 Be realistic with estimates. If multiple items are present, estimate the total. If you cannot identify the food, set name to "Unknown food" with zeroes and confidence "low".`;
 
+const COACH_SYSTEM_PROMPT = `You are a practical, encouraging nutrition coach. You receive a JSON summary of someone's recent eating: their daily averages, their goals, and their most-eaten foods. Identify the most important takeaways and respond ONLY with valid JSON (no markdown), in this exact shape:
+{
+  "headline": "one upbeat sentence summarizing how they're doing",
+  "wins": ["short positive observations grounded in the numbers"],
+  "issues": ["short, specific problems, e.g. protein averaging well under goal"],
+  "suggestions": [{"food": "a specific common food", "reason": "why it helps, tied to a gap"}]
+}
+Rules: base every claim on the numbers provided. Be concise and specific — 2 to 4 items per list. Be supportive, never judgmental or alarmist. Prefer realistic, accessible foods that close the biggest gaps. This is general guidance, not medical advice.`;
+
 export default {
   async fetch(request: Request, env: Env) {
     if (request.method === "OPTIONS") {
@@ -220,6 +229,51 @@ export default {
         return jsonResponse(JSON.parse(clean));
       } catch {
         console.error("AI parse failure, raw text:", text);
+        return jsonResponse({ error: "Could not parse AI response" }, 502);
+      }
+    }
+
+    // ---- AI diet analysis ("coach") ----
+    if (segments[1] === "coach" && request.method === "POST") {
+      if (!env.ANTHROPIC_API_KEY) {
+        return jsonResponse({ error: "AI analysis is not configured" }, 503);
+      }
+      const body = await parseJson(request);
+      if (!body?.summary) {
+        return jsonResponse({ error: "Missing summary" }, 400);
+      }
+      const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": env.ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1024,
+          system: COACH_SYSTEM_PROMPT,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: `Here is the person's recent eating summary as JSON. Analyze it.\n\n${JSON.stringify(body.summary)}` },
+              ],
+            },
+          ],
+        }),
+      });
+      if (!aiResp.ok) {
+        console.error("Anthropic error", aiResp.status, await aiResp.text());
+        return jsonResponse({ error: "AI request failed" }, 502);
+      }
+      const data = (await aiResp.json()) as { content?: Array<{ text?: string }> };
+      const text = (data.content || []).map((b) => b.text || "").join("").trim();
+      const clean = text.replace(/```json|```/g, "").trim();
+      try {
+        return jsonResponse(JSON.parse(clean));
+      } catch {
+        console.error("Coach parse failure, raw text:", text);
         return jsonResponse({ error: "Could not parse AI response" }, 502);
       }
     }
