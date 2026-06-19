@@ -1,6 +1,23 @@
-# Cloudflare Pages config for the kru-fit frontend.
+# Cloudflare Pages config for kru-fit.
+# Static frontend lives in ./frontend; the API runs as a Pages Function
+# (frontend/functions/api/[[path]].ts) on the same domain at /api/*.
 # Deploy with:  wrangler pages deploy frontend --project-name kru-fit
-# (The Worker has its own config in worker/wrangler.toml.)
 name = "kru-fit"
 compatibility_date = "2024-09-23"
 pages_build_output_dir = "frontend"
+
+# D1 binding for the Pages Function (same database as the standalone Worker).
+[[d1_databases]]
+binding = "DB"
+database_name = "kru-fit-db"
+database_id = "3863195b-28ac-4423-b67b-45c27d9ee01f"
+
+# Cloudflare Access JWT verification (see worker/src/index.ts). Uncomment and set
+# to make /api fail CLOSED. Until then the Function trusts the email header that
+# Access injects — which only exists if Access actually fronts this Pages site.
+[vars]
+# ACCESS_TEAM_DOMAIN = "yourteam.cloudflareaccess.com"
+# ACCESS_AUD = "<Application Audience tag from the Access app>"
+
+# Secret (do NOT commit). Set with:
+#   wrangler pages secret put ANTHROPIC_API_KEY --project-name kru-fit
