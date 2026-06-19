@@ -18,5 +18,6 @@ database_id = "3863195b-28ac-4423-b67b-45c27d9ee01f"
 #   wrangler secret put ANTHROPIC_API_KEY
 
 [env.production]
-# Point this at the real domain that Cloudflare Access protects.
-routes = [{ pattern = "krufit.yourdomain.com/api/*", zone_name = "yourdomain.com" }]
+# Only needed if you deploy this standalone Worker instead of the Pages Function.
+# The live API is served by the Pages Function at krufit.uk/api/*.
+routes = [{ pattern = "krufit.uk/api/*", zone_name = "krufit.uk" }]
