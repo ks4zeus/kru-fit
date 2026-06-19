@@ -689,6 +689,22 @@
   .tab-content.active { display: block; }
   .history-wrap { padding: 16px 20px; }
   .hist-period { display: flex; gap: 6px; margin-bottom: 16px; }
+  /* Insights tab (not wrapped in .history-wrap, so it needs its own insets) */
+  .analysis-period { display: flex; gap: 6px; padding: 16px 20px 0; margin-bottom: 16px; }
+  #analysisContent { padding: 0 20px; }
+  .analysis-section { margin-bottom: 18px; }
+  .analysis-section h3 {
+    font-size: 13px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;
+  }
+  .analysis-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .ab-name {
+    font-size: 12px; color: var(--text); width: 42%; flex-shrink: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ab-track { flex: 1; height: 6px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
+  .ab-fill { height: 100%; border-radius: 99px; }
+  .ab-val { font-size: 11px; font-family: var(--mono); color: var(--muted); width: 46px; text-align: right; flex-shrink: 0; }
   .period-btn {
     flex: 1; background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; color: var(--muted); font-family: var(--font);
