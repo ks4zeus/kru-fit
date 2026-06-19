@@ -732,6 +732,21 @@
   .calc-math div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .calc-disclaimer { font-size: 10px; color: var(--muted); font-style: italic; line-height: 1.4; margin-top: 10px; }
 
+  .calc-sub { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 8px; }
+  .profile-box {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px;
+  }
+  .profile-box .calc-sub { color: var(--carbs); }
+  .profile-box .setting-row { margin-bottom: 10px; }
+  .profile-box select, .profile-box input {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; color: var(--text); font-family: var(--font); font-size: 14px; outline: none;
+  }
+  .profile-box select { min-width: 150px; }
+  .profile-box select:focus, .profile-box input:focus { border-color: var(--carbs); }
+  .prof-note { font-size: 10px; color: var(--muted); font-style: italic; margin-top: 4px; }
+
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 
   .tab-bar {
@@ -1146,7 +1161,7 @@
   <div class="header-right">
     <div class="user-email" id="userEmail">Signing in...</div>
   </div>
-  <button class="settings-btn" onclick="openSettings()" title="Goals">⚙️</button>
+  <button class="settings-btn" onclick="openSettings()" title="Profile">👤</button>
 </div>
 <div class="tab-bar">
   <button class="tab-btn active" id="tabToday" onclick="switchTab('today')">📋 Today</button>
@@ -1533,7 +1548,23 @@
 <div class="modal-bg" id="settingsModal">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-title">⚙️ Daily Goals</div>
+    <div class="modal-title">👤 Profile</div>
+    <div class="profile-box">
+      <div class="calc-sub">Diet &amp; preferences</div>
+      <div class="setting-row"><label>Diet</label>
+        <select id="profDiet">
+          <option value="none">No restriction</option>
+          <option value="vegetarian">Vegetarian</option>
+          <option value="vegan">Vegan</option>
+          <option value="pescatarian">Pescatarian</option>
+        </select>
+      </div>
+      <div class="setting-row"><label>Allergies / avoid</label>
+        <input type="text" id="profRestrictions" placeholder="e.g. nuts, dairy" style="width:140px">
+      </div>
+      <div class="prof-note">Used to tailor diet analysis and food suggestions.</div>
+    </div>
+    <div class="calc-sub" style="color:var(--muted)">Daily goals</div>
     <button class="calc-toggle" id="calcToggle" onclick="toggleCalc()">🧮 Help me calculate my macros</button>
     <div class="calc-box" id="calcBox" style="display:none">
       <div class="calc-sub">Basics</div>
@@ -1639,13 +1670,13 @@
         <input type="number" id="goalFiber" value="30">
       </div>
     </div>
-    <button class="btn-primary" onclick="saveSettings()">Save Goals</button>
+    <button class="btn-primary" onclick="saveSettings()">Save Profile</button>
     <button class="btn-cancel" onclick="closeSettings()">Cancel</button>
   </div>
 </div>
 <script>
 const API_BASE = '/api';
-const defaultGoals = { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, water_oz: 64 };
+const defaultGoals = { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, water_oz: 64, diet: 'none', restrictions: '' };
 const STORAGE_KEYS = {
   user: 'fuellog_user',
   goals: 'fuellog_goals',
@@ -3458,6 +3489,8 @@ function gatherDietSummary(days) {
     days_logged: withData.length,
     daily_averages: { calories: avg('cal'), protein_g: avg('protein'), carbs_g: avg('carbs'), fat_g: avg('fat'), fiber_g: avg('fiber') },
     daily_goals: { calories: goals.cal, protein_g: goals.protein, carbs_g: goals.carbs, fat_g: goals.fat, fiber_g: goals.fiber || defaultGoals.fiber },
+    dietary_preference: goals.diet || 'none',
+    restrictions: goals.restrictions || '',
     most_eaten_foods: topFoods
   };
 }
@@ -3505,6 +3538,8 @@ function openSettings() {
   document.getElementById('goalCarbs').value = goals.carbs;
   document.getElementById('goalFat').value = goals.fat;
   document.getElementById('goalFiber').value = goals.fiber || defaultGoals.fiber;
+  document.getElementById('profDiet').value = goals.diet || 'none';
+  document.getElementById('profRestrictions').value = goals.restrictions || '';
   prefillCalc();
   document.getElementById('settingsModal').classList.add('open');
 }
@@ -3671,7 +3706,9 @@ async function saveSettings() {
     carbs: parseInt(document.getElementById('goalCarbs').value) || 150,
     fat: parseInt(document.getElementById('goalFat').value) || 60,
     fiber: parseInt(document.getElementById('goalFiber').value) || 30,
-    water_oz: waterGoalOz
+    water_oz: waterGoalOz,
+    diet: document.getElementById('profDiet').value || 'none',
+    restrictions: document.getElementById('profRestrictions').value.trim()
   };
   await persistGoals();
   closeSettings();

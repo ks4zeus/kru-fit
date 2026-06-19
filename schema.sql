@@ -61,6 +61,8 @@ CREATE TABLE goals (
   fat INTEGER DEFAULT 60,
   fiber INTEGER DEFAULT 30,
   water_oz INTEGER DEFAULT 64,
+  diet TEXT DEFAULT 'none',
+  restrictions TEXT DEFAULT '',
   updated_at TEXT DEFAULT (datetime('now'))
 );
 

@@ -147,7 +147,7 @@ const COACH_SYSTEM_PROMPT = `You are a practical, encouraging nutrition coach. Y
   "issues": ["short, specific problems, e.g. protein averaging well under goal"],
   "suggestions": [{"food": "a specific common food", "reason": "why it helps, tied to a gap"}]
 }
-Rules: base every claim on the numbers provided. Be concise and specific — 2 to 4 items per list. Be supportive, never judgmental or alarmist. Prefer realistic, accessible foods that close the biggest gaps. This is general guidance, not medical advice.`;
+Rules: base every claim on the numbers provided. Be concise and specific — 2 to 4 items per list. Be supportive, never judgmental or alarmist. Prefer realistic, accessible foods that close the biggest gaps. STRICTLY respect the person's dietary_preference and restrictions if present: never suggest meat/poultry to a vegetarian, never suggest any animal products (meat, fish, dairy, eggs) to a vegan, never suggest meat (but fish is ok) to a pescatarian, and never suggest anything that conflicts with their stated restrictions/allergies. This is general guidance, not medical advice.`;
 
 export default {
   async fetch(request: Request, env: Env) {
@@ -529,6 +529,8 @@ export default {
           fat: 60,
           fiber: 30,
           water_oz: 64,
+          diet: "none",
+          restrictions: "",
         });
       }
 
@@ -540,8 +542,8 @@ export default {
 
         await db
           .prepare(
-            `INSERT INTO goals (user_id, cal, protein, carbs, fat, fiber, water_oz, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            `INSERT INTO goals (user_id, cal, protein, carbs, fat, fiber, water_oz, diet, restrictions, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
              ON CONFLICT(user_id) DO UPDATE SET
                cal = excluded.cal,
                protein = excluded.protein,
@@ -549,6 +551,8 @@ export default {
                fat = excluded.fat,
                fiber = excluded.fiber,
                water_oz = excluded.water_oz,
+               diet = excluded.diet,
+               restrictions = excluded.restrictions,
                updated_at = datetime('now')`
           )
           .bind(
@@ -558,10 +562,12 @@ export default {
             body.carbs ?? 150,
             body.fat ?? 60,
             body.fiber ?? 30,
-            body.water_oz ?? 64
+            body.water_oz ?? 64,
+            body.diet || "none",
+            body.restrictions || ""
           )
           .run();
-        return jsonResponse({ user_id: userEmail, cal: body.cal ?? 1800, protein: body.protein ?? 180, carbs: body.carbs ?? 150, fat: body.fat ?? 60, fiber: body.fiber ?? 30, water_oz: body.water_oz ?? 64 });
+        return jsonResponse({ user_id: userEmail, cal: body.cal ?? 1800, protein: body.protein ?? 180, carbs: body.carbs ?? 150, fat: body.fat ?? 60, fiber: body.fiber ?? 30, water_oz: body.water_oz ?? 64, diet: body.diet || "none", restrictions: body.restrictions || "" });
       }
     }
 
