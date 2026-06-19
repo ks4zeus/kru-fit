@@ -2763,27 +2763,8 @@ function closeQuickAdd() {
   document.getElementById('quickAddModal').classList.remove('open');
 }
 
-function renderQuickAddList(query) {
-  query = (query || '').trim().toLowerCase();
-  let items;
-  if (query) {
-    items = quickCatalog.filter(f => f.name.toLowerCase().includes(query))
-      .sort((a, b) => b.count - a.count || b.lastTs - a.lastTs);
-  } else {
-    items = [...quickCatalog].sort((a, b) => b.count - a.count || b.lastTs - a.lastTs).slice(0, 10);
-  }
-  quickRendered = items;
-  const listEl = document.getElementById('qaList');
-  const emptyEl = document.getElementById('qaEmpty');
-  if (items.length === 0) {
-    listEl.innerHTML = '';
-    emptyEl.style.display = 'block';
-    emptyEl.textContent = query ? 'No matching foods.' : 'No foods yet — log something once and it shows up here.';
-    return;
-  }
-  emptyEl.style.display = 'none';
-  const header = query ? '' : '<div class="qa-head">⭐ Your top foods</div>';
-  listEl.innerHTML = header + items.map((f, i) => `
+function qaRow(f, idx) {
+  return `
     <div class="qa-item">
       <span class="qa-emoji">${cfEsc(f.emoji || '🍽️')}</span>
       <div class="qa-info">
@@ -2791,9 +2772,50 @@ function renderQuickAddList(query) {
         <div class="qa-macros">${Math.round(f.cal)} cal · P${Math.round(f.protein)} C${Math.round(f.carbs)} F${Math.round(f.fat)}${f.count > 1 ? ' · logged ' + f.count + '×' : ''}</div>
       </div>
       <span class="qa-times">×</span>
-      <input class="qa-qty" type="number" value="1" min="0.25" step="0.25" inputmode="decimal" id="qaQty_${i}">
-      <button class="qa-add" onclick="quickLog(${i})" title="Add to today">＋</button>
-    </div>`).join('');
+      <input class="qa-qty" type="number" value="1" min="0.25" step="0.25" inputmode="decimal" id="qaQty_${idx}">
+      <button class="qa-add" onclick="quickLog(${idx})" title="Add to today">＋</button>
+    </div>`;
+}
+
+function renderQuickAddList(query) {
+  query = (query || '').trim().toLowerCase();
+  const listEl = document.getElementById('qaList');
+  const emptyEl = document.getElementById('qaEmpty');
+
+  // Search mode: one flat, relevance-sorted list.
+  if (query) {
+    const items = quickCatalog.filter(f => f.name.toLowerCase().includes(query))
+      .sort((a, b) => b.count - a.count || b.lastTs - a.lastTs);
+    quickRendered = items;
+    if (items.length === 0) {
+      listEl.innerHTML = '';
+      emptyEl.style.display = 'block';
+      emptyEl.textContent = 'No matching foods.';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    listEl.innerHTML = items.map((f, i) => qaRow(f, i)).join('');
+    return;
+  }
+
+  // Default: a Recent row (last distinct foods) then your most-logged staples.
+  const recent = [...quickCatalog].filter(f => f.lastTs > 0).sort((a, b) => b.lastTs - a.lastTs).slice(0, 5);
+  const recentKeys = new Set(recent.map(f => f.name.toLowerCase()));
+  const top = [...quickCatalog].sort((a, b) => b.count - a.count || b.lastTs - a.lastTs)
+    .filter(f => !recentKeys.has(f.name.toLowerCase())).slice(0, 10);
+  quickRendered = [...recent, ...top];
+
+  if (quickRendered.length === 0) {
+    listEl.innerHTML = '';
+    emptyEl.style.display = 'block';
+    emptyEl.textContent = 'No foods yet — log something once and it shows up here.';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  let html = '';
+  if (recent.length) html += '<div class="qa-head">🕘 Recent</div>' + recent.map((f, i) => qaRow(f, i)).join('');
+  if (top.length) html += '<div class="qa-head">⭐ Your top foods</div>' + top.map((f, j) => qaRow(f, recent.length + j)).join('');
+  listEl.innerHTML = html;
 }
 
 async function quickLog(i) {
