@@ -2252,11 +2252,13 @@ async function renderHistory() {
   const proteinData = data.map(d => d.hasData ? Math.round(d.protein) : null);
   const carbsData = data.map(d => d.hasData ? Math.round(d.carbs) : null);
   const fatData = data.map(d => d.hasData ? Math.round(d.fat) : null);
+  const fiberData = data.map(d => d.hasData ? Math.round(d.fiber || 0) : null);
   drawBarChart('chartCal', labels, [{ label: 'Calories', data: calData, color: '#f5a623' }], goals.cal);
   drawLineChart('chartMacros', labels, [
     { label: 'Protein', data: proteinData, color: '#4ade80' },
     { label: 'Carbs', data: carbsData, color: '#60a5fa' },
-    { label: 'Fat', data: fatData, color: '#f472b6' }
+    { label: 'Fat', data: fatData, color: '#f472b6' },
+    { label: 'Fiber', data: fiberData, color: '#fb923c' }
   ]);
 }
 
