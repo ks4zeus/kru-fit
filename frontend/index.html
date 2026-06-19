@@ -1007,6 +1007,33 @@
   }
   .cf-lib-del { background: none; border: none; color: var(--muted); font-size: 14px; cursor: pointer; padding: 4px 2px; flex-shrink: 0; }
 
+  .quick-add-bar {
+    display: flex; align-items: center; gap: 8px;
+    margin: 0 20px 12px; padding: 11px 14px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--muted);
+    font-size: 14px; cursor: pointer;
+  }
+  .quick-add-bar:active { background: var(--surface2); }
+  .qa-search {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 11px 14px; color: var(--text);
+    font-family: var(--font); font-size: 15px; outline: none; margin-bottom: 12px;
+  }
+  .qa-search:focus { border-color: var(--protein); }
+  .qa-head { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  #qaList { max-height: 52vh; overflow-y: auto; margin-bottom: 12px; }
+  .qa-item { display: flex; align-items: center; gap: 9px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
+  .qa-emoji { font-size: 20px; flex-shrink: 0; }
+  .qa-info { flex: 1; min-width: 0; }
+  .qa-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qa-macros { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 1px; }
+  .qa-times { font-size: 12px; color: var(--muted); flex-shrink: 0; }
+  .qa-qty { width: 50px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 7px 5px; color: var(--text); font-family: var(--mono); font-size: 14px; text-align: center; outline: none; flex-shrink: 0; }
+  .qa-qty:focus { border-color: var(--protein); }
+  .qa-add { background: var(--protein); color: #0a1a12; border: none; border-radius: 8px; font-weight: 700; font-size: 18px; line-height: 1; padding: 7px 12px; cursor: pointer; flex-shrink: 0; }
+  .qa-empty { text-align: center; color: var(--muted); font-size: 14px; padding: 24px 10px; }
+
   .form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1116,6 +1143,9 @@
       <div class="mc-label">Fat</div>
       <div class="mc-goal" id="mcFatGoal">/ 60g</div>
     </div>
+  </div>
+  <div class="quick-add-bar" onclick="openQuickAdd()">
+    🔍 <span>Quick add from your foods…</span>
   </div>
   <div class="add-section">
     <button class="add-btn photo" onclick="openPhotoModal()">
@@ -1375,6 +1405,17 @@
     </div>
     <button class="btn-primary blue" id="addBarcodeBtn" onclick="addBarcodeEntry()" style="display:none">Add to Log</button>
     <button class="btn-cancel" onclick="closeBarcodeModal()">Cancel</button>
+  </div>
+</div>
+<div class="modal-bg" id="quickAddModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">⚡ Quick Add</div>
+    <input type="text" id="qaSearch" class="qa-search" placeholder="Search your foods…" oninput="renderQuickAddList(this.value)">
+    <div class="we-feedback" id="qaFeedback" style="color:var(--protein)"></div>
+    <div id="qaList"></div>
+    <div id="qaEmpty" class="qa-empty" style="display:none"></div>
+    <button class="btn-cancel" onclick="closeQuickAdd()">Done</button>
   </div>
 </div>
 <div class="modal-bg" id="settingsModal">
@@ -2666,6 +2707,113 @@ async function deleteCustomFood(id) {
   customFoods = customFoods.filter(f => String(f.id) !== String(id));
   saveLocal(STORAGE_KEYS.customFoods, customFoods);
   renderCustomFoodLibrary();
+}
+
+// ---- Quick Add: search your previously-logged foods, most-frequent first ----
+let quickCatalog = [];
+let quickRendered = [];
+
+// Build a de-duped catalog of foods from logged history + the custom library,
+// counting how often each has been logged and keeping the most recent macros.
+function buildQuickCatalog() {
+  const map = {};
+  const add = (e, fromLog) => {
+    if (!e || !e.name) return;
+    const key = e.name.trim().toLowerCase();
+    if (!key) return;
+    if (!map[key]) {
+      map[key] = {
+        name: e.name, emoji: e.emoji || '🍽️',
+        cal: Number(e.cal || 0), protein: Number(e.protein || 0), carbs: Number(e.carbs || 0),
+        fiber: Number(e.fiber || 0), fat: Number(e.fat || 0), count: 0, lastTs: 0
+      };
+    }
+    const m = map[key];
+    if (fromLog) {
+      m.count += 1;
+      const ts = Number(e.ts || 0);
+      if (ts >= m.lastTs) {   // representative serving = most recently logged
+        m.lastTs = ts;
+        m.emoji = e.emoji || m.emoji;
+        m.cal = Number(e.cal || 0); m.protein = Number(e.protein || 0);
+        m.carbs = Number(e.carbs || 0); m.fiber = Number(e.fiber || 0); m.fat = Number(e.fat || 0);
+      }
+    }
+  };
+  for (let i = 0; i < 365; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const raw = window.localStorage.getItem(STORAGE_KEYS.log + d.toISOString().split('T')[0]);
+    if (raw) { try { JSON.parse(raw).forEach(e => add(e, true)); } catch (e) {} }
+  }
+  (customFoods || []).forEach(f => add(f, false));   // include saved foods not yet logged
+  return Object.values(map);
+}
+
+async function openQuickAdd() {
+  document.getElementById('quickAddModal').classList.add('open');
+  document.getElementById('qaSearch').value = '';
+  document.getElementById('qaFeedback').textContent = '';
+  await ensureHistory();
+  quickCatalog = buildQuickCatalog();
+  renderQuickAddList('');
+  setTimeout(() => document.getElementById('qaSearch').focus(), 100);
+}
+
+function closeQuickAdd() {
+  document.getElementById('quickAddModal').classList.remove('open');
+}
+
+function renderQuickAddList(query) {
+  query = (query || '').trim().toLowerCase();
+  let items;
+  if (query) {
+    items = quickCatalog.filter(f => f.name.toLowerCase().includes(query))
+      .sort((a, b) => b.count - a.count || b.lastTs - a.lastTs);
+  } else {
+    items = [...quickCatalog].sort((a, b) => b.count - a.count || b.lastTs - a.lastTs).slice(0, 10);
+  }
+  quickRendered = items;
+  const listEl = document.getElementById('qaList');
+  const emptyEl = document.getElementById('qaEmpty');
+  if (items.length === 0) {
+    listEl.innerHTML = '';
+    emptyEl.style.display = 'block';
+    emptyEl.textContent = query ? 'No matching foods.' : 'No foods yet — log something once and it shows up here.';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  const header = query ? '' : '<div class="qa-head">⭐ Your top foods</div>';
+  listEl.innerHTML = header + items.map((f, i) => `
+    <div class="qa-item">
+      <span class="qa-emoji">${cfEsc(f.emoji || '🍽️')}</span>
+      <div class="qa-info">
+        <div class="qa-name">${cfEsc(f.name)}</div>
+        <div class="qa-macros">${Math.round(f.cal)} cal · P${Math.round(f.protein)} C${Math.round(f.carbs)} F${Math.round(f.fat)}${f.count > 1 ? ' · logged ' + f.count + '×' : ''}</div>
+      </div>
+      <span class="qa-times">×</span>
+      <input class="qa-qty" type="number" value="1" min="0.25" step="0.25" inputmode="decimal" id="qaQty_${i}">
+      <button class="qa-add" onclick="quickLog(${i})" title="Add to today">＋</button>
+    </div>`).join('');
+}
+
+async function quickLog(i) {
+  const f = quickRendered[i];
+  if (!f) return;
+  const qty = parseFloat(document.getElementById('qaQty_' + i).value) || 1;
+  const entry = {
+    name: f.name, emoji: f.emoji || '🍽️',
+    cal: f.cal * qty, protein: f.protein * qty, carbs: f.carbs * qty,
+    fiber: (f.fiber || 0) * qty, fat: f.fat * qty,
+    source: qty === 1 ? 'Quick add' : `Quick add · ${qty}×`,
+    ts: Date.now(), date: todayKey()
+  };
+  const saved = await saveFoodEntry(entry);
+  log.push(saved);
+  saveLog();
+  renderLog();
+  updateTotals();
+  const fb = document.getElementById('qaFeedback');
+  fb.textContent = `✓ Added ${f.name}${qty !== 1 ? ' ×' + qty : ''}`;
 }
 
 // Estimate macros from a free-text description via the AI proxy, then fill the form.
