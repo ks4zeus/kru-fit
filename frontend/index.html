@@ -1251,6 +1251,7 @@
       <div class="scan-hint">Hold barcode inside the frame</div>
     </div>
     <div class="scanner-status" id="scannerStatus">Starting camera…</div>
+    <button class="btn-primary blue" id="scanBtn" onclick="scanOnce()" style="margin-bottom:8px" disabled>📷 Scan</button>
     <button class="manual-toggle" id="manualToggleBtn" onclick="toggleManual()">Enter barcode manually instead</button>
     <div id="manualSection" style="display:none">
       <div class="manual-row">
@@ -1803,22 +1804,37 @@ async function addPhotoEntry() {
 
 let scannerStream = null;
 let scannerInterval = null;
-let scannerPaused = false;
+let scanTimeout = null;
+let scannerDetector = null;
+let scanning = false;
 let manualVisible = false;
 
+function setScanBtn(label, disabled) {
+  const b = document.getElementById('scanBtn');
+  if (!b) return;
+  b.textContent = label;
+  b.disabled = !!disabled;
+}
+
+function showScanLine(show) {
+  const line = document.querySelector('.scan-line');
+  if (line) line.style.visibility = show ? 'visible' : 'hidden';
+}
+
 function openBarcodeModal() {
-  scannerPaused = false;
   document.getElementById('barcodeModal').classList.add('open');
   document.getElementById('barcodeResult').classList.remove('show');
   document.getElementById('addBarcodeBtn').style.display = 'none';
   document.getElementById('barcodeSpinner').classList.remove('show');
   document.getElementById('barcodeError').classList.remove('show');
   document.getElementById('scannerWrap').style.display = 'block';
+  document.getElementById('scanBtn').style.display = 'block';
   document.getElementById('manualSection').style.display = 'none';
   document.getElementById('manualToggleBtn').textContent = 'Enter barcode manually instead';
+  document.getElementById('manualToggleBtn').style.display = 'block';
   manualVisible = false;
   bcBaseNutrition = null;
-  startScanner();
+  startCamera();
 }
 
 function closeBarcodeModal() {
@@ -1833,18 +1849,23 @@ function toggleManual() {
   if (manualVisible) {
     stopScanner();
     document.getElementById('scannerWrap').style.display = 'none';
+    document.getElementById('scanBtn').style.display = 'none';
     document.getElementById('scannerStatus').textContent = '';
     setTimeout(() => document.getElementById('barcodeInput').focus(), 100);
   } else {
     document.getElementById('scannerWrap').style.display = 'block';
-    startScanner();
+    document.getElementById('scanBtn').style.display = 'block';
+    startCamera();
   }
 }
 
-async function startScanner() {
+// Start the camera preview only — no detection until the user taps Scan.
+async function startCamera() {
   const statusEl = document.getElementById('scannerStatus');
   const video = document.getElementById('scannerVideo');
   statusEl.textContent = 'Starting camera…';
+  setScanBtn('📷 Scan', true);
+  showScanLine(false);
   try {
     scannerStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
@@ -1852,26 +1873,15 @@ async function startScanner() {
     video.srcObject = scannerStream;
     await video.play();
     if (!('BarcodeDetector' in window)) {
-      statusEl.textContent = 'Auto-scan not supported — use manual entry.';
+      statusEl.textContent = 'Scanning not supported on this device — use manual entry.';
       document.getElementById('manualSection').style.display = 'block';
       document.getElementById('scannerWrap').style.display = 'none';
+      document.getElementById('scanBtn').style.display = 'none';
       return;
     }
-    const detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code', 'data_matrix'] });
-    statusEl.textContent = 'Point camera at barcode…';
-    scannerInterval = setInterval(async () => {
-      if (scannerPaused || video.readyState < 2) return;
-      try {
-        const barcodes = await detector.detect(video);
-        if (barcodes.length > 0) {
-          const code = barcodes[0].rawValue;
-          scannerPaused = true;
-          statusEl.textContent = `✓ Detected: ${code}`;
-          await lookupBarcode(code);
-        }
-      } catch (e) {
-      }
-    }, 350);
+    scannerDetector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code', 'data_matrix'] });
+    statusEl.textContent = 'Line up the barcode, then tap Scan.';
+    setScanBtn('📷 Scan', false);
   } catch (err) {
     if (err.name === 'NotAllowedError') {
       statusEl.textContent = 'Camera permission denied.';
@@ -1880,12 +1890,55 @@ async function startScanner() {
     }
     document.getElementById('manualSection').style.display = 'block';
     document.getElementById('scannerWrap').style.display = 'none';
+    document.getElementById('scanBtn').style.display = 'none';
     document.getElementById('manualToggleBtn').style.display = 'none';
   }
 }
 
-function stopScanner() {
+// Scan on demand: detect frames until the first barcode, then stop.
+function scanOnce() {
+  const video = document.getElementById('scannerVideo');
+  const statusEl = document.getElementById('scannerStatus');
+  if (scanning || !scannerDetector || !scannerStream) return;
+  document.getElementById('barcodeError').classList.remove('show');
+  scanning = true;
+  setScanBtn('Scanning…', true);
+  showScanLine(true);
+  statusEl.textContent = 'Scanning…';
+  scannerInterval = setInterval(async () => {
+    if (!scanning || video.readyState < 2) return;
+    try {
+      const barcodes = await scannerDetector.detect(video);
+      if (barcodes.length > 0) {
+        const code = barcodes[0].rawValue;
+        stopScan();                 // stop immediately after the first hit
+        statusEl.textContent = `✓ Detected: ${code}`;
+        await lookupBarcode(code);
+      }
+    } catch (e) {}
+  }, 300);
+  // Don't run forever if nothing is found.
+  scanTimeout = setTimeout(() => {
+    if (scanning) {
+      stopScan();
+      statusEl.textContent = 'No barcode detected — tap Scan to try again.';
+    }
+  }, 8000);
+}
+
+// Stop the active scan loop but keep the camera preview running.
+function stopScan() {
+  scanning = false;
+  showScanLine(false);
   if (scannerInterval) { clearInterval(scannerInterval); scannerInterval = null; }
+  if (scanTimeout) { clearTimeout(scanTimeout); scanTimeout = null; }
+  setScanBtn('📷 Scan again', false);
+}
+
+// Fully tear down: stop scanning and release the camera.
+function stopScanner() {
+  stopScan();
+  scannerDetector = null;
   if (scannerStream) { scannerStream.getTracks().forEach(track => track.stop()); scannerStream = null; }
   const video = document.getElementById('scannerVideo');
   if (video) video.srcObject = null;
@@ -1922,10 +1975,9 @@ async function lookupBarcode(code) {
     document.getElementById('addBarcodeBtn').style.display = 'block';
     document.getElementById('scannerStatus').textContent = `✓ Found: ${bcProductName}`;
   } catch (err) {
-    document.getElementById('barcodeError').textContent = 'Product not found in database. Try manual entry.';
+    document.getElementById('barcodeError').textContent = 'Product not found in database. Tap Scan again or enter manually.';
     document.getElementById('barcodeError').classList.add('show');
-    scannerPaused = false;
-    document.getElementById('scannerStatus').textContent = 'Point camera at barcode…';
+    document.getElementById('scannerStatus').textContent = 'Not found — tap Scan again or enter manually.';
   } finally {
     document.getElementById('barcodeSpinner').classList.remove('show');
   }
