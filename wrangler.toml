@@ -1,0 +1,6 @@
+# Cloudflare Pages config for the kru-fit frontend.
+# Deploy with:  wrangler pages deploy frontend --project-name kru-fit
+# (The Worker has its own config in worker/wrangler.toml.)
+name = "kru-fit"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = "frontend"

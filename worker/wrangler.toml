@@ -1,0 +1,22 @@
+name = "kru-fit-worker"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kru-fit-db"
+database_id = "3863195b-28ac-4423-b67b-45c27d9ee01f"
+
+# Non-secret config for Cloudflare Access JWT verification. Set these to the real
+# values to make auth fail CLOSED (see worker/src/index.ts). Leaving them unset
+# falls back to trusting the Cf-Access-Authenticated-User-Email header (dev only).
+[vars]
+# ACCESS_TEAM_DOMAIN = "yourteam.cloudflareaccess.com"
+# ACCESS_AUD = "<Application Audience tag from the Access app>"
+
+# Secret (do NOT put in this file). Set with:
+#   wrangler secret put ANTHROPIC_API_KEY
+
+[env.production]
+# Point this at the real domain that Cloudflare Access protects.
+routes = [{ pattern = "krufit.yourdomain.com/api/*", zone_name = "yourdomain.com" }]
