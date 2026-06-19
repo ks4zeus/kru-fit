@@ -2183,8 +2183,9 @@ function getHistoryData(days) {
       acc.protein += Number(e.protein || 0);
       acc.carbs += Number(e.carbs || 0);
       acc.fat += Number(e.fat || 0);
+      acc.fiber += Number(e.fiber || 0);
       return acc;
-    }, { cal: 0, protein: 0, carbs: 0, fat: 0 });
+    }, { cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 });
     result.push({
       date: d,
       label: i === 0 ? 'Today' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -2213,6 +2214,7 @@ async function renderHistory() {
   const avgProtein = daysWithData.reduce((s, d) => s + d.protein, 0) / daysWithData.length;
   const avgCarbs = daysWithData.reduce((s, d) => s + d.carbs, 0) / daysWithData.length;
   const avgFat = daysWithData.reduce((s, d) => s + d.fat, 0) / daysWithData.length;
+  const avgFiber = daysWithData.reduce((s, d) => s + (d.fiber || 0), 0) / daysWithData.length;
   const streak = calcStreak();
   document.getElementById('histSummary').innerHTML = `
     <div class="hist-stat">
@@ -2229,6 +2231,16 @@ async function renderHistory() {
       <div class="hs-val" style="color:var(--carbs)">${Math.round(avgCarbs)}g</div>
       <div class="hs-label">Avg Carbs</div>
       <div class="hs-sub">goal: ${goals.carbs}g</div>
+    </div>
+    <div class="hist-stat">
+      <div class="hs-val" style="color:var(--fat)">${Math.round(avgFat)}g</div>
+      <div class="hs-label">Avg Fat</div>
+      <div class="hs-sub">goal: ${goals.fat}g</div>
+    </div>
+    <div class="hist-stat">
+      <div class="hs-val" style="color:var(--fiber)">${Math.round(avgFiber)}g</div>
+      <div class="hs-label">Avg Fiber</div>
+      <div class="hs-sub">goal: ${goals.fiber || defaultGoals.fiber}g</div>
     </div>
     <div class="hist-stat">
       <div class="hs-val" style="color:var(--text)">🔥 ${streak}</div>
