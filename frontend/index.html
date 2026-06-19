@@ -1310,6 +1310,7 @@ let weightLog = {};
 let waterEntry = { oz: 0, date: todayKey() };
 let customFoods = [];
 let photoData = null;
+let photoMime = 'image/jpeg';
 let photoResult = null;
 let bcBaseNutrition = null;
 let bcProductName = '';
@@ -1709,6 +1710,11 @@ function handlePhotoSelect(evt) {
   const reader = new FileReader();
   reader.onload = (e) => {
     photoData = e.target.result.split(',')[1];
+    // Derive the real MIME type from the data URL (e.g. data:image/png;base64,...).
+    // Anthropic supports jpeg/png/gif/webp; anything else falls back to jpeg.
+    const m = /^data:([^;]+);/.exec(e.target.result);
+    const detected = m ? m[1] : 'image/jpeg';
+    photoMime = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(detected) ? detected : 'image/jpeg';
     const img = document.getElementById('previewImg');
     img.src = e.target.result;
     img.style.display = 'block';
@@ -1733,7 +1739,7 @@ async function analyzePhoto() {
     // API key stays server-side and is never exposed to the browser.
     const result = await apiRequest('/analyze', {
       method: 'POST',
-      body: JSON.stringify({ image: photoData, media_type: 'image/jpeg' })
+      body: JSON.stringify({ image: photoData, media_type: photoMime })
     });
     if (!result.ok || !result.body || result.body.error) {
       throw new Error(result.body?.error || 'Analysis failed');
