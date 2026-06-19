@@ -1001,9 +1001,15 @@
   .cf-lib-info { flex: 1; min-width: 0; cursor: pointer; }
   .cf-lib-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cf-lib-macros { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 1px; }
+  .cf-lib-times { font-size: 12px; color: var(--muted); flex-shrink: 0; }
+  .cf-lib-qty {
+    width: 46px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 4px; color: var(--text); font-family: var(--mono); font-size: 13px; text-align: center; outline: none; flex-shrink: 0;
+  }
+  .cf-lib-qty:focus { border-color: var(--protein); }
   .cf-lib-add {
     background: var(--protein); color: #0a1a12; border: none; border-radius: 8px;
-    font-family: var(--font); font-weight: 700; font-size: 12px; padding: 7px 11px; cursor: pointer; flex-shrink: 0;
+    font-family: var(--font); font-weight: 700; font-size: 17px; line-height: 1; padding: 7px 11px; cursor: pointer; flex-shrink: 0;
   }
   .cf-lib-del { background: none; border: none; color: var(--muted); font-size: 14px; cursor: pointer; padding: 4px 2px; flex-shrink: 0; }
 
@@ -2664,7 +2670,9 @@ function renderCustomFoodLibrary() {
         <div class="cf-lib-name">${cfEsc(f.name)}</div>
         <div class="cf-lib-macros">${Math.round(f.cal || 0)} cal · P${Math.round(f.protein || 0)} C${Math.round(f.carbs || 0)} F${Math.round(f.fat || 0)}</div>
       </div>
-      <button class="cf-lib-add" onclick="logCustomFood('${f.id}')">＋ Log</button>
+      <span class="cf-lib-times">×</span>
+      <input class="cf-lib-qty" type="number" value="1" min="0.25" step="0.25" inputmode="decimal" id="cfQty_${f.id}">
+      <button class="cf-lib-add" onclick="logCustomFood('${f.id}')" title="Add to today">＋</button>
       <button class="cf-lib-del" onclick="deleteCustomFood('${f.id}')" title="Remove">✕</button>
     </div>`).join('');
 }
@@ -2688,10 +2696,13 @@ function prefillCustom(id) {
 async function logCustomFood(id) {
   const f = findCustomFood(id);
   if (!f) return;
+  const qtyEl = document.getElementById('cfQty_' + id);
+  const qty = qtyEl ? (parseFloat(qtyEl.value) || 1) : 1;
   const entry = {
     name: f.name, emoji: f.emoji || '🍽️',
-    cal: f.cal || 0, protein: f.protein || 0, carbs: f.carbs || 0, fiber: f.fiber || 0, fat: f.fat || 0,
-    source: `Custom · ${f.serving || '1 serving'}`, ts: Date.now(), date: todayKey()
+    cal: (f.cal || 0) * qty, protein: (f.protein || 0) * qty, carbs: (f.carbs || 0) * qty,
+    fiber: (f.fiber || 0) * qty, fat: (f.fat || 0) * qty,
+    source: `Custom · ${qty !== 1 ? qty + '× ' : ''}${f.serving || '1 serving'}`, ts: Date.now(), date: todayKey()
   };
   const saved = await saveFoodEntry(entry);
   log.push(saved);
