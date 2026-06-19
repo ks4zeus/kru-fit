@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="icon" type="image/png" href="/assets/kru_fit_logo.png">
+<link rel="apple-touch-icon" href="/assets/kru_fit_logo.png">
 <title>Kru Fit</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
@@ -47,6 +49,16 @@
     font-size: 22px;
     font-weight: 700;
     letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .brand-logo {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
   }
   .header-left .date {
     font-size: 12px;
@@ -944,7 +956,7 @@
 <body>
 <div class="header">
   <div class="header-left">
-    <h1>⚡ Kru Fit</h1>
+    <h1><img class="brand-logo" src="/assets/kru_fit_logo.png" alt="Kru Fit"> Kru Fit</h1>
     <div class="date" id="dateDisplay"></div>
   </div>
   <div class="header-right">
