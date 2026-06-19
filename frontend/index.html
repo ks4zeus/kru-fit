@@ -967,6 +967,26 @@
   .ai-estimate textarea::placeholder { color: var(--muted); }
   .ai-estimate .btn-primary { padding: 11px; }
 
+  .cf-lib-section { margin-top: 18px; }
+  .cf-lib-head {
+    font-size: 13px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+  }
+  .cf-lib-item {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px 10px; margin-bottom: 6px;
+  }
+  .cf-lib-emoji { font-size: 20px; flex-shrink: 0; }
+  .cf-lib-info { flex: 1; min-width: 0; cursor: pointer; }
+  .cf-lib-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cf-lib-macros { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 1px; }
+  .cf-lib-add {
+    background: var(--protein); color: #0a1a12; border: none; border-radius: 8px;
+    font-family: var(--font); font-weight: 700; font-size: 12px; padding: 7px 11px; cursor: pointer; flex-shrink: 0;
+  }
+  .cf-lib-del { background: none; border: none; color: var(--muted); font-size: 14px; cursor: pointer; padding: 4px 2px; flex-shrink: 0; }
+
   .form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1240,6 +1260,10 @@
     <div style="font-size:12px;color:var(--muted);margin-bottom:12px">💾 Saved foods appear in your custom library for quick re-add.</div>
     <button class="btn-primary" onclick="saveCustomFood(false)" style="background:#7c3aed;color:#fff">Save to Library</button>
     <button class="btn-primary" onclick="saveCustomFood(true)" style="margin-top:8px">Log Now + Save</button>
+    <div id="cfLibrarySection" class="cf-lib-section" style="display:none">
+      <div class="cf-lib-head">📚 Your Library</div>
+      <div id="cfLibraryList"></div>
+    </div>
     <button class="btn-cancel" onclick="closeCustomFoodModal()">Cancel</button>
   </div>
 </div>
@@ -1676,8 +1700,16 @@ async function saveCustomFood(logNow) {
     saveLog();
     renderLog();
     updateTotals();
+    closeCustomFoodModal();
+    return;
   }
-  closeCustomFoodModal();
+  // Saved to library only: keep the modal open, refresh the list, reset the form.
+  renderCustomFoodLibrary();
+  ['cfName','cfEmoji','cfCal','cfProtein','cfCarbs','cfFiber','cfFat','cfServing','cfDesc'].forEach(id => document.getElementById(id).value = '');
+  const fb = document.getElementById('cfAiFeedback');
+  fb.style.color = 'var(--protein)';
+  fb.textContent = `✓ "${name}" saved to your library below.`;
+  document.querySelector('#customFoodModal .modal').scrollTop = 0;
 }
 
 function updateTotals() {
@@ -2422,11 +2454,82 @@ function openCustomFoodModal(prefill) {
   document.getElementById('cfDesc').value = '';
   document.getElementById('cfAiFeedback').textContent = '';
   document.getElementById('cfError').classList.remove('show');
+  renderCustomFoodLibrary();
   document.getElementById('customFoodModal').classList.add('open');
 }
 
 function closeCustomFoodModal() {
   document.getElementById('customFoodModal').classList.remove('open');
+}
+
+function cfEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function findCustomFood(id) {
+  return customFoods.find(f => String(f.id) === String(id));
+}
+
+// Render the saved custom-food library inside the modal.
+function renderCustomFoodLibrary() {
+  const section = document.getElementById('cfLibrarySection');
+  const list = document.getElementById('cfLibraryList');
+  if (!customFoods || customFoods.length === 0) {
+    section.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+  section.style.display = 'block';
+  list.innerHTML = customFoods.map(f => `
+    <div class="cf-lib-item">
+      <span class="cf-lib-emoji">${cfEsc(f.emoji || '🍽️')}</span>
+      <div class="cf-lib-info" onclick="prefillCustom('${f.id}')" title="Tap to edit">
+        <div class="cf-lib-name">${cfEsc(f.name)}</div>
+        <div class="cf-lib-macros">${Math.round(f.cal || 0)} cal · P${Math.round(f.protein || 0)} C${Math.round(f.carbs || 0)} F${Math.round(f.fat || 0)}</div>
+      </div>
+      <button class="cf-lib-add" onclick="logCustomFood('${f.id}')">＋ Log</button>
+      <button class="cf-lib-del" onclick="deleteCustomFood('${f.id}')" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+// Tap a library item to load it into the form for editing.
+function prefillCustom(id) {
+  const f = findCustomFood(id);
+  if (!f) return;
+  document.getElementById('cfName').value = f.name || '';
+  document.getElementById('cfEmoji').value = f.emoji || '';
+  document.getElementById('cfCal').value = f.cal || '';
+  document.getElementById('cfProtein').value = f.protein || '';
+  document.getElementById('cfCarbs').value = f.carbs || '';
+  document.getElementById('cfFiber').value = f.fiber || '';
+  document.getElementById('cfFat').value = f.fat || '';
+  document.getElementById('cfServing').value = f.serving || '';
+  document.querySelector('#customFoodModal .modal').scrollTop = 0;
+}
+
+// One-tap log a saved food to today.
+async function logCustomFood(id) {
+  const f = findCustomFood(id);
+  if (!f) return;
+  const entry = {
+    name: f.name, emoji: f.emoji || '🍽️',
+    cal: f.cal || 0, protein: f.protein || 0, carbs: f.carbs || 0, fiber: f.fiber || 0, fat: f.fat || 0,
+    source: `Custom · ${f.serving || '1 serving'}`, ts: Date.now(), date: todayKey()
+  };
+  const saved = await saveFoodEntry(entry);
+  log.push(saved);
+  saveLog();
+  renderLog();
+  updateTotals();
+  closeCustomFoodModal();
+}
+
+async function deleteCustomFood(id) {
+  if (!confirm('Remove this food from your library?')) return;
+  if (currentUser) await apiRequest(`/custom-foods/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  customFoods = customFoods.filter(f => String(f.id) !== String(id));
+  saveLocal(STORAGE_KEYS.customFoods, customFoods);
+  renderCustomFoodLibrary();
 }
 
 // Estimate macros from a free-text description via the AI proxy, then fill the form.
