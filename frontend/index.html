@@ -695,6 +695,28 @@
   }
   .setting-row input:focus { border-color: var(--protein); }
 
+  .calc-toggle {
+    display: block; width: 100%;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--carbs);
+    border-radius: 10px; padding: 11px; font-family: var(--font); font-size: 13px; font-weight: 600;
+    cursor: pointer; margin-bottom: 14px;
+  }
+  .calc-box {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px;
+  }
+  .calc-box .setting-row { margin-bottom: 10px; }
+  .calc-box select, .calc-box input {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; color: var(--text); font-family: var(--font); font-size: 14px; outline: none;
+  }
+  .calc-box select { min-width: 150px; }
+  .calc-box input { width: 90px; font-family: var(--mono); text-align: center; }
+  .calc-box select:focus, .calc-box input:focus { border-color: var(--carbs); }
+  .calc-height { display: flex; gap: 6px; }
+  .calc-height input { width: 62px; }
+  .calc-box .btn-primary { padding: 11px; margin-top: 2px; }
+
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 
   .tab-bar {
@@ -1474,6 +1496,48 @@
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title">⚙️ Daily Goals</div>
+    <button class="calc-toggle" id="calcToggle" onclick="toggleCalc()">🧮 Help me calculate my macros</button>
+    <div class="calc-box" id="calcBox" style="display:none">
+      <div class="setting-row">
+        <label>Sex</label>
+        <select id="calcSex"><option value="male">Male</option><option value="female">Female</option></select>
+      </div>
+      <div class="setting-row">
+        <label>Age</label>
+        <input type="number" id="calcAge" inputmode="numeric" placeholder="yrs">
+      </div>
+      <div class="setting-row">
+        <label>Height</label>
+        <div class="calc-height">
+          <input type="number" id="calcFt" inputmode="numeric" placeholder="ft">
+          <input type="number" id="calcIn" inputmode="numeric" placeholder="in">
+        </div>
+      </div>
+      <div class="setting-row">
+        <label>Weight (<span id="calcWUnit">lbs</span>)</label>
+        <input type="number" id="calcWeight" inputmode="decimal" placeholder="0">
+      </div>
+      <div class="setting-row">
+        <label>Activity</label>
+        <select id="calcActivity">
+          <option value="1.2">Sedentary</option>
+          <option value="1.375">Lightly active</option>
+          <option value="1.55" selected>Moderately active</option>
+          <option value="1.725">Very active</option>
+          <option value="1.9">Athlete</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <label>Goal</label>
+        <select id="calcGoal">
+          <option value="lose">Lose weight</option>
+          <option value="maintain" selected>Maintain</option>
+          <option value="gain">Gain muscle</option>
+        </select>
+      </div>
+      <button class="btn-primary blue" onclick="calculateMacros()">Calculate &amp; fill goals</button>
+      <div class="we-feedback" id="calcFeedback" style="color:#60a5fa"></div>
+    </div>
     <div class="settings-grid">
       <div class="setting-row">
         <label><span class="dot" style="background:var(--cal)"></span>Calories (kcal)</label>
@@ -3303,11 +3367,78 @@ function openSettings() {
   document.getElementById('goalCarbs').value = goals.carbs;
   document.getElementById('goalFat').value = goals.fat;
   document.getElementById('goalFiber').value = goals.fiber || defaultGoals.fiber;
+  prefillCalc();
   document.getElementById('settingsModal').classList.add('open');
 }
 
 function closeSettings() {
   document.getElementById('settingsModal').classList.remove('open');
+}
+
+function toggleCalc() {
+  const box = document.getElementById('calcBox');
+  const open = box.style.display === 'none';
+  box.style.display = open ? 'block' : 'none';
+  document.getElementById('calcToggle').textContent = open ? '🧮 Hide calculator' : '🧮 Help me calculate my macros';
+}
+
+// Restore saved calculator inputs and prefill weight from the latest log.
+function prefillCalc() {
+  document.getElementById('calcWUnit').textContent = weightUnit || 'lbs';
+  const saved = loadLocal('fuellog_calc', null);
+  if (saved) {
+    document.getElementById('calcSex').value = saved.sex || 'male';
+    document.getElementById('calcAge').value = saved.age || '';
+    document.getElementById('calcFt').value = saved.ft || '';
+    document.getElementById('calcIn').value = saved.inch || '';
+    document.getElementById('calcWeight').value = saved.weight || '';
+    document.getElementById('calcActivity').value = saved.activity || '1.55';
+    document.getElementById('calcGoal').value = saved.goal || 'maintain';
+  }
+  if (!document.getElementById('calcWeight').value) {
+    const keys = Object.keys(weightLog || {}).sort();
+    if (keys.length) {
+      const last = weightLog[keys[keys.length - 1]];
+      document.getElementById('calcWeight').value = toDisplayWeight(last.val, last.unit).toFixed(1);
+    }
+  }
+}
+
+// Mifflin-St Jeor BMR -> TDEE -> goal adjustment -> macro split.
+function calculateMacros() {
+  const sex = document.getElementById('calcSex').value;
+  const age = parseFloat(document.getElementById('calcAge').value);
+  const ft = parseFloat(document.getElementById('calcFt').value) || 0;
+  const inch = parseFloat(document.getElementById('calcIn').value) || 0;
+  const wUnit = document.getElementById('calcWUnit').textContent;
+  const weightInput = parseFloat(document.getElementById('calcWeight').value);
+  const activity = parseFloat(document.getElementById('calcActivity').value);
+  const goal = document.getElementById('calcGoal').value;
+  const fb = document.getElementById('calcFeedback');
+  if (!age || (!ft && !inch) || !weightInput) {
+    fb.style.color = 'var(--danger)';
+    fb.textContent = 'Fill in age, height, and weight first.';
+    return;
+  }
+  const cm = ((ft * 12) + inch) * 2.54;
+  const kg = wUnit === 'kg' ? weightInput : weightInput * 0.453592;
+  const bmr = 10 * kg + 6.25 * cm - 5 * age + (sex === 'male' ? 5 : -161);
+  let tdee = bmr * activity;
+  if (goal === 'lose') tdee -= 500;       // ~0.5 kg/week deficit
+  else if (goal === 'gain') tdee += 300;  // lean surplus
+  const cal = Math.max(1200, Math.round(tdee / 10) * 10);
+  const proteinG = Math.round(1.8 * kg);                       // ~0.8 g/lb
+  const fatG = Math.round((cal * 0.25) / 9);                   // 25% of calories
+  const carbsG = Math.max(0, Math.round((cal - proteinG * 4 - fatG * 9) / 4));
+  const fiberG = Math.round(cal / 1000 * 14);                  // 14 g per 1000 kcal
+  document.getElementById('goalCal').value = cal;
+  document.getElementById('goalProtein').value = proteinG;
+  document.getElementById('goalCarbs').value = carbsG;
+  document.getElementById('goalFat').value = fatG;
+  document.getElementById('goalFiber').value = fiberG;
+  fb.style.color = '#60a5fa';
+  fb.textContent = `✓ ${cal} kcal · ${proteinG}P / ${carbsG}C / ${fatG}F · ${fiberG}g fiber. Review below, then Save Goals.`;
+  saveLocal('fuellog_calc', { sex, age, ft, inch, weight: weightInput, wUnit, activity, goal });
 }
 
 async function saveSettings() {
