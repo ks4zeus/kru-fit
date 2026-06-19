@@ -14,7 +14,7 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-async function parseJson(request: Request) {
+async function parseJson(request: Request): Promise<any> {
   try {
     return await request.json();
   } catch {
@@ -83,7 +83,7 @@ async function verifyAccessJwt(
 
   const key = await crypto.subtle.importKey(
     "jwk",
-    jwk as JsonWebKey,
+    jwk as unknown as JsonWebKey,
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
     ["verify"]
@@ -92,8 +92,8 @@ async function verifyAccessJwt(
   const valid = await crypto.subtle.verify(
     "RSASSA-PKCS1-v1_5",
     key,
-    base64UrlToBytes(sigB64),
-    signed
+    base64UrlToBytes(sigB64) as BufferSource,
+    signed as BufferSource
   );
   if (!valid) return null;
 
