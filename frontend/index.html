@@ -2089,6 +2089,10 @@ async function lookupBarcode(code) {
     const gMatch = servingSize.match(/([\d.]+)\s*g\b/i);
     bcServingGrams = num(p.serving_quantity) || (gMatch ? parseFloat(gMatch[1]) : 0) || null;
 
+    // Eggs rarely carry a serving weight in the data — default to one large egg (~50g).
+    const isEgg = /\beggs?\b/i.test(`${bcProductName} ${p.categories || ''} ${(p.categories_tags || []).join(' ')}`);
+    if (!bcServingGrams && isEgg) bcServingGrams = 50;
+
     // If per-100g is missing but per-serving values + serving grams exist, derive per-100g.
     const servingCal = num(n['energy-kcal_serving']) || (n['energy_serving'] ? num(n['energy_serving']) / 4.184 : 0);
     if (!per100.cal && servingCal && bcServingGrams) {
@@ -2100,6 +2104,14 @@ async function lookupBarcode(code) {
         fiber: num(n['fiber_serving']) * f,
         fat: num(n['fat_serving']) * f
       };
+    }
+
+    // Guard against bad crowd-sourced energy values (e.g. an egg reading 7000 kcal).
+    // kcal per 100g can't exceed ~900 (pure fat); if it's missing or absurd, recompute
+    // it from the macros using Atwater factors (4/4/9).
+    const atwater = 4 * per100.protein + 4 * per100.carbs + 9 * per100.fat;
+    if (atwater > 0 && (per100.cal <= 0 || per100.cal > 900)) {
+      per100.cal = atwater;
     }
     bcBaseNutrition = per100;
 
