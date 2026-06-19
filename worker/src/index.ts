@@ -203,6 +203,8 @@ export default {
       });
 
       if (!aiResp.ok) {
+        // Log the provider detail server-side (visible via `wrangler pages deployment tail`).
+        console.error("Anthropic error", aiResp.status, await aiResp.text());
         return jsonResponse({ error: "AI request failed" }, 502);
       }
       const data = (await aiResp.json()) as { content?: Array<{ text?: string }> };
@@ -211,6 +213,7 @@ export default {
       try {
         return jsonResponse(JSON.parse(clean));
       } catch {
+        console.error("AI parse failure, raw text:", text);
         return jsonResponse({ error: "Could not parse AI response" }, 502);
       }
     }
