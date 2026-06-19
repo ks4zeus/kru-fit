@@ -2816,7 +2816,9 @@ function drawBarChart(id, labels, datasets, goalLine) {
 
 function drawLineChart(id, labels, datasets) {
   const { ctx, cssW, cssH } = canvasSetup(id);
-  const pad = CHART_PAD;
+  // Local padding: extra top room for the legend, so it doesn't collide with the
+  // x-axis (month) labels at the bottom.
+  const pad = { top: 24, right: 10, bottom: 26, left: 44 };
   const plotW = cssW - pad.left - pad.right;
   const plotH = cssH - pad.top - pad.bottom;
   const allVals = datasets.flatMap(d => d.data.filter(v => v !== null));
@@ -2840,11 +2842,11 @@ function drawLineChart(id, labels, datasets) {
   let lx = pad.left;
   datasets.forEach(ds => {
     ctx.fillStyle = ds.color;
-    ctx.beginPath(); ctx.arc(lx + 5, cssH - 10, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(lx + 5, 9, 4, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#7b82a0';
     ctx.font = '10px Inter, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(ds.label, lx + 13, cssH - 7);
+    ctx.fillText(ds.label, lx + 13, 12);
     lx += ctx.measureText(ds.label).width + 28;
   });
   datasets.forEach(ds => {
