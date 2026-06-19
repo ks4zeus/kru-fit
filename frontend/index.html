@@ -2099,7 +2099,11 @@ function canvasSetup(id) {
   const canvas = document.getElementById(id);
   const dpr = window.devicePixelRatio || 1;
   const cssW = canvas.parentElement.clientWidth - 28;
-  const cssH = parseInt(canvas.getAttribute('height')) || 160;
+  // Cache the intended logical height once. Setting canvas.height below mutates
+  // the height attribute, so re-reading it each render would compound by dpr
+  // and grow the canvas endlessly on HiDPI/zoomed displays.
+  if (!canvas.dataset.h) canvas.dataset.h = String(parseInt(canvas.getAttribute('height')) || 160);
+  const cssH = parseInt(canvas.dataset.h);
   canvas.width = cssW * dpr;
   canvas.height = cssH * dpr;
   canvas.style.width = cssW + 'px';
@@ -2409,7 +2413,8 @@ function drawWeightChart(id, labels, vals, unit) {
   if (!canvas) return;
   const dpr = window.devicePixelRatio || 1;
   const cssW = canvas.parentElement.clientWidth - 28;
-  const cssH = parseInt(canvas.getAttribute('height')) || 220;
+  if (!canvas.dataset.h) canvas.dataset.h = String(parseInt(canvas.getAttribute('height')) || 220);
+  const cssH = parseInt(canvas.dataset.h);
   canvas.width = cssW * dpr;
   canvas.height = cssH * dpr;
   canvas.style.width = cssW + 'px';
