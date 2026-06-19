@@ -281,9 +281,11 @@
     padding: 13px 14px;
     display: flex;
     align-items: flex-start;
-    gap: 12px;
+    gap: 10px;
     position: relative;
+    cursor: pointer;
   }
+  .log-entry:active { background: var(--surface2); }
   .entry-thumb {
     width: 44px;
     height: 44px;
@@ -339,17 +341,18 @@
     text-align: right;
   }
   .entry-del {
-    position: absolute;
-    top: 8px;
-    right: 8px;
+    align-self: center;
+    flex-shrink: 0;
     background: none;
-    border: none;
+    border: 1px solid var(--border);
+    border-radius: 8px;
     color: var(--muted);
     font-size: 14px;
     cursor: pointer;
-    padding: 2px 4px;
+    padding: 5px 8px;
     line-height: 1;
   }
+  .entry-del:active { background: var(--surface2); color: var(--danger); }
 
   .empty-state {
     text-align: center;
@@ -1424,6 +1427,45 @@
     <button class="btn-cancel" onclick="closeQuickAdd()">Done</button>
   </div>
 </div>
+<div class="modal-bg" id="editEntryModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">✏️ Edit Entry</div>
+    <div class="error-msg" id="eeError"></div>
+    <div class="form-grid">
+      <div class="form-field full">
+        <label>Food Name</label>
+        <input type="text" id="eeName" placeholder="Food name">
+      </div>
+      <div class="form-field full">
+        <label>Emoji</label>
+        <input type="text" id="eeEmoji" placeholder="🍽️" maxlength="2">
+      </div>
+      <div class="form-field">
+        <label>Calories (kcal)</label>
+        <input type="number" id="eeCal" inputmode="decimal">
+      </div>
+      <div class="form-field">
+        <label>Protein (g)</label>
+        <input type="number" id="eeProtein" inputmode="decimal">
+      </div>
+      <div class="form-field">
+        <label>Carbs (g)</label>
+        <input type="number" id="eeCarbs" inputmode="decimal">
+      </div>
+      <div class="form-field">
+        <label>Fiber (g)</label>
+        <input type="number" id="eeFiber" inputmode="decimal">
+      </div>
+      <div class="form-field">
+        <label>Fat (g)</label>
+        <input type="number" id="eeFat" inputmode="decimal">
+      </div>
+    </div>
+    <button class="btn-primary" onclick="saveEntryEdit()">Save Changes</button>
+    <button class="btn-cancel" onclick="closeEditEntry()">Cancel</button>
+  </div>
+</div>
 <div class="modal-bg" id="settingsModal">
   <div class="modal">
     <div class="modal-handle"></div>
@@ -1644,6 +1686,58 @@ async function deleteEntry(index) {
   updateTotals();
 }
 
+let editEntryIndex = -1;
+
+function openEditEntry(index) {
+  const e = log[index];
+  if (!e) return;
+  editEntryIndex = index;
+  document.getElementById('eeName').value = e.name || '';
+  document.getElementById('eeEmoji').value = e.emoji || '';
+  document.getElementById('eeCal').value = Math.round(e.cal || 0);
+  document.getElementById('eeProtein').value = Math.round(e.protein || 0);
+  document.getElementById('eeCarbs').value = Math.round(e.carbs || 0);
+  document.getElementById('eeFiber').value = Math.round(e.fiber || 0);
+  document.getElementById('eeFat').value = Math.round(e.fat || 0);
+  document.getElementById('eeError').classList.remove('show');
+  document.getElementById('editEntryModal').classList.add('open');
+}
+
+function closeEditEntry() {
+  document.getElementById('editEntryModal').classList.remove('open');
+  editEntryIndex = -1;
+}
+
+async function saveEntryEdit() {
+  if (editEntryIndex < 0) return;
+  const e = log[editEntryIndex];
+  if (!e) return;
+  const name = document.getElementById('eeName').value.trim();
+  if (!name) {
+    const err = document.getElementById('eeError');
+    err.textContent = 'Food name is required.';
+    err.classList.add('show');
+    return;
+  }
+  e.name = name;
+  e.emoji = document.getElementById('eeEmoji').value.trim() || e.emoji || '🍽️';
+  e.cal = parseFloat(document.getElementById('eeCal').value) || 0;
+  e.protein = parseFloat(document.getElementById('eeProtein').value) || 0;
+  e.carbs = parseFloat(document.getElementById('eeCarbs').value) || 0;
+  e.fiber = parseFloat(document.getElementById('eeFiber').value) || 0;
+  e.fat = parseFloat(document.getElementById('eeFat').value) || 0;
+  saveLog();
+  renderLog();
+  updateTotals();
+  if (e.id && currentUser) {
+    await apiRequest(`/food/${e.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name: e.name, emoji: e.emoji, cal: e.cal, protein: e.protein, carbs: e.carbs, fat: e.fat, fiber: e.fiber })
+    });
+  }
+  closeEditEntry();
+}
+
 async function clearLog() {
   if (log.length === 0) return;
   if (!confirm('Clear today\'s log?')) return;
@@ -1847,7 +1941,7 @@ function renderLog() {
       ? `<span class="entry-macro netcarb" title="Net carbs">NC: ${Math.round(netCarbs)}g</span>`
       : `<span class="entry-macro" style="color:var(--carbs)">C: ${Math.round(e.carbs||0)}g</span>`;
     return `
-    <div class="log-entry">
+    <div class="log-entry" onclick="openEditEntry(${i})" title="Tap to edit">
       <div class="entry-thumb">${e.emoji || '🍽️'}</div>
       <div class="entry-info">
         <div class="entry-name">${e.name}</div>
@@ -1859,7 +1953,7 @@ function renderLog() {
         </div>
       </div>
       <div class="entry-cal">${Math.round(e.cal)}<span class="cal-unit">kcal</span></div>
-      <button class="entry-del" onclick="deleteEntry(${i})">✕</button>
+      <button class="entry-del" onclick="event.stopPropagation(); deleteEntry(${i})" title="Remove">✕</button>
     </div>`;
   }).join('');
 }

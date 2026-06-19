@@ -1,6 +1,6 @@
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Cf-Access-Authenticated-User-Email, Cf-Access-Jwt-Assertion",
 };
 
@@ -276,6 +276,35 @@ export default {
           .run();
 
         return jsonResponse({ id: inserted.meta?.last_row_id, ...body });
+      }
+
+      if (request.method === "PUT") {
+        const id = Number(segments[2]);
+        if (!Number.isFinite(id) || id <= 0) {
+          return jsonResponse({ error: "Invalid id" }, 400);
+        }
+        const body = await parseJson(request);
+        if (!body?.name) {
+          return jsonResponse({ error: "Missing required fields" }, 400);
+        }
+        await db
+          .prepare(
+            `UPDATE food_log SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?
+             WHERE id = ? AND user_id = ?`
+          )
+          .bind(
+            body.name,
+            body.emoji || null,
+            body.cal ?? 0,
+            body.protein ?? 0,
+            body.carbs ?? 0,
+            body.fat ?? 0,
+            body.fiber ?? 0,
+            id,
+            userEmail
+          )
+          .run();
+        return jsonResponse({ id, ...body });
       }
 
       if (request.method === "DELETE") {
