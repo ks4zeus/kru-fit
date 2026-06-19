@@ -720,6 +720,17 @@
   .calc-box .calc-sub:not(:first-child) { margin-top: 16px; }
   .calc-hint { font-size: 10px; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
   .calc-box .we-feedback { white-space: normal; line-height: 1.45; min-height: 0; margin-top: 8px; }
+  .calc-math-toggle {
+    background: none; border: none; color: var(--carbs); font-family: var(--font);
+    font-size: 12px; cursor: pointer; padding: 6px 0 2px; display: block;
+  }
+  .calc-math {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; margin-top: 6px;
+    font-family: var(--mono); font-size: 11px; color: var(--muted); line-height: 1.7;
+  }
+  .calc-math div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .calc-disclaimer { font-size: 10px; color: var(--muted); font-style: italic; line-height: 1.4; margin-top: 10px; }
 
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 
@@ -1579,6 +1590,9 @@
 
       <button class="btn-primary blue" onclick="calculateMacros()">Calculate &amp; fill goals</button>
       <div class="we-feedback" id="calcFeedback" style="color:#60a5fa"></div>
+      <button class="calc-math-toggle" id="calcMathToggle" onclick="toggleCalcMath()" style="display:none">▸ Show the math</button>
+      <div class="calc-math" id="calcMath" style="display:none"></div>
+      <div class="calc-disclaimer">Estimates only — not medical advice. A starting point; adjust based on your real-world results.</div>
     </div>
     <div class="settings-grid">
       <div class="setting-row">
@@ -3424,6 +3438,13 @@ function toggleCalc() {
   document.getElementById('calcToggle').textContent = open ? '🧮 Hide calculator' : '🧮 Help me calculate my macros';
 }
 
+function toggleCalcMath() {
+  const m = document.getElementById('calcMath');
+  const open = m.style.display === 'none';
+  m.style.display = open ? 'block' : 'none';
+  document.getElementById('calcMathToggle').textContent = (open ? '▾ Hide' : '▸ Show') + ' the math';
+}
+
 // Restore saved calculator inputs and prefill weight from the latest log.
 function prefillCalc() {
   document.getElementById('calcWUnit').textContent = weightUnit || 'lbs';
@@ -3512,12 +3533,13 @@ function calculateMacros() {
   const rate = v('calcRate');
   const loseAdj = { slow: 250, moderate: 500, aggressive: 800 };
   const gainAdj = { slow: 150, moderate: 300, aggressive: 500 };
-  let target = maintenance;
-  if (goal === 'lose') target -= (loseAdj[rate] || 500);
-  else if (goal === 'gain') target += (gainAdj[rate] || 300);
+  let adjVal = 0;
+  if (goal === 'lose') adjVal = -(loseAdj[rate] || 500);
+  else if (goal === 'gain') adjVal = (gainAdj[rate] || 300);
   const floor = Math.max(Math.round(bmr * 1.05), sex === 'male' ? 1500 : 1200);
-  target = Math.max(target, floor);
-  target = Math.round(target / 10) * 10;
+  let target = maintenance + adjVal;
+  const wasFloored = target < floor;
+  target = Math.round(Math.max(target, floor) / 10) * 10;
 
   // ---- Protein (lean mass if known), fat (by macro style), carbs fill rest ----
   const proteinBaseLb = bfKnown ? lbmKg * 2.20462 : weightLb;
@@ -3534,6 +3556,20 @@ function calculateMacros() {
   document.getElementById('goalCarbs').value = carbs;
   document.getElementById('goalFat').value = fat;
   document.getElementById('goalFiber').value = fiber;
+
+  // ---- Transparency: show the math ----
+  const mathRows = [
+    `BMR · ${bfKnown ? 'Katch-McArdle' : 'Mifflin-St Jeor'} = ${Math.round(bmr)}`,
+    `× activity ${neatMult.toFixed(2)}${(!isNaN(steps) && steps > 0) ? ` (${steps} steps)` : ''} = ${Math.round(bmr * neatMult)}`,
+    ...(exPerDay > 0 ? [`+ exercise ${Math.round(exPerDay)}/day`] : []),
+    `= formula TDEE ${Math.round(formulaTDEE)}`,
+    ...(observed ? [`observed (your data) ${Math.round(observed)}`, `blend 30/70 → maintenance ${maintenance}`] : [`maintenance ${maintenance}`]),
+    `${goal === 'maintain' ? 'goal ±0' : (goal === 'lose' ? 'deficit ' : 'surplus ') + (adjVal > 0 ? '+' : '−') + Math.abs(adjVal)}${wasFloored ? ' (floored to min)' : ''}`,
+    `→ target ${target} kcal`,
+    `P ${protein} · C ${carbs} · F ${fat} · fiber ${fiber}`,
+  ];
+  document.getElementById('calcMath').innerHTML = mathRows.map(r => `<div>${r}</div>`).join('');
+  document.getElementById('calcMathToggle').style.display = 'block';
 
   fb.style.color = '#60a5fa';
   fb.textContent = `Maintenance ≈ ${maintenance} kcal${calibrated ? ' (calibrated from your data)' : ' (estimated)'}. Target ${target} · ${protein}P / ${carbs}C / ${fat}F · ${fiber}g fiber. Review & Save Goals.`;
