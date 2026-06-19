@@ -59,6 +59,7 @@ CREATE TABLE goals (
   protein INTEGER DEFAULT 180,
   carbs INTEGER DEFAULT 150,
   fat INTEGER DEFAULT 60,
+  fiber INTEGER DEFAULT 30,
   water_oz INTEGER DEFAULT 64,
   updated_at TEXT DEFAULT (datetime('now'))
 );

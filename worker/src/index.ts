@@ -444,6 +444,7 @@ export default {
           protein: 180,
           carbs: 150,
           fat: 60,
+          fiber: 30,
           water_oz: 64,
         });
       }
@@ -456,13 +457,14 @@ export default {
 
         await db
           .prepare(
-            `INSERT INTO goals (user_id, cal, protein, carbs, fat, water_oz, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+            `INSERT INTO goals (user_id, cal, protein, carbs, fat, fiber, water_oz, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
              ON CONFLICT(user_id) DO UPDATE SET
                cal = excluded.cal,
                protein = excluded.protein,
                carbs = excluded.carbs,
                fat = excluded.fat,
+               fiber = excluded.fiber,
                water_oz = excluded.water_oz,
                updated_at = datetime('now')`
           )
@@ -472,10 +474,11 @@ export default {
             body.protein ?? 180,
             body.carbs ?? 150,
             body.fat ?? 60,
+            body.fiber ?? 30,
             body.water_oz ?? 64
           )
           .run();
-        return jsonResponse({ user_id: userEmail, cal: body.cal ?? 1800, protein: body.protein ?? 180, carbs: body.carbs ?? 150, fat: body.fat ?? 60, water_oz: body.water_oz ?? 64 });
+        return jsonResponse({ user_id: userEmail, cal: body.cal ?? 1800, protein: body.protein ?? 180, carbs: body.carbs ?? 150, fat: body.fat ?? 60, fiber: body.fiber ?? 30, water_oz: body.water_oz ?? 64 });
       }
     }
 
