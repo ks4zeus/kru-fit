@@ -1509,6 +1509,55 @@ const STORAGE_KEYS = {
   log: 'fuellog_log_'
 };
 
+// Keyword -> emoji map so foods get a fitting icon without an AI call.
+// More specific keywords go first (e.g. "peanut" before "butter").
+const FOOD_EMOJI = [
+  [['peanut'], '🥜'], [['almond', 'cashew', 'walnut', 'pistachio', 'pecan', 'hazelnut', 'nut'], '🥜'],
+  [['oatmeal', 'oats', 'oat', 'cereal', 'granola', 'porridge', 'muesli'], '🥣'],
+  [['ice cream', 'gelato'], '🍦'], [['cheese', 'cheddar', 'parmesan', 'mozzarella'], '🧀'],
+  [['butter'], '🧈'], [['egg'], '🥚'],
+  [['bacon', 'ham', 'pork', 'sausage'], '🥓'], [['chicken', 'turkey', 'poultry', 'wing'], '🍗'],
+  [['steak', 'beef', 'meatball', 'meat'], '🥩'], [['burger', 'cheeseburger'], '🍔'],
+  [['hot dog', 'hotdog'], '🌭'], [['salmon', 'tuna', 'fish', 'cod', 'tilapia'], '🐟'],
+  [['shrimp', 'prawn'], '🦐'], [['crab'], '🦀'], [['lobster'], '🦞'], [['sushi', 'sashimi'], '🍣'],
+  [['pizza'], '🍕'], [['burrito', 'wrap'], '🌯'], [['taco'], '🌮'], [['sandwich', 'sub', 'panini'], '🥪'],
+  [['spaghetti', 'pasta', 'macaroni', 'lasagna'], '🍝'], [['ramen', 'noodle', 'pho'], '🍜'],
+  [['fries', 'french fr'], '🍟'], [['chip', 'crisp'], '🥔'], [['popcorn'], '🍿'], [['pretzel'], '🥨'],
+  [['bagel'], '🥯'], [['croissant'], '🥐'], [['pancake'], '🥞'], [['waffle'], '🧇'],
+  [['toast', 'bread', 'roll', 'bun'], '🍞'], [['rice'], '🍚'], [['soup', 'stew', 'chili'], '🍲'],
+  [['salad', 'lettuce', 'greens', 'kale', 'spinach'], '🥗'], [['avocado', 'guacamole'], '🥑'],
+  [['tomato'], '🍅'], [['potato'], '🥔'], [['carrot'], '🥕'], [['corn'], '🌽'], [['broccoli'], '🥦'],
+  [['cucumber', 'pickle'], '🥒'], [['pepper', 'jalapeno', 'chili pepper'], '🫑'], [['onion'], '🧅'],
+  [['garlic'], '🧄'], [['mushroom'], '🍄'], [['eggplant', 'aubergine'], '🍆'], [['bean', 'lentil'], '🫘'],
+  [['apple'], '🍎'], [['banana'], '🍌'], [['grape'], '🍇'], [['strawberr'], '🍓'], [['blueberr', 'berry'], '🫐'],
+  [['orange', 'mandarin', 'clementine'], '🍊'], [['lemon', 'lime'], '🍋'], [['peach'], '🍑'], [['pear'], '🍐'],
+  [['cherry', 'cherries'], '🍒'], [['watermelon'], '🍉'], [['melon', 'cantaloupe'], '🍈'],
+  [['pineapple'], '🍍'], [['mango'], '🥭'], [['coconut'], '🥥'], [['kiwi'], '🥝'],
+  [['cake', 'cupcake'], '🍰'], [['cookie', 'biscuit'], '🍪'], [['chocolate', 'brownie'], '🍫'],
+  [['candy', 'gummy'], '🍬'], [['donut', 'doughnut'], '🍩'], [['pie'], '🥧'], [['honey'], '🍯'],
+  [['yogurt', 'yoghurt'], '🍦'], [['milk'], '🥛'], [['smoothie', 'shake', 'protein shake'], '🥤'],
+  [['coffee', 'espresso', 'latte', 'cappuccino'], '☕'], [['tea', 'matcha'], '🍵'],
+  [['beer'], '🍺'], [['wine'], '🍷'], [['cocktail', 'martini'], '🍸'], [['juice'], '🧃'],
+  [['soda', 'cola', 'coke', 'pepsi', 'sprite'], '🥤'], [['water'], '💧'],
+  [['honey nut', 'pancake'], '🥞'], [['dumpling'], '🥟'], [['burrito bowl', 'bowl'], '🥣'],
+];
+
+function foodEmoji(name) {
+  const s = (name || '').toLowerCase();
+  if (!s) return null;
+  for (const [keys, emoji] of FOOD_EMOJI) {
+    if (keys.some(k => s.includes(k))) return emoji;
+  }
+  return null;
+}
+
+// Use the stored emoji if it's specific; otherwise derive one from the name.
+const GENERIC_EMOJI = new Set(['', '🍽️', '🏷️', '📷', '🍴']);
+function displayEmoji(name, stored) {
+  if (stored && !GENERIC_EMOJI.has(stored)) return stored;
+  return foodEmoji(name) || stored || '🍽️';
+}
+
 let currentUser = null;
 let goals = { ...defaultGoals };
 let log = [];
@@ -1860,7 +1909,7 @@ async function saveCustomFood(logNow) {
   }
   const food = {
     name,
-    emoji: document.getElementById('cfEmoji').value.trim() || '🍽️',
+    emoji: document.getElementById('cfEmoji').value.trim() || foodEmoji(name) || '🍽️',
     cal: parseFloat(document.getElementById('cfCal').value) || 0,
     protein: parseFloat(document.getElementById('cfProtein').value) || 0,
     carbs: parseFloat(document.getElementById('cfCarbs').value) || 0,
@@ -1942,7 +1991,7 @@ function renderLog() {
       : `<span class="entry-macro" style="color:var(--carbs)">C: ${Math.round(e.carbs||0)}g</span>`;
     return `
     <div class="log-entry" onclick="openEditEntry(${i})" title="Tap to edit">
-      <div class="entry-thumb">${e.emoji || '🍽️'}</div>
+      <div class="entry-thumb">${displayEmoji(e.name, e.emoji)}</div>
       <div class="entry-info">
         <div class="entry-name">${e.name}</div>
         <div class="entry-time">${timeStr}${timeStr ? ' · ' : ''}${e.source || ''}</div>
@@ -2327,7 +2376,7 @@ async function addBarcodeEntry() {
   const unitLabel = unitSel.options[unitSel.selectedIndex].text;
   const entry = {
     name: bcProductName,
-    emoji: '🏷️',
+    emoji: foodEmoji(bcProductName) || '🏷️',
     cal: bcBaseNutrition.cal * f,
     protein: bcBaseNutrition.protein * f,
     carbs: bcBaseNutrition.carbs * f,
@@ -2759,7 +2808,7 @@ function renderCustomFoodLibrary() {
   section.style.display = 'block';
   list.innerHTML = customFoods.map(f => `
     <div class="cf-lib-item">
-      <span class="cf-lib-emoji">${cfEsc(f.emoji || '🍽️')}</span>
+      <span class="cf-lib-emoji">${cfEsc(displayEmoji(f.name, f.emoji))}</span>
       <div class="cf-lib-info" onclick="prefillCustom('${f.id}')" title="Tap to edit">
         <div class="cf-lib-name">${cfEsc(f.name)}</div>
         <div class="cf-lib-macros">${Math.round(f.cal || 0)} cal · P${Math.round(f.protein || 0)} C${Math.round(f.carbs || 0)} F${Math.round(f.fat || 0)}</div>
@@ -2871,7 +2920,7 @@ function closeQuickAdd() {
 function qaRow(f, idx) {
   return `
     <div class="qa-item">
-      <span class="qa-emoji">${cfEsc(f.emoji || '🍽️')}</span>
+      <span class="qa-emoji">${cfEsc(displayEmoji(f.name, f.emoji))}</span>
       <div class="qa-info">
         <div class="qa-name">${cfEsc(f.name)}</div>
         <div class="qa-macros">${Math.round(f.cal)} cal · P${Math.round(f.protein)} C${Math.round(f.carbs)} F${Math.round(f.fat)}${f.count > 1 ? ' · logged ' + f.count + '×' : ''}</div>
