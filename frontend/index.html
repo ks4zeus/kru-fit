@@ -608,6 +608,25 @@
     font-size: 13px;
     color: var(--muted);
   }
+  .serving-row select {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    outline: none;
+  }
+  .serving-row select:focus { border-color: var(--protein); }
+  .serving-hint {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+    margin-bottom: 10px;
+    min-height: 14px;
+  }
 
   .spinner {
     display: none;
@@ -1333,10 +1352,16 @@
     <div class="result-card" id="barcodeResult">
       <div class="rc-name" id="bcFoodName"></div>
       <div class="serving-row">
-        <label>Serving:</label>
-        <input type="number" id="bcServing" value="1" min="0.25" step="0.25" oninput="updateBarcodeNutrition()">
-        <span class="serving-unit" id="bcServingUnit">× 100g</span>
+        <label>Amount:</label>
+        <input type="number" id="bcAmount" value="1" min="0" step="0.25" inputmode="decimal" oninput="updateBarcodeNutrition()">
+        <select id="bcUnit" onchange="updateBarcodeNutrition()">
+          <option value="serving">serving</option>
+          <option value="g">grams</option>
+          <option value="oz">oz</option>
+          <option value="cup">cups</option>
+        </select>
       </div>
+      <div class="serving-hint" id="bcServingHint"></div>
       <div class="result-macro-grid">
         <div class="rmc"><div class="rmc-val" id="bcCal" style="color:var(--cal)">—</div><div class="rmc-label">kcal</div></div>
         <div class="rmc"><div class="rmc-val" id="bcPro" style="color:var(--protein)">—</div><div class="rmc-label">Protein</div></div>
@@ -1404,9 +1429,11 @@ let customFoods = [];
 let photoData = null;
 let photoMime = 'image/jpeg';
 let photoResult = null;
-let bcBaseNutrition = null;
+let bcBaseNutrition = null;    // nutrition per 100g (mass) — the canonical base
 let bcProductName = '';
-let bcServingDesc = '100g';
+let bcServingGrams = null;     // grams in one package serving, if known
+let bcCupGrams = 240;          // grams per cup (derived from product, else approx)
+let bcCupExact = false;        // true when cupGrams came from the product label
 let weightUnit = 'lbs';
 let weightPeriod = 30;
 let histPeriod = 7;
@@ -2046,34 +2073,54 @@ async function lookupBarcode(code) {
     const n = p.nutriments || {};
     const num = v => { const x = typeof v === 'number' ? v : parseFloat(v); return isNaN(x) ? 0 : x; };
     bcProductName = p.product_name || p.abbreviated_product_name || 'Unknown product';
-    // OpenFoodFacts reports nutrition per 100g AND (often) per serving. Use the
-    // per-serving values so the macros match the package. Only fall back to
-    // per-100g when no serving data exists — and label it as 100g so a 30g
-    // serving isn't shown with 100g numbers (the old bug overstated 3-5x).
     const servingSize = (p.serving_size || '').toString().trim();
+
+    // OpenFoodFacts nutrition is per 100g (mass). Use that as the canonical base
+    // so the user can enter any unit (g / oz / cup / serving) and get accurate macros.
+    let per100 = {
+      cal: num(n['energy-kcal_100g']) || (n['energy_100g'] ? num(n['energy_100g']) / 4.184 : 0),
+      protein: num(n['proteins_100g']),
+      carbs: num(n['carbohydrates_100g']),
+      fiber: num(n['fiber_100g']),
+      fat: num(n['fat_100g'])
+    };
+
+    // Grams in one package serving (serving_quantity is grams in OFF; else parse the text).
+    const gMatch = servingSize.match(/([\d.]+)\s*g\b/i);
+    bcServingGrams = num(p.serving_quantity) || (gMatch ? parseFloat(gMatch[1]) : 0) || null;
+
+    // If per-100g is missing but per-serving values + serving grams exist, derive per-100g.
     const servingCal = num(n['energy-kcal_serving']) || (n['energy_serving'] ? num(n['energy_serving']) / 4.184 : 0);
-    if (servingCal > 0) {
-      bcBaseNutrition = {
-        cal: servingCal,
-        protein: num(n['proteins_serving']),
-        carbs: num(n['carbohydrates_serving']),
-        fiber: num(n['fiber_serving']),
-        fat: num(n['fat_serving'])
+    if (!per100.cal && servingCal && bcServingGrams) {
+      const f = 100 / bcServingGrams;
+      per100 = {
+        cal: servingCal * f,
+        protein: num(n['proteins_serving']) * f,
+        carbs: num(n['carbohydrates_serving']) * f,
+        fiber: num(n['fiber_serving']) * f,
+        fat: num(n['fat_serving']) * f
       };
-      bcServingDesc = servingSize ? `serving (${servingSize})` : 'serving';
-    } else {
-      bcBaseNutrition = {
-        cal: num(n['energy-kcal_100g']) || (n['energy_100g'] ? num(n['energy_100g']) / 4.184 : 0),
-        protein: num(n['proteins_100g']),
-        carbs: num(n['carbohydrates_100g']),
-        fiber: num(n['fiber_100g']),
-        fat: num(n['fat_100g'])
-      };
-      bcServingDesc = '100g';
     }
+    bcBaseNutrition = per100;
+
+    // Grams per cup: derive from the label when it lists a cup measure, else approximate.
+    const cupMatch = servingSize.match(/([\d.]+)\s*cups?\b/i);
+    if (cupMatch && bcServingGrams && parseFloat(cupMatch[1]) > 0) {
+      bcCupGrams = bcServingGrams / parseFloat(cupMatch[1]);
+      bcCupExact = true;
+    } else {
+      bcCupGrams = 240;
+      bcCupExact = false;
+    }
+
+    // Default the unit selector: prefer the package serving when we know its weight.
+    const servingOpt = document.querySelector('#bcUnit option[value="serving"]');
+    servingOpt.hidden = !bcServingGrams;
+    servingOpt.disabled = !bcServingGrams;
+    document.getElementById('bcUnit').value = bcServingGrams ? 'serving' : 'g';
+    document.getElementById('bcAmount').value = bcServingGrams ? '1' : '100';
+
     document.getElementById('bcFoodName').textContent = bcProductName;
-    document.getElementById('bcServingUnit').textContent = `× ${bcServingDesc}`;
-    document.getElementById('bcServing').value = '1';
     updateBarcodeNutrition();
     document.getElementById('barcodeResult').classList.add('show');
     document.getElementById('addBarcodeBtn').style.display = 'block';
@@ -2087,27 +2134,53 @@ async function lookupBarcode(code) {
   }
 }
 
+// Convert the chosen amount + unit into grams (the per-100g base is mass-based).
+function barcodeGrams() {
+  const a = parseFloat(document.getElementById('bcAmount').value);
+  const amount = isNaN(a) ? 0 : a;
+  switch (document.getElementById('bcUnit').value) {
+    case 'oz': return amount * 28.3495;
+    case 'cup': return amount * bcCupGrams;
+    case 'serving': return amount * (bcServingGrams || 0);
+    default: return amount; // grams
+  }
+}
+
 function updateBarcodeNutrition() {
   if (!bcBaseNutrition) return;
-  const mult = parseFloat(document.getElementById('bcServing').value) || 1;
-  document.getElementById('bcCal').textContent = Math.round(bcBaseNutrition.cal * mult);
-  document.getElementById('bcPro').textContent = Math.round(bcBaseNutrition.protein * mult) + 'g';
-  document.getElementById('bcCarb').textContent = Math.round(bcBaseNutrition.carbs * mult) + 'g';
-  document.getElementById('bcFat').textContent = Math.round(bcBaseNutrition.fat * mult) + 'g';
+  const grams = barcodeGrams();
+  const f = grams / 100;
+  document.getElementById('bcCal').textContent = Math.round(bcBaseNutrition.cal * f);
+  document.getElementById('bcPro').textContent = Math.round(bcBaseNutrition.protein * f) + 'g';
+  document.getElementById('bcCarb').textContent = Math.round(bcBaseNutrition.carbs * f) + 'g';
+  document.getElementById('bcFat').textContent = Math.round(bcBaseNutrition.fat * f) + 'g';
+  const unit = document.getElementById('bcUnit').value;
+  const hint = document.getElementById('bcServingHint');
+  if (unit === 'serving' && bcServingGrams) {
+    hint.textContent = `1 serving ≈ ${Math.round(bcServingGrams)} g · ${Math.round(grams)} g total`;
+  } else if (unit === 'cup') {
+    hint.textContent = `≈ ${Math.round(grams)} g${bcCupExact ? '' : ' · cups are approximate'}`;
+  } else {
+    hint.textContent = `≈ ${Math.round(grams)} g`;
+  }
 }
 
 async function addBarcodeEntry() {
   if (!bcBaseNutrition) return;
-  const mult = parseFloat(document.getElementById('bcServing').value) || 1;
+  const grams = barcodeGrams();
+  const f = grams / 100;
+  const amount = parseFloat(document.getElementById('bcAmount').value) || 0;
+  const unitSel = document.getElementById('bcUnit');
+  const unitLabel = unitSel.options[unitSel.selectedIndex].text;
   const entry = {
     name: bcProductName,
     emoji: '🏷️',
-    cal: bcBaseNutrition.cal * mult,
-    protein: bcBaseNutrition.protein * mult,
-    carbs: bcBaseNutrition.carbs * mult,
-    fiber: (bcBaseNutrition.fiber || 0) * mult,
-    fat: bcBaseNutrition.fat * mult,
-    source: `Barcode · ${mult}× ${bcServingDesc}`,
+    cal: bcBaseNutrition.cal * f,
+    protein: bcBaseNutrition.protein * f,
+    carbs: bcBaseNutrition.carbs * f,
+    fiber: (bcBaseNutrition.fiber || 0) * f,
+    fat: bcBaseNutrition.fat * f,
+    source: `Barcode · ${amount} ${unitLabel} (${Math.round(grams)} g)`,
     ts: Date.now(),
     date: todayKey()
   };
