@@ -126,7 +126,7 @@ function getPathSegments(url: URL) {
   return url.pathname.replace(/^\/+|\/+$/g, "").split("/");
 }
 
-const NUTRITION_SYSTEM_PROMPT = `You are a nutrition analysis assistant. When given a food photo, identify the food and estimate nutritional content. Always respond ONLY with valid JSON, no markdown, no extra text. Use this exact structure:
+const NUTRITION_SYSTEM_PROMPT = `You are a nutrition analysis assistant. Given a food as either a photo or a written description of the dish and its ingredients, identify it and estimate its nutritional content. Always respond ONLY with valid JSON, no markdown, no extra text. Use this exact structure:
 {
   "name": "Food name",
   "emoji": "single relevant emoji",
@@ -135,10 +135,10 @@ const NUTRITION_SYSTEM_PROMPT = `You are a nutrition analysis assistant. When gi
   "carbs_g": number,
   "fiber_g": number,
   "fat_g": number,
-  "serving_note": "brief note about serving size assumed",
+  "serving_note": "brief note about the serving size assumed",
   "confidence": "high|medium|low"
 }
-Be realistic with estimates. If multiple items are visible, estimate the total. If you cannot identify food, set name to "Unknown food" with zeroes and confidence "low".`;
+Be realistic with estimates. If multiple items are present, estimate the total. If you cannot identify the food, set name to "Unknown food" with zeroes and confidence "low".`;
 
 export default {
   async fetch(request: Request, env: Env) {
@@ -168,16 +168,30 @@ export default {
       return jsonResponse({ error: "Not found" }, 404);
     }
 
-    // ---- AI food photo analysis (proxied so the API key stays server-side) ----
+    // ---- AI food analysis: photo OR text description (key stays server-side) ----
     if (segments[1] === "analyze" && request.method === "POST") {
       if (!env.ANTHROPIC_API_KEY) {
         return jsonResponse({ error: "AI analysis is not configured" }, 503);
       }
       const body = await parseJson(request);
-      if (!body?.image) {
-        return jsonResponse({ error: "Missing image" }, 400);
+      const description = typeof body?.description === "string" ? body.description.trim() : "";
+      if (!body?.image && !description) {
+        return jsonResponse({ error: "Missing image or description" }, 400);
       }
-      const mediaType = body.media_type || "image/jpeg";
+
+      // Build the user message from whichever input was provided.
+      let content: unknown[];
+      if (body?.image) {
+        const mediaType = body.media_type || "image/jpeg";
+        content = [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: body.image } },
+          { type: "text", text: "Analyze this food and provide nutrition estimates as JSON." },
+        ];
+      } else {
+        content = [
+          { type: "text", text: `Estimate the nutrition for this food and provide it as JSON:\n\n${description}` },
+        ];
+      }
 
       const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -190,15 +204,7 @@ export default {
           model: "claude-sonnet-4-6",
           max_tokens: 1000,
           system: NUTRITION_SYSTEM_PROMPT,
-          messages: [
-            {
-              role: "user",
-              content: [
-                { type: "image", source: { type: "base64", media_type: mediaType, data: body.image } },
-                { type: "text", text: "Analyze this food and provide nutrition estimates as JSON." },
-              ],
-            },
-          ],
+          messages: [{ role: "user", content }],
         }),
       });
 

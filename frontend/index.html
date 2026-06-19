@@ -936,6 +936,37 @@
     color: var(--protein);
   }
 
+  .ai-estimate {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-bottom: 14px;
+  }
+  .ai-estimate label {
+    display: block;
+    font-size: 12px;
+    color: var(--text);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .ai-estimate textarea {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    outline: none;
+    resize: vertical;
+    margin-bottom: 8px;
+  }
+  .ai-estimate textarea:focus { border-color: var(--carbs); }
+  .ai-estimate textarea::placeholder { color: var(--muted); }
+  .ai-estimate .btn-primary { padding: 11px; }
+
   .form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1166,6 +1197,12 @@
     <div class="modal-handle"></div>
     <div class="modal-title">✏️ Custom Food</div>
     <div class="error-msg" id="cfError"></div>
+    <div class="ai-estimate">
+      <label>✨ Describe it & let AI fill the macros</label>
+      <textarea id="cfDesc" rows="2" placeholder="e.g. 2 scrambled eggs with cheddar and a slice of buttered sourdough toast"></textarea>
+      <button class="btn-primary blue" id="cfEstimateBtn" onclick="estimateMacros()">✨ Estimate macros</button>
+      <div class="we-feedback" id="cfAiFeedback" style="color:#60a5fa"></div>
+    </div>
     <div class="form-grid">
       <div class="form-field full">
         <label>Food Name</label>
@@ -2382,12 +2419,54 @@ function openCustomFoodModal(prefill) {
   } else {
     fields.forEach(id => document.getElementById(id).value = '');
   }
+  document.getElementById('cfDesc').value = '';
+  document.getElementById('cfAiFeedback').textContent = '';
   document.getElementById('cfError').classList.remove('show');
   document.getElementById('customFoodModal').classList.add('open');
 }
 
 function closeCustomFoodModal() {
   document.getElementById('customFoodModal').classList.remove('open');
+}
+
+// Estimate macros from a free-text description via the AI proxy, then fill the form.
+async function estimateMacros() {
+  const desc = document.getElementById('cfDesc').value.trim();
+  const feedback = document.getElementById('cfAiFeedback');
+  const btn = document.getElementById('cfEstimateBtn');
+  if (!desc) {
+    feedback.style.color = 'var(--danger)';
+    feedback.textContent = 'Describe the food first.';
+    return;
+  }
+  feedback.style.color = '#60a5fa';
+  feedback.textContent = '✨ Estimating…';
+  btn.disabled = true;
+  try {
+    const result = await apiRequest('/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ description: desc })
+    });
+    if (!result.ok || !result.body || result.body.error) {
+      throw new Error(result.body?.error || 'Estimate failed');
+    }
+    const r = result.body;
+    const setIf = (id, val) => { const el = document.getElementById(id); if (val != null && !isNaN(val)) el.value = Math.round(val); };
+    if (!document.getElementById('cfName').value.trim() && r.name) document.getElementById('cfName').value = r.name;
+    if (!document.getElementById('cfEmoji').value.trim() && r.emoji) document.getElementById('cfEmoji').value = r.emoji;
+    setIf('cfCal', r.calories);
+    setIf('cfProtein', r.protein_g);
+    setIf('cfCarbs', r.carbs_g);
+    setIf('cfFiber', r.fiber_g);
+    setIf('cfFat', r.fat_g);
+    if (!document.getElementById('cfServing').value.trim() && r.serving_note) document.getElementById('cfServing').value = r.serving_note;
+    feedback.textContent = `✓ Filled in${r.confidence ? ' · confidence: ' + r.confidence : ''}. Review and adjust as needed.`;
+  } catch (err) {
+    feedback.style.color = 'var(--danger)';
+    feedback.textContent = 'Could not estimate. Check the description or fill the macros manually.';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function toggleNetCarbs() {
