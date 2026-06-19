@@ -1162,6 +1162,10 @@
       <h3>Macros</h3>
       <canvas id="chartMacros" height="160"></canvas>
     </div>
+    <div class="chart-card">
+      <h3>🌾 Fiber</h3>
+      <canvas id="chartFiber" height="160"></canvas>
+    </div>
     <div id="histEmpty" class="hist-empty" style="display:none">
       <div class="he-icon">📊</div>
       <p>No history yet.<br>Log food for a few days to see trends.</p>
@@ -2205,11 +2209,13 @@ async function renderHistory() {
     document.getElementById('histEmpty').style.display = 'block';
     document.getElementById('chartCal').style.display = 'none';
     document.getElementById('chartMacros').style.display = 'none';
+    document.getElementById('chartFiber').style.display = 'none';
     return;
   }
   document.getElementById('histEmpty').style.display = 'none';
   document.getElementById('chartCal').style.display = 'block';
   document.getElementById('chartMacros').style.display = 'block';
+  document.getElementById('chartFiber').style.display = 'block';
   const avgCal = daysWithData.reduce((s, d) => s + d.cal, 0) / daysWithData.length;
   const avgProtein = daysWithData.reduce((s, d) => s + d.protein, 0) / daysWithData.length;
   const avgCarbs = daysWithData.reduce((s, d) => s + d.carbs, 0) / daysWithData.length;
@@ -2257,9 +2263,9 @@ async function renderHistory() {
   drawLineChart('chartMacros', labels, [
     { label: 'Protein', data: proteinData, color: '#4ade80' },
     { label: 'Carbs', data: carbsData, color: '#60a5fa' },
-    { label: 'Fat', data: fatData, color: '#f472b6' },
-    { label: 'Fiber', data: fiberData, color: '#fb923c' }
+    { label: 'Fat', data: fatData, color: '#f472b6' }
   ]);
+  drawBarChart('chartFiber', labels, [{ label: 'Fiber', data: fiberData, color: '#fb923c' }], goals.fiber || defaultGoals.fiber);
 }
 
 function calcStreak() {
