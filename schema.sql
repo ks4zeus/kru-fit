@@ -66,7 +66,23 @@ CREATE TABLE goals (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE recipes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  emoji TEXT,
+  servings REAL DEFAULT 1,
+  ingredients TEXT,
+  cal REAL DEFAULT 0,
+  protein REAL DEFAULT 0,
+  carbs REAL DEFAULT 0,
+  fat REAL DEFAULT 0,
+  fiber REAL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Indexes for the hot lookups (per-user, per-day and per-user ranges).
 CREATE INDEX IF NOT EXISTS idx_food_user_date ON food_log(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_weight_user_date ON weight_log(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_custom_foods_user ON custom_foods(user_id);
+CREATE INDEX IF NOT EXISTS idx_recipes_user ON recipes(user_id);

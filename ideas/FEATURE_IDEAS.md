@@ -11,8 +11,8 @@ as we go. ⭐ = top picks (high daily value or unlocks bigger things).
       Low effort; same pattern as `/api/coach`.
 - [ ] **Weekly AI recap** — Sunday "your week in review" (trends, wins, one focus
       for next week). Pairs with the weigh-in reminder.
-- [ ] **Recipe builder** — type/dictate a recipe's ingredients + servings → AI
-      computes per-serving macros → save as a custom food.
+- [x] **Recipe builder** — type/dictate ingredients + servings → AI computes
+      per-serving macros → saved recipe library, log servings. (shipped 2026-06-20)
 
 ## ⚡ Faster logging
 - [ ] ⭐ **Meal templates** — save a combo as "My usual breakfast" and log all

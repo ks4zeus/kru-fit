@@ -217,7 +217,7 @@
   .add-section {
     padding: 0 20px 16px;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 10px;
   }
   .add-btn {
@@ -1298,6 +1298,11 @@
       <span class="btn-label">Custom</span>
       <span class="btn-sub">Add food</span>
     </button>
+    <button class="add-btn" onclick="openRecipeModal()" style="border-color:#f5a623">
+      <span class="btn-icon">🍲</span>
+      <span class="btn-label">Recipe</span>
+      <span class="btn-sub">Build & save</span>
+    </button>
   </div>
   <div class="water-bar-wrap today-only">
     <div class="water-bar-head">
@@ -1419,7 +1424,7 @@
       <label>✨ Describe it (type or 🎤 speak) & let AI fill the macros</label>
       <textarea id="cfDesc" rows="2" placeholder="e.g. 2 scrambled eggs with cheddar and a slice of buttered sourdough toast"></textarea>
       <div class="ai-actions">
-        <button class="mic-btn" id="cfMicBtn" onclick="toggleDictation()" title="Dictate">🎤</button>
+        <button class="mic-btn" id="cfMicBtn" onclick="toggleDictation('cfDesc', this, 'cfAiFeedback')" title="Dictate">🎤</button>
         <button class="btn-primary blue" id="cfEstimateBtn" onclick="estimateMacros()">✨ Estimate macros</button>
       </div>
       <div class="we-feedback" id="cfAiFeedback" style="color:#60a5fa"></div>
@@ -1466,6 +1471,66 @@
       <div id="cfLibraryList"></div>
     </div>
     <button class="btn-cancel" onclick="closeCustomFoodModal()">Cancel</button>
+  </div>
+</div>
+<div class="modal-bg" id="recipeModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">🍲 Recipe</div>
+    <div class="error-msg" id="rcError"></div>
+    <div class="form-grid">
+      <div class="form-field full">
+        <label>Recipe Name</label>
+        <input type="text" id="rcName" placeholder="e.g. Chicken Stir-Fry">
+      </div>
+      <div class="form-field">
+        <label>Emoji</label>
+        <input type="text" id="rcEmoji" placeholder="🍲" maxlength="2">
+      </div>
+      <div class="form-field">
+        <label>Servings (yield)</label>
+        <input type="number" id="rcServings" value="1" min="0.5" step="0.5" inputmode="decimal">
+      </div>
+    </div>
+    <div class="ai-estimate">
+      <label>🧾 Ingredients — one per line (type or 🎤 speak)</label>
+      <textarea id="rcIngredients" rows="4" placeholder="2 chicken breasts&#10;1 cup cooked rice&#10;1 tbsp olive oil&#10;1 cup broccoli"></textarea>
+      <div class="ai-actions">
+        <button class="mic-btn" id="rcMicBtn" onclick="toggleDictation('rcIngredients', this, 'rcFeedback')" title="Dictate">🎤</button>
+        <button class="btn-primary blue" id="rcEstimateBtn" onclick="estimateRecipe()">✨ Calculate per-serving</button>
+      </div>
+      <div class="we-feedback" id="rcFeedback" style="color:#60a5fa"></div>
+    </div>
+    <div class="form-grid">
+      <div class="form-field">
+        <label>Calories / serving</label>
+        <input type="number" id="rcCal" placeholder="0" inputmode="decimal">
+      </div>
+      <div class="form-field">
+        <label>Protein (g)</label>
+        <input type="number" id="rcProtein" placeholder="0" inputmode="decimal">
+      </div>
+      <div class="form-field">
+        <label>Carbs (g)</label>
+        <input type="number" id="rcCarbs" placeholder="0" inputmode="decimal">
+      </div>
+      <div class="form-field">
+        <label>Fiber (g)</label>
+        <input type="number" id="rcFiber" placeholder="0" inputmode="decimal">
+      </div>
+      <div class="form-field">
+        <label>Fat (g)</label>
+        <input type="number" id="rcFat" placeholder="0" inputmode="decimal">
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">💾 Macros are per serving. Saved recipes appear in your library below.</div>
+    <button class="btn-primary" onclick="saveRecipe(false)" style="background:#7c3aed;color:#fff">Save to Library</button>
+    <button class="btn-primary" onclick="saveRecipe(true)" style="margin-top:8px">Log 1 Serving + Save</button>
+    <button class="btn-cancel" onclick="closeRecipeModal()">Cancel</button>
+    <div id="rcLibrarySection" class="cf-lib-section" style="display:none">
+      <div class="cf-lib-head">📚 Your Recipes</div>
+      <div id="rcLibraryList"></div>
+    </div>
   </div>
 </div>
 <div class="modal-bg" id="photoModal">
@@ -1737,6 +1802,7 @@ const STORAGE_KEYS = {
   weight: 'fuellog_weight',
   weightUnit: 'fuellog_wunit',
   customFoods: 'fuellog_custom_foods',
+  recipes: 'fuellog_recipes',
   water: 'fuellog_water_',
   log: 'fuellog_log_'
 };
@@ -1797,6 +1863,7 @@ let log = [];
 let weightLog = {};
 let waterEntry = { oz: 0, date: todayKey() };
 let customFoods = [];
+let recipes = [];
 let photoData = null;
 let photoMime = 'image/jpeg';
 let photoResult = null;
@@ -3200,6 +3267,182 @@ async function deleteCustomFood(id) {
   renderCustomFoodLibrary();
 }
 
+// ---- Recipes: build from ingredients (AI per-serving macros) + a library ----
+async function loadRecipes() {
+  const result = await apiRequest('/recipes');
+  if (result.ok) {
+    recipes = result.body || [];
+    saveLocal(STORAGE_KEYS.recipes, recipes);
+  } else {
+    recipes = loadLocal(STORAGE_KEYS.recipes, []);
+  }
+  return recipes;
+}
+
+const RC_FIELDS = ['rcName', 'rcEmoji', 'rcIngredients', 'rcCal', 'rcProtein', 'rcCarbs', 'rcFiber', 'rcFat'];
+
+function openRecipeModal() {
+  RC_FIELDS.forEach(id => document.getElementById(id).value = '');
+  document.getElementById('rcServings').value = '1';
+  document.getElementById('rcFeedback').textContent = '';
+  document.getElementById('rcError').classList.remove('show');
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  document.getElementById('rcMicBtn').style.display = SR ? '' : 'none';
+  setMicState(false);
+  renderRecipeLibrary();
+  document.getElementById('recipeModal').classList.add('open');
+}
+
+function closeRecipeModal() {
+  stopDictation();
+  document.getElementById('recipeModal').classList.remove('open');
+}
+
+// Estimate the recipe's COMBINED total via AI, then divide by servings.
+async function estimateRecipe() {
+  const ingredients = document.getElementById('rcIngredients').value.trim();
+  const servings = Math.max(0.5, parseFloat(document.getElementById('rcServings').value) || 1);
+  const fb = document.getElementById('rcFeedback');
+  const btn = document.getElementById('rcEstimateBtn');
+  if (!ingredients) {
+    fb.style.color = 'var(--danger)';
+    fb.textContent = 'List the ingredients first.';
+    return;
+  }
+  stopDictation();
+  fb.style.color = '#60a5fa';
+  fb.textContent = '✨ Calculating…';
+  btn.disabled = true;
+  try {
+    const desc = `Estimate the COMBINED TOTAL nutrition of this whole recipe (all ingredients added together, not per serving):\n${ingredients}`;
+    const result = await apiRequest('/analyze', { method: 'POST', body: JSON.stringify({ description: desc }) });
+    if (!result.ok || !result.body || result.body.error) throw new Error(result.body?.error || 'failed');
+    const r = result.body;
+    const per = v => Math.round((Number(v) || 0) / servings);
+    document.getElementById('rcCal').value = per(r.calories);
+    document.getElementById('rcProtein').value = per(r.protein_g);
+    document.getElementById('rcCarbs').value = per(r.carbs_g);
+    document.getElementById('rcFiber').value = per(r.fiber_g);
+    document.getElementById('rcFat').value = per(r.fat_g);
+    if (!document.getElementById('rcName').value.trim() && r.name) document.getElementById('rcName').value = r.name;
+    if (!document.getElementById('rcEmoji').value.trim() && r.emoji) document.getElementById('rcEmoji').value = r.emoji;
+    fb.textContent = `✓ Total ${Math.round(r.calories || 0)} cal ÷ ${servings} = ${per(r.calories)}/serving. Review & save.`;
+  } catch (e) {
+    fb.style.color = 'var(--danger)';
+    fb.textContent = 'Could not calculate. Edit the macros manually or try again.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function saveRecipe(logNow) {
+  stopDictation();
+  const name = document.getElementById('rcName').value.trim();
+  if (!name) {
+    const err = document.getElementById('rcError');
+    err.textContent = 'Recipe name is required.';
+    err.classList.add('show');
+    return;
+  }
+  const recipe = {
+    name,
+    emoji: document.getElementById('rcEmoji').value.trim() || foodEmoji(name) || '🍲',
+    servings: Math.max(0.5, parseFloat(document.getElementById('rcServings').value) || 1),
+    ingredients: document.getElementById('rcIngredients').value.trim(),
+    cal: parseFloat(document.getElementById('rcCal').value) || 0,
+    protein: parseFloat(document.getElementById('rcProtein').value) || 0,
+    carbs: parseFloat(document.getElementById('rcCarbs').value) || 0,
+    fiber: parseFloat(document.getElementById('rcFiber').value) || 0,
+    fat: parseFloat(document.getElementById('rcFat').value) || 0
+  };
+  const result = await apiRequest('/recipes', { method: 'POST', body: JSON.stringify(recipe) });
+  if (result.ok) {
+    recipes = [result.body, ...recipes.filter(r => r.name.toLowerCase() !== name.toLowerCase())];
+  } else {
+    recipes = [{ id: Date.now(), ...recipe }, ...recipes.filter(r => r.name.toLowerCase() !== name.toLowerCase())];
+  }
+  saveLocal(STORAGE_KEYS.recipes, recipes);
+  if (logNow) {
+    await logRecipeEntry(recipe, 1);
+    closeRecipeModal();
+    return;
+  }
+  renderRecipeLibrary();
+  RC_FIELDS.forEach(id => document.getElementById(id).value = '');
+  document.getElementById('rcServings').value = '1';
+  const fb = document.getElementById('rcFeedback');
+  fb.style.color = 'var(--protein)';
+  fb.textContent = `✓ "${name}" saved to your recipes below.`;
+  document.querySelector('#recipeModal .modal').scrollTop = 0;
+}
+
+async function logRecipeEntry(r, qty) {
+  const entry = {
+    name: r.name, emoji: r.emoji || '🍲',
+    cal: (r.cal || 0) * qty, protein: (r.protein || 0) * qty, carbs: (r.carbs || 0) * qty,
+    fiber: (r.fiber || 0) * qty, fat: (r.fat || 0) * qty,
+    source: `Recipe · ${qty} serving${qty !== 1 ? 's' : ''}`, ts: Date.now(), date: todayKey()
+  };
+  const saved = await saveFoodEntry(entry);
+  log.push(saved);
+  saveLog();
+  renderLog();
+  updateTotals();
+}
+
+function findRecipe(id) { return recipes.find(r => String(r.id) === String(id)); }
+
+function renderRecipeLibrary() {
+  const section = document.getElementById('rcLibrarySection');
+  const list = document.getElementById('rcLibraryList');
+  if (!recipes || recipes.length === 0) { section.style.display = 'none'; list.innerHTML = ''; return; }
+  section.style.display = 'block';
+  list.innerHTML = recipes.map(r => `
+    <div class="cf-lib-item">
+      <span class="cf-lib-emoji">${cfEsc(displayEmoji(r.name, r.emoji))}</span>
+      <div class="cf-lib-info" onclick="prefillRecipe('${r.id}')" title="Tap to edit">
+        <div class="cf-lib-name">${cfEsc(r.name)}</div>
+        <div class="cf-lib-macros">${Math.round(r.cal || 0)} cal/serv · P${Math.round(r.protein || 0)} C${Math.round(r.carbs || 0)} F${Math.round(r.fat || 0)}</div>
+      </div>
+      <span class="cf-lib-times">×</span>
+      <input class="cf-lib-qty" type="number" value="1" min="0.5" step="0.5" inputmode="decimal" id="rcQty_${r.id}">
+      <button class="cf-lib-add" onclick="logRecipe('${r.id}')" title="Log servings">＋</button>
+      <button class="cf-lib-del" onclick="deleteRecipe('${r.id}')" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+function prefillRecipe(id) {
+  const r = findRecipe(id);
+  if (!r) return;
+  document.getElementById('rcName').value = r.name || '';
+  document.getElementById('rcEmoji').value = r.emoji || '';
+  document.getElementById('rcServings').value = r.servings || 1;
+  document.getElementById('rcIngredients').value = r.ingredients || '';
+  document.getElementById('rcCal').value = r.cal || '';
+  document.getElementById('rcProtein').value = r.protein || '';
+  document.getElementById('rcCarbs').value = r.carbs || '';
+  document.getElementById('rcFiber').value = r.fiber || '';
+  document.getElementById('rcFat').value = r.fat || '';
+  document.querySelector('#recipeModal .modal').scrollTop = 0;
+}
+
+async function logRecipe(id) {
+  const r = findRecipe(id);
+  if (!r) return;
+  const qtyEl = document.getElementById('rcQty_' + id);
+  const qty = qtyEl ? (parseFloat(qtyEl.value) || 1) : 1;
+  await logRecipeEntry(r, qty);
+  closeRecipeModal();
+}
+
+async function deleteRecipe(id) {
+  if (!confirm('Remove this recipe from your library?')) return;
+  if (currentUser) await apiRequest(`/recipes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  recipes = recipes.filter(r => String(r.id) !== String(id));
+  saveLocal(STORAGE_KEYS.recipes, recipes);
+  renderRecipeLibrary();
+}
+
 // ---- Quick Add: search your previously-logged foods, most-frequent first ----
 let quickCatalog = [];
 let quickRendered = [];
@@ -3334,29 +3577,32 @@ async function quickLog(i) {
 // No AI tokens: it transcribes locally, then the normal estimate runs on the text.
 let recognition = null;
 let dictating = false;
+let dictationBtn = null;
 
 function setMicState(on) {
   dictating = on;
-  const b = document.getElementById('cfMicBtn');
-  if (!b) return;
-  b.classList.toggle('recording', on);
-  b.textContent = on ? '⏹️' : '🎤';
+  if (dictationBtn) {
+    dictationBtn.classList.toggle('recording', on);
+    dictationBtn.textContent = on ? '⏹️' : '🎤';
+  }
+  if (!on) dictationBtn = null;
 }
 
-function toggleDictation() {
+// Generic voice-to-text. targetId = textarea to fill, btn = the mic button,
+// fbId = optional feedback element id for status messages.
+function toggleDictation(targetId, btn, fbId) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const fb = document.getElementById('cfAiFeedback');
+  const fb = fbId ? document.getElementById(fbId) : null;
   if (!SR) {
-    fb.style.color = 'var(--danger)';
-    fb.textContent = 'Voice input isn’t supported on this browser — try Chrome or Safari.';
+    if (fb) { fb.style.color = 'var(--danger)'; fb.textContent = 'Voice input isn’t supported on this browser — try Chrome or Safari.'; }
     return;
   }
   if (dictating) { stopDictation(); return; }
   // Tear down any prior instance so we never have two recognizers firing.
   if (recognition) { try { recognition.onresult = recognition.onend = recognition.onerror = null; recognition.abort(); } catch (e) {} recognition = null; }
 
-  const ta = document.getElementById('cfDesc');
-  // Text already in the box before this dictation; the spoken phrase is appended once.
+  dictationBtn = btn;
+  const ta = document.getElementById(targetId);
   const base = ta.value.trim();
   recognition = new SR();
   recognition.lang = 'en-US';
@@ -3364,7 +3610,6 @@ function toggleDictation() {
   recognition.continuous = false;   // one phrase per tap — avoids repeat bugs
   recognition.maxAlternatives = 1;
   recognition.onresult = (ev) => {
-    // ev.results holds only the current utterance; rebuild it fresh each event.
     let phrase = '';
     for (let i = 0; i < ev.results.length; i++) phrase += ev.results[i][0].transcript;
     ta.value = (base ? base + ' ' : '') + phrase.trim();
@@ -3372,13 +3617,11 @@ function toggleDictation() {
   recognition.onend = () => setMicState(false);
   recognition.onerror = (e) => {
     setMicState(false);
-    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-      fb.style.color = 'var(--danger)';
-      fb.textContent = 'Microphone permission denied.';
+    if (fb && (e.error === 'not-allowed' || e.error === 'service-not-allowed')) {
+      fb.style.color = 'var(--danger)'; fb.textContent = 'Microphone permission denied.';
     }
   };
-  fb.style.color = '#60a5fa';
-  fb.textContent = '🎤 Listening… speak, then it stops on a pause. Tap 🎤 again to add more.';
+  if (fb) { fb.style.color = '#60a5fa'; fb.textContent = '🎤 Listening… speak, then it stops on a pause. Tap 🎤 again to add more.'; }
   recognition.start();
   setMicState(true);
 }
@@ -3952,6 +4195,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadTodayLog();
   await loadWater();
   await loadCustomFoods();
+  await loadRecipes();
   await loadWeightLog();
   await syncHistoryCache(365);
   loadViewDate();
