@@ -290,6 +290,18 @@
     cursor: pointer;
   }
   .log-entry:active { background: var(--surface2); }
+  .weigh-reminder {
+    display: flex; align-items: center; gap: 10px;
+    margin: 12px 20px 0; padding: 11px 14px;
+    background: rgba(167,139,250,0.12); border: 1px solid #3b1f6e;
+    border-radius: var(--radius); font-size: 13px; color: var(--text);
+  }
+  .weigh-reminder .wr-text { flex: 1; line-height: 1.35; }
+  .weigh-reminder .wr-log {
+    background: #a78bfa; color: #1a1030; border: none; border-radius: 8px;
+    font-weight: 700; font-size: 12px; padding: 7px 12px; cursor: pointer; flex-shrink: 0;
+  }
+  .weigh-reminder .wr-x { background: none; border: none; color: var(--muted); font-size: 14px; cursor: pointer; padding: 2px 4px; flex-shrink: 0; }
   .day-nav {
     display: flex; align-items: center; justify-content: center; gap: 14px;
     padding: 12px 20px 0;
@@ -1198,6 +1210,12 @@
   <button class="tab-btn" id="tabAnalysis" onclick="switchTab('analysis')">🔬 Insights</button>
 </div>
 <div class="tab-content active" id="tabContentToday">
+  <div class="weigh-reminder" id="weighReminder" style="display:none">
+    <span>⚖️</span>
+    <span class="wr-text">Time for your weekly weigh-in — last logged <span id="weighReminderDays">7</span> days ago.</span>
+    <button class="wr-log" onclick="goWeighIn()">Log</button>
+    <button class="wr-x" onclick="dismissWeighReminder()" title="Dismiss">✕</button>
+  </div>
   <div class="day-nav">
     <button class="day-arrow" id="dayPrev" onclick="changeViewDate(-1)" title="Previous day">◀</button>
     <span class="day-label" id="dayLabel">Today</span>
@@ -3010,6 +3028,35 @@ async function logWeight() {
   setTimeout(() => { fb.textContent = ''; }, 3000);
   document.getElementById('weightInput').value = '';
   renderWeightTab();
+  checkWeighReminder();
+}
+
+// In-app weekly weigh-in nudge: shown on Today when it's been 7+ days since the
+// last weight entry (and not dismissed today). Only for people who track weight.
+function checkWeighReminder() {
+  const el = document.getElementById('weighReminder');
+  if (!el) return;
+  const keys = Object.keys(weightLog || {}).sort();
+  if (keys.length === 0) { el.style.display = 'none'; return; }
+  const last = keys[keys.length - 1];
+  const days = Math.floor((new Date(todayKey() + 'T12:00:00') - new Date(last + 'T12:00:00')) / 86400000);
+  if (days >= 7 && loadLocal('fuellog_weigh_dismiss', '') !== todayKey()) {
+    document.getElementById('weighReminderDays').textContent = days;
+    el.style.display = '';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+function goWeighIn() {
+  dismissWeighReminder();
+  switchTab('weight');
+  setTimeout(() => document.getElementById('weightInput')?.focus(), 200);
+}
+
+function dismissWeighReminder() {
+  saveLocal('fuellog_weigh_dismiss', todayKey());
+  document.getElementById('weighReminder').style.display = 'none';
 }
 
 function updateWaterUI(oz) {
@@ -3908,6 +3955,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadWeightLog();
   await syncHistoryCache(365);
   loadViewDate();
+  checkWeighReminder();
 });
 </script>
 </body>
