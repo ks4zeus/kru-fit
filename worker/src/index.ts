@@ -476,8 +476,8 @@ export default {
 
         const inserted = await db
           .prepare(
-            `INSERT INTO custom_foods (user_id, name, emoji, cal, protein, carbs, fat, fiber, serving)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO custom_foods (user_id, name, emoji, cal, protein, carbs, fat, fiber, serving, ingredients, servings)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             userEmail,
@@ -488,62 +488,12 @@ export default {
             body.carbs ?? 0,
             body.fat ?? 0,
             body.fiber ?? 0,
-            body.serving || null
+            body.serving || null,
+            body.ingredients || null,
+            body.servings ?? 1
           )
           .run();
 
-        return jsonResponse({ id: inserted.meta?.last_row_id, ...body });
-      }
-
-      if (request.method === "DELETE") {
-        const idSegment = segments[2];
-        if (!idSegment) {
-          return jsonResponse({ error: "Missing id" }, 400);
-        }
-        const id = Number(idSegment);
-        if (!Number.isFinite(id) || id <= 0) {
-          return jsonResponse({ error: "Invalid id" }, 400);
-        }
-        await db
-          .prepare("DELETE FROM custom_foods WHERE id = ? AND user_id = ?")
-          .bind(id, userEmail)
-          .run();
-        return jsonResponse({ success: true });
-      }
-    }
-
-    if (segments[1] === "recipes") {
-      if (request.method === "GET") {
-        const { results } = await db
-          .prepare("SELECT * FROM recipes WHERE user_id = ? ORDER BY created_at DESC")
-          .bind(userEmail)
-          .all();
-        return jsonResponse(results || []);
-      }
-
-      if (request.method === "POST") {
-        const body = await parseJson(request);
-        if (!body?.name) {
-          return jsonResponse({ error: "Missing name" }, 400);
-        }
-        const inserted = await db
-          .prepare(
-            `INSERT INTO recipes (user_id, name, emoji, servings, ingredients, cal, protein, carbs, fat, fiber)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          )
-          .bind(
-            userEmail,
-            body.name,
-            body.emoji || null,
-            body.servings ?? 1,
-            body.ingredients || "",
-            body.cal ?? 0,
-            body.protein ?? 0,
-            body.carbs ?? 0,
-            body.fat ?? 0,
-            body.fiber ?? 0
-          )
-          .run();
         return jsonResponse({ id: inserted.meta?.last_row_id, ...body });
       }
 
@@ -558,19 +508,20 @@ export default {
         }
         await db
           .prepare(
-            `UPDATE recipes SET name = ?, emoji = ?, servings = ?, ingredients = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?
+            `UPDATE custom_foods SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, serving = ?, ingredients = ?, servings = ?
              WHERE id = ? AND user_id = ?`
           )
           .bind(
             body.name,
             body.emoji || null,
-            body.servings ?? 1,
-            body.ingredients || "",
             body.cal ?? 0,
             body.protein ?? 0,
             body.carbs ?? 0,
             body.fat ?? 0,
             body.fiber ?? 0,
+            body.serving || null,
+            body.ingredients || null,
+            body.servings ?? 1,
             id,
             userEmail
           )
@@ -588,7 +539,7 @@ export default {
           return jsonResponse({ error: "Invalid id" }, 400);
         }
         await db
-          .prepare("DELETE FROM recipes WHERE id = ? AND user_id = ?")
+          .prepare("DELETE FROM custom_foods WHERE id = ? AND user_id = ?")
           .bind(id, userEmail)
           .run();
         return jsonResponse({ success: true });
