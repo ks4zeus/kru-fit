@@ -1080,6 +1080,18 @@
   .ai-estimate textarea:focus { border-color: var(--carbs); }
   .ai-estimate textarea::placeholder { color: var(--muted); }
   .ai-estimate .btn-primary { padding: 11px; }
+  .ai-actions { display: flex; gap: 8px; }
+  .ai-actions .btn-primary { flex: 1; }
+  .mic-btn {
+    flex-shrink: 0; width: 46px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; font-size: 18px; cursor: pointer; color: var(--text);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mic-btn.recording {
+    background: rgba(239,68,68,0.15); border-color: var(--danger);
+    animation: micPulse 1.1s ease-in-out infinite;
+  }
+  @keyframes micPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); } 50% { box-shadow: 0 0 0 5px rgba(239,68,68,0); } }
 
   .cf-lib-section { margin-top: 18px; }
   .cf-lib-head {
@@ -1386,9 +1398,12 @@
     <div class="modal-title">✏️ Custom Food</div>
     <div class="error-msg" id="cfError"></div>
     <div class="ai-estimate">
-      <label>✨ Describe it & let AI fill the macros</label>
+      <label>✨ Describe it (type or 🎤 speak) & let AI fill the macros</label>
       <textarea id="cfDesc" rows="2" placeholder="e.g. 2 scrambled eggs with cheddar and a slice of buttered sourdough toast"></textarea>
-      <button class="btn-primary blue" id="cfEstimateBtn" onclick="estimateMacros()">✨ Estimate macros</button>
+      <div class="ai-actions">
+        <button class="mic-btn" id="cfMicBtn" onclick="toggleDictation()" title="Dictate">🎤</button>
+        <button class="btn-primary blue" id="cfEstimateBtn" onclick="estimateMacros()">✨ Estimate macros</button>
+      </div>
       <div class="we-feedback" id="cfAiFeedback" style="color:#60a5fa"></div>
     </div>
     <div class="form-grid">
@@ -3051,11 +3066,15 @@ function openCustomFoodModal(prefill) {
   document.getElementById('cfDesc').value = '';
   document.getElementById('cfAiFeedback').textContent = '';
   document.getElementById('cfError').classList.remove('show');
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  document.getElementById('cfMicBtn').style.display = SR ? '' : 'none';
+  setMicState(false);
   renderCustomFoodLibrary();
   document.getElementById('customFoodModal').classList.add('open');
 }
 
 function closeCustomFoodModal() {
+  stopDictation();
   document.getElementById('customFoodModal').classList.remove('open');
 }
 
@@ -3264,7 +3283,65 @@ async function quickLog(i) {
 }
 
 // Estimate macros from a free-text description via the AI proxy, then fill the form.
+// Browser-native speech-to-text (Web Speech API) — fills the description box.
+// No AI tokens: it transcribes locally, then the normal estimate runs on the text.
+let recognition = null;
+let dictating = false;
+
+function setMicState(on) {
+  dictating = on;
+  const b = document.getElementById('cfMicBtn');
+  if (!b) return;
+  b.classList.toggle('recording', on);
+  b.textContent = on ? '⏹️' : '🎤';
+}
+
+function toggleDictation() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const fb = document.getElementById('cfAiFeedback');
+  if (!SR) {
+    fb.style.color = 'var(--danger)';
+    fb.textContent = 'Voice input isn’t supported on this browser — try Chrome or Safari.';
+    return;
+  }
+  if (dictating) { if (recognition) recognition.stop(); return; }
+  recognition = new SR();
+  recognition.lang = 'en-US';
+  recognition.interimResults = true;
+  recognition.continuous = true;
+  const ta = document.getElementById('cfDesc');
+  const base = ta.value.trim() ? ta.value.trim() + ' ' : '';
+  let finalText = '';
+  recognition.onresult = (ev) => {
+    let interim = '';
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const t = ev.results[i][0].transcript;
+      if (ev.results[i].isFinal) finalText += t + ' ';
+      else interim += t;
+    }
+    ta.value = base + finalText + interim;
+  };
+  recognition.onend = () => setMicState(false);
+  recognition.onerror = (e) => {
+    setMicState(false);
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      fb.style.color = 'var(--danger)';
+      fb.textContent = 'Microphone permission denied.';
+    }
+  };
+  fb.textContent = '🎤 Listening… tap ⏹ when done.';
+  fb.style.color = '#60a5fa';
+  recognition.start();
+  setMicState(true);
+}
+
+function stopDictation() {
+  if (recognition && dictating) { try { recognition.stop(); } catch (e) {} }
+  setMicState(false);
+}
+
 async function estimateMacros() {
+  stopDictation();
   const desc = document.getElementById('cfDesc').value.trim();
   const feedback = document.getElementById('cfAiFeedback');
   const btn = document.getElementById('cfEstimateBtn');
