@@ -3304,22 +3304,23 @@ function toggleDictation() {
     fb.textContent = 'Voice input isn’t supported on this browser — try Chrome or Safari.';
     return;
   }
-  if (dictating) { if (recognition) recognition.stop(); return; }
+  if (dictating) { stopDictation(); return; }
+  // Tear down any prior instance so we never have two recognizers firing.
+  if (recognition) { try { recognition.onresult = recognition.onend = recognition.onerror = null; recognition.abort(); } catch (e) {} recognition = null; }
+
+  const ta = document.getElementById('cfDesc');
+  // Text already in the box before this dictation; the spoken phrase is appended once.
+  const base = ta.value.trim();
   recognition = new SR();
   recognition.lang = 'en-US';
   recognition.interimResults = true;
-  recognition.continuous = true;
-  const ta = document.getElementById('cfDesc');
-  const base = ta.value.trim() ? ta.value.trim() + ' ' : '';
+  recognition.continuous = false;   // one phrase per tap — avoids repeat bugs
+  recognition.maxAlternatives = 1;
   recognition.onresult = (ev) => {
-    // Rebuild the full transcript from all results each event (don't accumulate,
-    // or finalized phrases get repeated).
-    let full = '';
-    for (let i = 0; i < ev.results.length; i++) {
-      full += ev.results[i][0].transcript;
-      if (ev.results[i].isFinal) full += ' ';
-    }
-    ta.value = (base + full).replace(/\s+/g, ' ');
+    // ev.results holds only the current utterance; rebuild it fresh each event.
+    let phrase = '';
+    for (let i = 0; i < ev.results.length; i++) phrase += ev.results[i][0].transcript;
+    ta.value = (base ? base + ' ' : '') + phrase.trim();
   };
   recognition.onend = () => setMicState(false);
   recognition.onerror = (e) => {
@@ -3329,8 +3330,8 @@ function toggleDictation() {
       fb.textContent = 'Microphone permission denied.';
     }
   };
-  fb.textContent = '🎤 Listening… tap ⏹ when done.';
   fb.style.color = '#60a5fa';
+  fb.textContent = '🎤 Listening… speak, then it stops on a pause. Tap 🎤 again to add more.';
   recognition.start();
   setMicState(true);
 }
