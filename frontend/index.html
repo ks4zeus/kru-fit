@@ -3311,15 +3311,15 @@ function toggleDictation() {
   recognition.continuous = true;
   const ta = document.getElementById('cfDesc');
   const base = ta.value.trim() ? ta.value.trim() + ' ' : '';
-  let finalText = '';
   recognition.onresult = (ev) => {
-    let interim = '';
-    for (let i = ev.resultIndex; i < ev.results.length; i++) {
-      const t = ev.results[i][0].transcript;
-      if (ev.results[i].isFinal) finalText += t + ' ';
-      else interim += t;
+    // Rebuild the full transcript from all results each event (don't accumulate,
+    // or finalized phrases get repeated).
+    let full = '';
+    for (let i = 0; i < ev.results.length; i++) {
+      full += ev.results[i][0].transcript;
+      if (ev.results[i].isFinal) full += ' ';
     }
-    ta.value = base + finalText + interim;
+    ta.value = (base + full).replace(/\s+/g, ' ');
   };
   recognition.onend = () => setMicState(false);
   recognition.onerror = (e) => {
