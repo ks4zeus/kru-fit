@@ -1810,8 +1810,14 @@ function removeLocal(key) {
   window.localStorage.removeItem(key);
 }
 
+// Local calendar date as YYYY-MM-DD (NOT UTC — toISOString would mis-bucket
+// evening entries into the next/previous day for non-UTC timezones).
+function dateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function todayKey() {
-  return new Date().toISOString().split('T')[0];
+  return dateKey(new Date());
 }
 
 // ---- Day navigation: review the last 7 days and pull a meal into today ----
@@ -1823,20 +1829,20 @@ function activeEntries() {
 
 function minViewKey() {
   const d = new Date(); d.setDate(d.getDate() - 7);
-  return d.toISOString().split('T')[0];
+  return dateKey(d);
 }
 
 function dayLabelFor(key) {
   if (key === todayKey()) return 'Today';
   const y = new Date(); y.setDate(y.getDate() - 1);
-  if (key === y.toISOString().split('T')[0]) return 'Yesterday';
+  if (key === dateKey(y)) return 'Yesterday';
   return new Date(key + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 function changeViewDate(delta) {
   const d = new Date(viewDate + 'T12:00:00');
   d.setDate(d.getDate() + delta);
-  const key = d.toISOString().split('T')[0];
+  const key = dateKey(d);
   if (key > todayKey() || key < minViewKey()) return;
   viewDate = key;
   loadViewDate();
@@ -2717,7 +2723,7 @@ function getHistoryData(days) {
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const key = STORAGE_KEYS.log + d.toISOString().split('T')[0];
+    const key = STORAGE_KEYS.log + dateKey(d);
     const saved = window.localStorage.getItem(key);
     const entries = saved ? JSON.parse(saved) : [];
     const totals = entries.reduce((acc, e) => {
@@ -2811,7 +2817,7 @@ function calcStreak() {
   for (let i = 0; i < 365; i++) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const key = STORAGE_KEYS.log + d.toISOString().split('T')[0];
+    const key = STORAGE_KEYS.log + dateKey(d);
     const saved = window.localStorage.getItem(key);
     if (saved && JSON.parse(saved).length > 0) streak++;
     else if (i > 0) break;
@@ -3161,7 +3167,7 @@ function buildQuickCatalog() {
   };
   for (let i = 0; i < 365; i++) {
     const d = new Date(); d.setDate(d.getDate() - i);
-    const raw = window.localStorage.getItem(STORAGE_KEYS.log + d.toISOString().split('T')[0]);
+    const raw = window.localStorage.getItem(STORAGE_KEYS.log + dateKey(d));
     if (raw) { try { JSON.parse(raw).forEach(e => add(e, true)); } catch (e) {} }
   }
   (customFoods || []).forEach(f => add(f, false));   // include saved foods not yet logged
@@ -3312,7 +3318,7 @@ function renderWeightTab() {
   const keys = Object.keys(weightLog).sort();
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - weightPeriod);
-  const cutoffKey = cutoff.toISOString().split('T')[0];
+  const cutoffKey = dateKey(cutoff);
   const filteredKeys = keys.filter(k => k >= cutoffKey);
   const isEmpty = keys.length === 0;
   document.getElementById('weightEmpty').style.display = isEmpty ? 'block' : 'none';
@@ -3506,7 +3512,7 @@ async function renderAnalysis() {
   for (let i = 0; i < analysisPeriod; i++) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const key = STORAGE_KEYS.log + d.toISOString().split('T')[0];
+    const key = STORAGE_KEYS.log + dateKey(d);
     const raw = window.localStorage.getItem(key);
     if (raw) JSON.parse(raw).forEach(e => entries.push(e));
   }
@@ -3566,7 +3572,7 @@ function gatherDietSummary(days) {
   const map = {};
   for (let i = 0; i < days; i++) {
     const d = new Date(); d.setDate(d.getDate() - i);
-    const raw = window.localStorage.getItem(STORAGE_KEYS.log + d.toISOString().split('T')[0]);
+    const raw = window.localStorage.getItem(STORAGE_KEYS.log + dateKey(d));
     if (raw) { try { JSON.parse(raw).forEach(e => { const k = (e.name || '').trim(); if (k) map[k] = (map[k] || 0) + 1; }); } catch (e) {} }
   }
   const topFoods = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([name, count]) => `${name} (${count}x)`);
