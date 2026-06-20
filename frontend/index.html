@@ -290,6 +290,22 @@
     cursor: pointer;
   }
   .log-entry:active { background: var(--surface2); }
+  .day-nav {
+    display: flex; align-items: center; justify-content: center; gap: 14px;
+    padding: 12px 20px 0;
+  }
+  .day-arrow {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    width: 34px; height: 34px; border-radius: 9px; font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .day-arrow:disabled { opacity: 0.3; cursor: default; }
+  .day-label { font-size: 14px; font-weight: 600; min-width: 150px; text-align: center; }
+  .entry-add-today {
+    align-self: center; flex-shrink: 0; background: var(--protein); color: #0a1a12;
+    border: none; border-radius: 8px; font-weight: 700; font-size: 16px; line-height: 1;
+    padding: 6px 11px; cursor: pointer;
+  }
   .entry-thumb {
     width: 44px;
     height: 44px;
@@ -1170,6 +1186,11 @@
   <button class="tab-btn" id="tabAnalysis" onclick="switchTab('analysis')">🔬 Insights</button>
 </div>
 <div class="tab-content active" id="tabContentToday">
+  <div class="day-nav">
+    <button class="day-arrow" id="dayPrev" onclick="changeViewDate(-1)" title="Previous day">◀</button>
+    <span class="day-label" id="dayLabel">Today</span>
+    <button class="day-arrow" id="dayNext" onclick="changeViewDate(1)" title="Next day">▶</button>
+  </div>
   <div class="cal-section">
     <div class="ring-wrap">
       <svg width="110" height="110" viewBox="0 0 110 110">
@@ -1228,10 +1249,10 @@
       <div class="mc-goal" id="mcFatGoal">/ 60g</div>
     </div>
   </div>
-  <div class="quick-add-bar" onclick="openQuickAdd()">
+  <div class="quick-add-bar today-only" onclick="openQuickAdd()">
     🔍 <span>Quick add from your foods…</span>
   </div>
-  <div class="add-section">
+  <div class="add-section today-only">
     <button class="add-btn photo" onclick="openPhotoModal()">
       <span class="btn-icon">📷</span>
       <span class="btn-label">Photo</span>
@@ -1248,7 +1269,7 @@
       <span class="btn-sub">Add food</span>
     </button>
   </div>
-  <div class="water-bar-wrap">
+  <div class="water-bar-wrap today-only">
     <div class="water-bar-head">
       <span class="wlabel">💧 Water</span>
       <span class="wval"><span id="waterCups">0</span> / <span id="waterGoal">64</span> oz</span>
@@ -1261,7 +1282,7 @@
       <button class="water-btn" onclick="addWater(24)">+24 oz</button>
     </div>
   </div>
-  <div class="netcarb-toggle">
+  <div class="netcarb-toggle today-only">
     <label class="toggle-switch">
       <input type="checkbox" id="netCarbToggle" onchange="toggleNetCarbs()">
       <span class="toggle-slider"></span>
@@ -1269,8 +1290,8 @@
     <span>Net carbs <span style="font-size:11px">(carbs − fiber)</span></span>
   </div>
   <div class="section-head">
-    <h2>Today's Log</h2>
-    <button class="clear-btn" onclick="clearLog()">Clear all</button>
+    <h2 id="logHeading">Today's Log</h2>
+    <button class="clear-btn today-only" onclick="clearLog()">Clear all</button>
   </div>
   <div class="log-list" id="logList">
     <div class="empty-state">
@@ -1793,6 +1814,62 @@ function todayKey() {
   return new Date().toISOString().split('T')[0];
 }
 
+// ---- Day navigation: review the last 7 days and pull a meal into today ----
+let viewDate = todayKey();
+
+function activeEntries() {
+  return viewDate === todayKey() ? log : loadLocal(STORAGE_KEYS.log + viewDate, []);
+}
+
+function minViewKey() {
+  const d = new Date(); d.setDate(d.getDate() - 7);
+  return d.toISOString().split('T')[0];
+}
+
+function dayLabelFor(key) {
+  if (key === todayKey()) return 'Today';
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  if (key === y.toISOString().split('T')[0]) return 'Yesterday';
+  return new Date(key + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function changeViewDate(delta) {
+  const d = new Date(viewDate + 'T12:00:00');
+  d.setDate(d.getDate() + delta);
+  const key = d.toISOString().split('T')[0];
+  if (key > todayKey() || key < minViewKey()) return;
+  viewDate = key;
+  loadViewDate();
+}
+
+async function loadViewDate() {
+  const isToday = viewDate === todayKey();
+  document.getElementById('dayLabel').textContent = dayLabelFor(viewDate);
+  document.getElementById('dayNext').disabled = viewDate >= todayKey();
+  document.getElementById('dayPrev').disabled = viewDate <= minViewKey();
+  document.getElementById('logHeading').textContent = isToday ? "Today's Log" : dayLabelFor(viewDate) + ' · Log';
+  document.querySelectorAll('.today-only').forEach(el => { el.style.display = isToday ? '' : 'none'; });
+  if (!isToday) await ensureHistory();
+  renderLog();
+  updateTotals();
+}
+
+// Copy a past entry into today's log.
+async function addPastToToday(i, btn) {
+  const e = activeEntries()[i];
+  if (!e) return;
+  if (btn) { btn.textContent = '✓'; btn.disabled = true; }
+  const entry = {
+    name: e.name, emoji: e.emoji || '🍽️',
+    cal: e.cal || 0, protein: e.protein || 0, carbs: e.carbs || 0, fiber: e.fiber || 0, fat: e.fat || 0,
+    source: e.source || 'Re-added', ts: Date.now(), date: todayKey()
+  };
+  const saved = await saveFoodEntry(entry);
+  log.push(saved);
+  saveLocal(STORAGE_KEYS.log + todayKey(), log);
+  setTimeout(() => { if (btn) { btn.textContent = '＋'; btn.disabled = false; } }, 1200);
+}
+
 function setUserEmail(text) {
   const el = document.getElementById('userEmail');
   if (el) el.textContent = text;
@@ -2124,7 +2201,7 @@ async function saveCustomFood(logNow) {
 }
 
 function updateTotals() {
-  const totals = log.reduce((acc, e) => {
+  const totals = activeEntries().reduce((acc, e) => {
     acc.cal += Number(e.cal || 0);
     acc.protein += Number(e.protein || 0);
     acc.carbs += Number(e.carbs || 0);
@@ -2158,18 +2235,24 @@ function updateTotals() {
 function renderLog() {
   const el = document.getElementById('logList');
   const showNet = document.getElementById('netCarbToggle')?.checked;
-  if (log.length === 0) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🍽️</div><p>No food logged yet.<br>Tap Photo, Barcode, or Custom to add.</p></div>`;
+  const isToday = viewDate === todayKey();
+  const entries = activeEntries();
+  if (entries.length === 0) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🍽️</div><p>${isToday ? 'No food logged yet.<br>Tap Photo, Barcode, or Custom to add.' : 'Nothing logged this day.'}</p></div>`;
     return;
   }
-  el.innerHTML = log.map((e, i) => {
+  el.innerHTML = entries.map((e, i) => {
     const timeStr = e.ts ? new Date(e.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
     const netCarbs = Math.max(0, (e.carbs || 0) - (e.fiber || 0));
     const carbDisplay = showNet
       ? `<span class="entry-macro netcarb" title="Net carbs">NC: ${Math.round(netCarbs)}g</span>`
       : `<span class="entry-macro" style="color:var(--carbs)">C: ${Math.round(e.carbs||0)}g</span>`;
+    const rowAttr = isToday ? `onclick="openEditEntry(${i})" title="Tap to edit"` : '';
+    const action = isToday
+      ? `<button class="entry-del" onclick="event.stopPropagation(); deleteEntry(${i})" title="Remove">✕</button>`
+      : `<button class="entry-add-today" onclick="event.stopPropagation(); addPastToToday(${i}, this)" title="Add to today">＋</button>`;
     return `
-    <div class="log-entry" onclick="openEditEntry(${i})" title="Tap to edit">
+    <div class="log-entry" ${rowAttr}>
       <div class="entry-thumb">${displayEmoji(e.name, e.emoji)}</div>
       <div class="entry-info">
         <div class="entry-name">${e.name}</div>
@@ -2181,7 +2264,7 @@ function renderLog() {
         </div>
       </div>
       <div class="entry-cal">${Math.round(e.cal)}<span class="cal-unit">kcal</span></div>
-      <button class="entry-del" onclick="event.stopPropagation(); deleteEntry(${i})" title="Remove">✕</button>
+      ${action}
     </div>`;
   }).join('');
 }
@@ -2583,6 +2666,7 @@ function switchTab(tab) {
   const contentMap = { today: 'tabContentToday', history: 'tabContentHistory', weight: 'tabContentWeight', analysis: 'tabContentAnalysis' };
   document.getElementById(btnMap[tab]).classList.add('active');
   document.getElementById(contentMap[tab]).classList.add('active');
+  if (tab === 'today') { viewDate = todayKey(); loadViewDate(); }
   if (tab === 'history') renderHistory();
   if (tab === 'weight') renderWeightTab();
   if (tab === 'analysis') renderAnalysis();
@@ -3739,6 +3823,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadCustomFoods();
   await loadWeightLog();
   await syncHistoryCache(365);
+  loadViewDate();
 });
 </script>
 </body>
