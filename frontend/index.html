@@ -3280,8 +3280,10 @@ async function loadRecipes() {
 }
 
 const RC_FIELDS = ['rcName', 'rcEmoji', 'rcIngredients', 'rcCal', 'rcProtein', 'rcCarbs', 'rcFiber', 'rcFat'];
+let editingRecipeId = null;   // set when editing an existing recipe, so save updates it
 
 function openRecipeModal() {
+  editingRecipeId = null;
   RC_FIELDS.forEach(id => document.getElementById(id).value = '');
   document.getElementById('rcServings').value = '1';
   document.getElementById('rcFeedback').textContent = '';
@@ -3355,11 +3357,14 @@ async function saveRecipe(logNow) {
     fiber: parseFloat(document.getElementById('rcFiber').value) || 0,
     fat: parseFloat(document.getElementById('rcFat').value) || 0
   };
-  const result = await apiRequest('/recipes', { method: 'POST', body: JSON.stringify(recipe) });
-  if (result.ok) {
-    recipes = [result.body, ...recipes.filter(r => r.name.toLowerCase() !== name.toLowerCase())];
+  if (editingRecipeId != null) {
+    // Editing an existing recipe → update in place (no duplicate row).
+    if (currentUser) await apiRequest(`/recipes/${encodeURIComponent(editingRecipeId)}`, { method: 'PUT', body: JSON.stringify(recipe) });
+    recipes = recipes.map(r => String(r.id) === String(editingRecipeId) ? { ...r, ...recipe } : r);
   } else {
-    recipes = [{ id: Date.now(), ...recipe }, ...recipes.filter(r => r.name.toLowerCase() !== name.toLowerCase())];
+    const result = await apiRequest('/recipes', { method: 'POST', body: JSON.stringify(recipe) });
+    const saved = result.ok ? result.body : { id: Date.now(), ...recipe };
+    recipes = [saved, ...recipes.filter(r => r.name.toLowerCase() !== name.toLowerCase())];
   }
   saveLocal(STORAGE_KEYS.recipes, recipes);
   if (logNow) {
@@ -3367,12 +3372,13 @@ async function saveRecipe(logNow) {
     closeRecipeModal();
     return;
   }
+  editingRecipeId = null;   // form is cleared below → back to "new recipe" mode
   renderRecipeLibrary();
   RC_FIELDS.forEach(id => document.getElementById(id).value = '');
   document.getElementById('rcServings').value = '1';
   const fb = document.getElementById('rcFeedback');
   fb.style.color = 'var(--protein)';
-  fb.textContent = `✓ "${name}" saved to your recipes below.`;
+  fb.textContent = `✓ "${name}" saved to your recipes.`;
   document.querySelector('#recipeModal .modal').scrollTop = 0;
 }
 
@@ -3414,6 +3420,7 @@ function renderRecipeLibrary() {
 function prefillRecipe(id) {
   const r = findRecipe(id);
   if (!r) return;
+  editingRecipeId = r.id;
   document.getElementById('rcName').value = r.name || '';
   document.getElementById('rcEmoji').value = r.emoji || '';
   document.getElementById('rcServings').value = r.servings || 1;
