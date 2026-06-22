@@ -50,7 +50,8 @@ CREATE TABLE custom_foods (
   fat REAL DEFAULT 0,
   fiber REAL DEFAULT 0,
   serving TEXT,
-  ingredients TEXT,           -- set when the item is a batch recipe
+  ingredients TEXT,           -- freeform ingredient text (AI-estimated portion of a recipe)
+  recipe_items TEXT,          -- JSON array of scanned/structured ingredients (per-100g base + amount/unit)
   servings REAL DEFAULT 1,    -- yield (number of servings the recipe makes)
   created_at TEXT DEFAULT (datetime('now'))
 );

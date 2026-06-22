@@ -1103,6 +1103,41 @@
     padding: 6px 8px; color: var(--text); font-family: var(--mono); font-size: 14px; text-align: center; outline: none;
   }
   .recipe-toggle .rt-yield input:focus { border-color: var(--protein); }
+  /* Scanned/structured recipe ingredients */
+  .recipe-items { margin-bottom: 12px; }
+  .recipe-items-head {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 8px;
+  }
+  .ri-row {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px 10px; margin-bottom: 8px;
+  }
+  .ri-emoji { font-size: 18px; flex-shrink: 0; }
+  .ri-main { flex: 1; min-width: 0; }
+  .ri-name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ri-cal { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .ri-amount {
+    width: 52px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 6px; color: var(--text); font-family: var(--mono); font-size: 13px; text-align: center; outline: none;
+  }
+  .ri-amount:focus { border-color: var(--protein); }
+  .ri-unit {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 4px; color: var(--text); font-size: 12px; outline: none; max-width: 78px;
+  }
+  .ri-del {
+    background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer;
+    padding: 2px 4px; flex-shrink: 0; line-height: 1;
+  }
+  .ri-del:hover { color: var(--danger); }
+  .ri-scan-btn {
+    width: 100%; background: var(--surface2); border: 1px dashed var(--border); border-radius: 10px;
+    padding: 11px; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .ri-scan-btn:hover { border-color: var(--protein); }
+  .ri-subtotal { font-size: 12px; color: var(--muted); margin-top: 8px; text-align: right; font-family: var(--mono); }
   .ai-actions { display: flex; gap: 8px; }
   .ai-actions .btn-primary { flex: 1; }
   .mic-btn {
@@ -1432,7 +1467,13 @@
         <span class="toggle-slider"></span>
       </label>
       <span class="rt-label">🍲 Batch recipe</span>
-      <span class="rt-yield" id="cfYieldWrap" style="display:none">makes <input type="number" id="cfServingsYield" value="1" min="0.5" step="0.5" inputmode="decimal"> servings</span>
+      <span class="rt-yield" id="cfYieldWrap" style="display:none">makes <input type="number" id="cfServingsYield" value="1" min="0.5" step="0.5" inputmode="decimal" oninput="recomputeRecipe()"> servings</span>
+    </div>
+    <div class="recipe-items" id="cfRecipeSection" style="display:none">
+      <div class="recipe-items-head"><span>🧾 Ingredients</span></div>
+      <div id="cfRecipeItems"></div>
+      <button type="button" class="ri-scan-btn" onclick="openBarcodeForRecipe()">📷 Scan ingredient</button>
+      <div class="ri-subtotal" id="cfRecipeSubtotal" style="display:none"></div>
     </div>
     <div class="ai-estimate">
       <label id="cfDescLabel">✨ Describe it (type or 🎤 speak) & let AI fill the macros</label>
@@ -1824,6 +1865,9 @@ let bcProductName = '';
 let bcServingGrams = null;     // grams in one package serving, if known
 let bcCupGrams = 240;          // grams per cup (derived from product, else approx)
 let bcCupExact = false;        // true when cupGrams came from the product label
+let barcodeTarget = 'log';     // 'log' = add scan to today's log; 'recipe' = add to the recipe builder
+let recipeItems = [];          // structured/scanned ingredients in the recipe builder
+let recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 }; // TOTAL macros of the freeform (AI) portion
 let weightUnit = 'lbs';
 let weightPeriod = 30;
 let histPeriod = 7;
@@ -2233,6 +2277,7 @@ async function saveCustomFood(logNow) {
     fat: parseFloat(document.getElementById('cfFat').value) || 0,
     serving: document.getElementById('cfServing').value.trim() || (isRecipe ? '1 serving' : '1 serving'),
     ingredients: isRecipe ? document.getElementById('cfDesc').value.trim() : '',
+    recipe_items: isRecipe && recipeItems.length ? JSON.stringify(recipeItems) : null,
     servings: isRecipe ? Math.max(0.5, parseFloat(document.getElementById('cfServingsYield').value) || 1) : 1
   };
   if (editingCustomFoodId != null) {
@@ -2261,6 +2306,8 @@ async function saveCustomFood(logNow) {
   }
   // Saved to library only: keep the modal open, refresh the list, reset the form.
   editingCustomFoodId = null;
+  recipeItems = [];
+  recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 };
   renderCustomFoodLibrary();
   ['cfName','cfEmoji','cfCal','cfProtein','cfCarbs','cfFiber','cfFat','cfServing','cfDesc'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('cfIsRecipe').checked = false;
@@ -2460,6 +2507,8 @@ function showScanLine(show) {
 }
 
 function openBarcodeModal() {
+  barcodeTarget = 'log';
+  document.getElementById('addBarcodeBtn').textContent = 'Add to Log';
   document.getElementById('barcodeModal').classList.add('open');
   document.getElementById('barcodeResult').classList.remove('show');
   document.getElementById('addBarcodeBtn').style.display = 'none';
@@ -2473,6 +2522,14 @@ function openBarcodeModal() {
   manualVisible = false;
   bcBaseNutrition = null;
   startCamera();
+}
+
+// Open the scanner from the recipe builder: the result is added as a recipe
+// ingredient (with an adjustable amount) instead of being logged to the day.
+function openBarcodeForRecipe() {
+  openBarcodeModal();
+  barcodeTarget = 'recipe';
+  document.getElementById('addBarcodeBtn').textContent = '➕ Add to recipe';
 }
 
 function closeBarcodeModal() {
@@ -2708,6 +2765,26 @@ async function addBarcodeEntry() {
   const amount = parseFloat(document.getElementById('bcAmount').value) || 0;
   const unitSel = document.getElementById('bcUnit');
   const unitLabel = unitSel.options[unitSel.selectedIndex].text;
+
+  // From the recipe builder: store the structured ingredient (per-100g base +
+  // amount/unit) so its serving can be re-adjusted later, then return to the recipe.
+  if (barcodeTarget === 'recipe') {
+    recipeItems.push({
+      name: bcProductName,
+      emoji: foodEmoji(bcProductName) || '🏷️',
+      base: { ...bcBaseNutrition },
+      amount,
+      unit: unitSel.value,
+      servingGrams: bcServingGrams || 0,
+      cupGrams: bcCupGrams,
+      cupExact: bcCupExact
+    });
+    closeBarcodeModal();
+    renderRecipeItems();
+    recomputeRecipe();
+    return;
+  }
+
   const entry = {
     name: bcProductName,
     emoji: foodEmoji(bcProductName) || '🏷️',
@@ -3133,6 +3210,8 @@ let editingCustomFoodId = null;   // set when editing an existing item, so save 
 
 function openCustomFoodModal() {
   editingCustomFoodId = null;
+  recipeItems = [];
+  recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 };
   ['cfName', 'cfEmoji', 'cfCal', 'cfProtein', 'cfCarbs', 'cfFiber', 'cfFat', 'cfServing', 'cfDesc'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('cfIsRecipe').checked = false;
   document.getElementById('cfServingsYield').value = '1';
@@ -3150,12 +3229,115 @@ function openCustomFoodModal() {
 function toggleRecipeMode() {
   const on = document.getElementById('cfIsRecipe').checked;
   document.getElementById('cfYieldWrap').style.display = on ? '' : 'none';
+  document.getElementById('cfRecipeSection').style.display = on ? '' : 'none';
   document.getElementById('cfDescLabel').textContent = on
-    ? '🧾 List ingredients (type or 🎤 speak) — AI totals & divides per serving'
+    ? '✨ Anything not scanned (type or 🎤 speak) — AI adds it to the total'
     : '✨ Describe it (type or 🎤 speak) & let AI fill the macros';
   document.getElementById('cfDesc').placeholder = on
-    ? '2 chicken breasts\n1 cup cooked rice\n1 tbsp olive oil\n1 cup broccoli'
+    ? '1 tbsp olive oil\na pinch of salt\n1 tsp cinnamon'
     : 'e.g. 2 scrambled eggs with cheddar and a slice of buttered sourdough toast';
+  if (on) { renderRecipeItems(); recomputeRecipe(); }
+}
+
+// ---- Structured/scanned recipe ingredients ----
+// A scanned ingredient stores its per-100g base + an adjustable amount/unit so the
+// recipe total re-sums whenever the serving size changes.
+function itemGrams(it) {
+  const a = parseFloat(it.amount) || 0;
+  switch (it.unit) {
+    case 'oz': return a * 28.3495;
+    case 'cup': return a * (it.cupGrams || 240);
+    case 'serving': return a * (it.servingGrams || 0);
+    default: return a; // grams
+  }
+}
+function itemMacros(it) {
+  const f = itemGrams(it) / 100, b = it.base || {};
+  return { cal: (b.cal || 0) * f, protein: (b.protein || 0) * f, carbs: (b.carbs || 0) * f, fiber: (b.fiber || 0) * f, fat: (b.fat || 0) * f };
+}
+function sumScanned() {
+  return recipeItems.reduce((t, it) => {
+    const m = itemMacros(it);
+    t.cal += m.cal; t.protein += m.protein; t.carbs += m.carbs; t.fiber += m.fiber; t.fat += m.fat;
+    return t;
+  }, { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 });
+}
+function recipeUnitOptions(it) {
+  const units = [['g', 'grams'], ['oz', 'oz'], ['cup', 'cups']];
+  if (it.servingGrams) units.unshift(['serving', 'serving']);
+  return units.map(([v, l]) => `<option value="${v}"${it.unit === v ? ' selected' : ''}>${l}</option>`).join('');
+}
+function renderRecipeItems() {
+  const wrap = document.getElementById('cfRecipeItems');
+  if (!wrap) return;
+  wrap.innerHTML = recipeItems.map((it, i) => `
+    <div class="ri-row">
+      <span class="ri-emoji">${cfEsc(it.emoji || '🏷️')}</span>
+      <div class="ri-main">
+        <div class="ri-name">${cfEsc(it.name)}</div>
+        <div class="ri-cal" id="cfri_cal_${i}">${Math.round(itemMacros(it).cal)} cal</div>
+      </div>
+      <input class="ri-amount" type="number" min="0" step="0.25" inputmode="decimal" value="${it.amount}" oninput="setRecipeItemAmount(${i}, this.value)">
+      <select class="ri-unit" onchange="setRecipeItemUnit(${i}, this.value)">${recipeUnitOptions(it)}</select>
+      <button type="button" class="ri-del" onclick="removeRecipeItem(${i})" title="Remove">✕</button>
+    </div>`).join('');
+}
+function setRecipeItemAmount(i, v) {
+  if (!recipeItems[i]) return;
+  recipeItems[i].amount = parseFloat(v) || 0;
+  const el = document.getElementById('cfri_cal_' + i);
+  if (el) el.textContent = Math.round(itemMacros(recipeItems[i]).cal) + ' cal';
+  recomputeRecipe();
+}
+function setRecipeItemUnit(i, v) {
+  if (!recipeItems[i]) return;
+  recipeItems[i].unit = v;
+  renderRecipeItems();
+  recomputeRecipe();
+}
+function removeRecipeItem(i) {
+  recipeItems.splice(i, 1);
+  renderRecipeItems();
+  recomputeRecipe();
+}
+// Re-total the recipe (scanned items + the AI/freeform portion) and fill the
+// per-serving macro fields. Only fills when there's something to compute, so it
+// never clobbers manually-typed macros on an empty recipe.
+function recomputeRecipe() {
+  if (!document.getElementById('cfIsRecipe').checked) return;
+  const sub = document.getElementById('cfRecipeSubtotal');
+  const a = recipeAiTotal || {};
+  const hasData = recipeItems.length > 0 || a.cal > 0 || a.protein > 0 || a.carbs > 0 || a.fat > 0;
+  if (!hasData) { sub.style.display = 'none'; return; }
+  const scanned = sumScanned();
+  const total = {
+    cal: scanned.cal + (a.cal || 0), protein: scanned.protein + (a.protein || 0),
+    carbs: scanned.carbs + (a.carbs || 0), fiber: scanned.fiber + (a.fiber || 0), fat: scanned.fat + (a.fat || 0)
+  };
+  const servings = Math.max(0.5, parseFloat(document.getElementById('cfServingsYield').value) || 1);
+  document.getElementById('cfCal').value = Math.round(total.cal / servings);
+  document.getElementById('cfProtein').value = Math.round(total.protein / servings);
+  document.getElementById('cfCarbs').value = Math.round(total.carbs / servings);
+  document.getElementById('cfFiber').value = Math.round(total.fiber / servings);
+  document.getElementById('cfFat').value = Math.round(total.fat / servings);
+  if (recipeItems.length) {
+    sub.style.display = '';
+    sub.textContent = `Scanned ${recipeItems.length} item${recipeItems.length !== 1 ? 's' : ''}: ${Math.round(scanned.cal)} cal`;
+  } else {
+    sub.style.display = 'none';
+  }
+  const fb = document.getElementById('cfAiFeedback');
+  fb.style.color = '#60a5fa';
+  fb.textContent = `Σ Total ${Math.round(total.cal)} cal ÷ ${servings} = ${Math.round(total.cal / servings)}/serving.`;
+}
+// A library item is a recipe if it has freeform ingredients OR scanned items.
+function recipeItemsOf(f) {
+  if (!f || !f.recipe_items) return [];
+  try { const a = typeof f.recipe_items === 'string' ? JSON.parse(f.recipe_items) : f.recipe_items; return Array.isArray(a) ? a : []; }
+  catch (e) { return []; }
+}
+function isRecipeFood(f) {
+  return !!(f && ((f.ingredients && String(f.ingredients).trim()) || recipeItemsOf(f).length > 0));
 }
 
 function closeCustomFoodModal() {
@@ -3185,8 +3367,8 @@ function renderCustomFoodLibrary() {
     <div class="cf-lib-item">
       <span class="cf-lib-emoji">${cfEsc(displayEmoji(f.name, f.emoji))}</span>
       <div class="cf-lib-info" onclick="prefillCustom('${f.id}')" title="Tap to edit">
-        <div class="cf-lib-name">${cfEsc(f.name)}${f.ingredients && String(f.ingredients).trim() ? ' 🍲' : ''}</div>
-        <div class="cf-lib-macros">${Math.round(f.cal || 0)} cal${f.ingredients && String(f.ingredients).trim() ? '/serv' : ''} · P${Math.round(f.protein || 0)} C${Math.round(f.carbs || 0)} F${Math.round(f.fat || 0)}</div>
+        <div class="cf-lib-name">${cfEsc(f.name)}${isRecipeFood(f) ? ' 🍲' : ''}</div>
+        <div class="cf-lib-macros">${Math.round(f.cal || 0)} cal${isRecipeFood(f) ? '/serv' : ''} · P${Math.round(f.protein || 0)} C${Math.round(f.carbs || 0)} F${Math.round(f.fat || 0)}</div>
       </div>
       <span class="cf-lib-times">×</span>
       <input class="cf-lib-qty" type="number" value="1" min="0.25" step="0.25" inputmode="decimal" id="cfQty_${f.id}">
@@ -3208,11 +3390,22 @@ function prefillCustom(id) {
   document.getElementById('cfFiber').value = f.fiber || '';
   document.getElementById('cfFat').value = f.fat || '';
   document.getElementById('cfServing').value = f.serving || '';
-  const isRecipe = !!(f.ingredients && String(f.ingredients).trim());
+  const isRecipe = isRecipeFood(f);
   document.getElementById('cfIsRecipe').checked = isRecipe;
+  const servings = Math.max(0.5, parseFloat(f.servings) || 1);
   document.getElementById('cfServingsYield').value = f.servings || 1;
+  // Restore scanned ingredients, then derive the freeform (AI) portion as
+  // whatever the saved total isn't covered by the scanned items.
+  recipeItems = isRecipe ? recipeItemsOf(f) : [];
+  if (isRecipe) {
+    const scanned = sumScanned();
+    const macro = k => Math.max(0, (parseFloat(f[k]) || 0) * servings - scanned[k]);
+    recipeAiTotal = { cal: macro('cal'), protein: macro('protein'), carbs: macro('carbs'), fiber: macro('fiber'), fat: macro('fat') };
+  } else {
+    recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 };
+  }
   toggleRecipeMode();
-  document.getElementById('cfDesc').value = isRecipe ? f.ingredients : '';
+  document.getElementById('cfDesc').value = isRecipe ? (f.ingredients || '') : '';
   document.querySelector('#customFoodModal .modal').scrollTop = 0;
 }
 
@@ -3222,7 +3415,7 @@ async function logCustomFood(id) {
   if (!f) return;
   const qtyEl = document.getElementById('cfQty_' + id);
   const qty = qtyEl ? (parseFloat(qtyEl.value) || 1) : 1;
-  const isRecipe = !!(f.ingredients && String(f.ingredients).trim());
+  const isRecipe = isRecipeFood(f);
   const entry = {
     name: f.name, emoji: f.emoji || '🍽️',
     cal: (f.cal || 0) * qty, protein: (f.protein || 0) * qty, carbs: (f.carbs || 0) * qty,
@@ -3442,8 +3635,15 @@ async function estimateMacros() {
   const isRecipe = document.getElementById('cfIsRecipe').checked;
   const servings = Math.max(0.5, parseFloat(document.getElementById('cfServingsYield').value) || 1);
   if (!desc) {
+    // In recipe mode with scanned items already added, there's nothing freeform
+    // to estimate — just re-total the scanned ingredients.
+    if (isRecipe && recipeItems.length) {
+      recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 };
+      recomputeRecipe();
+      return;
+    }
     feedback.style.color = 'var(--danger)';
-    feedback.textContent = isRecipe ? 'List the ingredients first.' : 'Describe the food first.';
+    feedback.textContent = isRecipe ? 'Scan an ingredient or describe the rest first.' : 'Describe the food first.';
     return;
   }
   feedback.style.color = '#60a5fa';
@@ -3451,7 +3651,7 @@ async function estimateMacros() {
   btn.disabled = true;
   try {
     const payload = isRecipe
-      ? `Estimate the COMBINED TOTAL nutrition of this whole recipe (all ingredients added together, not per serving):\n${desc}`
+      ? `Estimate the COMBINED TOTAL nutrition of these recipe ingredients (all added together, not per serving):\n${desc}`
       : desc;
     const result = await apiRequest('/analyze', {
       method: 'POST',
@@ -3461,19 +3661,24 @@ async function estimateMacros() {
       throw new Error(result.body?.error || 'Estimate failed');
     }
     const r = result.body;
-    const div = isRecipe ? servings : 1;
-    const setIf = (id, val) => { const el = document.getElementById(id); if (val != null && !isNaN(val)) el.value = Math.round(val / div); };
     if (!document.getElementById('cfName').value.trim() && r.name) document.getElementById('cfName').value = r.name;
     if (!document.getElementById('cfEmoji').value.trim() && r.emoji) document.getElementById('cfEmoji').value = r.emoji;
-    setIf('cfCal', r.calories);
-    setIf('cfProtein', r.protein_g);
-    setIf('cfCarbs', r.carbs_g);
-    setIf('cfFiber', r.fiber_g);
-    setIf('cfFat', r.fat_g);
-    if (!isRecipe && !document.getElementById('cfServing').value.trim() && r.serving_note) document.getElementById('cfServing').value = r.serving_note;
-    feedback.textContent = isRecipe
-      ? `✓ Total ${Math.round(r.calories || 0)} cal ÷ ${servings} = ${Math.round((r.calories || 0) / servings)}/serving. Review & save.`
-      : `✓ Filled in${r.confidence ? ' · confidence: ' + r.confidence : ''}. Review and adjust as needed.`;
+    if (isRecipe) {
+      // The freeform text is one part of the recipe — fold its TOTAL into the
+      // running total alongside the scanned ingredients.
+      const num = v => (v == null || isNaN(v)) ? 0 : v;
+      recipeAiTotal = { cal: num(r.calories), protein: num(r.protein_g), carbs: num(r.carbs_g), fiber: num(r.fiber_g), fat: num(r.fat_g) };
+      recomputeRecipe();   // fills the per-serving fields + sets the Σ feedback
+    } else {
+      const setIf = (id, val) => { const el = document.getElementById(id); if (val != null && !isNaN(val)) el.value = Math.round(val); };
+      setIf('cfCal', r.calories);
+      setIf('cfProtein', r.protein_g);
+      setIf('cfCarbs', r.carbs_g);
+      setIf('cfFiber', r.fiber_g);
+      setIf('cfFat', r.fat_g);
+      if (!document.getElementById('cfServing').value.trim() && r.serving_note) document.getElementById('cfServing').value = r.serving_note;
+      feedback.textContent = `✓ Filled in${r.confidence ? ' · confidence: ' + r.confidence : ''}. Review and adjust as needed.`;
+    }
   } catch (err) {
     feedback.style.color = 'var(--danger)';
     feedback.textContent = 'Could not estimate. Check the input or fill the macros manually.';

@@ -37,6 +37,13 @@ kru-fit/
    wrangler d1 execute kru-fit-db --file=schema.sql
    ```
 
+   For an **existing** database, apply incremental migrations instead (the
+   `CREATE TABLE`s above only run on a fresh DB):
+
+   ```bash
+   wrangler d1 execute kru-fit-db --remote --file=migrations/001_recipe_items.sql
+   ```
+
 3. **Set the Worker secret** for AI photo analysis:
 
    ```bash

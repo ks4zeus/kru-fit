@@ -476,8 +476,8 @@ export default {
 
         const inserted = await db
           .prepare(
-            `INSERT INTO custom_foods (user_id, name, emoji, cal, protein, carbs, fat, fiber, serving, ingredients, servings)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO custom_foods (user_id, name, emoji, cal, protein, carbs, fat, fiber, serving, ingredients, recipe_items, servings)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             userEmail,
@@ -490,6 +490,7 @@ export default {
             body.fiber ?? 0,
             body.serving || null,
             body.ingredients || null,
+            body.recipe_items || null,
             body.servings ?? 1
           )
           .run();
@@ -508,7 +509,7 @@ export default {
         }
         await db
           .prepare(
-            `UPDATE custom_foods SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, serving = ?, ingredients = ?, servings = ?
+            `UPDATE custom_foods SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, serving = ?, ingredients = ?, recipe_items = ?, servings = ?
              WHERE id = ? AND user_id = ?`
           )
           .bind(
@@ -521,6 +522,7 @@ export default {
             body.fiber ?? 0,
             body.serving || null,
             body.ingredients || null,
+            body.recipe_items || null,
             body.servings ?? 1,
             id,
             userEmail
