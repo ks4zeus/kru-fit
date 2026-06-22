@@ -126,6 +126,44 @@ function getPathSegments(url: URL) {
   return url.pathname.replace(/^\/+|\/+$/g, "").split("/");
 }
 
+// Admin allowlist — comma-separated ADMIN_EMAILS env var, defaulting to the owner.
+function adminEmails(env: Env): string[] {
+  const raw = env.ADMIN_EMAILS && env.ADMIN_EMAILS.trim() ? env.ADMIN_EMAILS : "kru@travelkru.com";
+  return raw.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+}
+function isAdmin(email: string, env: Env): boolean {
+  return adminEmails(env).includes((email || "").toLowerCase());
+}
+
+// Anthropic per-model pricing, USD per 1M tokens (input, output). Sonnet 4.6.
+const AI_PRICING: Record<string, { in: number; out: number }> = {
+  "claude-sonnet-4-6": { in: 3.0, out: 15.0 },
+};
+const AI_MODEL = "claude-sonnet-4-6";
+
+// Record one AI call's token usage for the admin dashboard. Best-effort —
+// a logging failure must never break the user-facing response.
+async function recordAiUsage(
+  db: D1Database,
+  userEmail: string,
+  endpoint: string,
+  model: string,
+  usage: { input_tokens?: number; output_tokens?: number } | undefined
+) {
+  if (!usage) return;
+  try {
+    await db
+      .prepare(
+        `INSERT INTO ai_usage (user_id, endpoint, model, input_tokens, output_tokens)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .bind(userEmail, endpoint, model, usage.input_tokens ?? 0, usage.output_tokens ?? 0)
+      .run();
+  } catch (e) {
+    console.error("ai_usage insert failed", e);
+  }
+}
+
 const NUTRITION_SYSTEM_PROMPT = `You are a nutrition analysis assistant. Given a food as either a photo or a written description of the dish and its ingredients, identify it and estimate its nutritional content. Always respond ONLY with valid JSON, no markdown, no extra text. Use this exact structure:
 {
   "name": "Food name",
@@ -170,7 +208,7 @@ export default {
         `INSERT INTO users (id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name`
       ).bind(userEmail, name).run();
 
-      return jsonResponse({ email: userEmail, name });
+      return jsonResponse({ email: userEmail, name, admin: isAdmin(userEmail, env) });
     }
 
     if (segments[0] !== "api") {
@@ -222,7 +260,11 @@ export default {
         console.error("Anthropic error", aiResp.status, await aiResp.text());
         return jsonResponse({ error: "AI request failed" }, 502);
       }
-      const data = (await aiResp.json()) as { content?: Array<{ text?: string }> };
+      const data = (await aiResp.json()) as {
+        content?: Array<{ text?: string }>;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
+      await recordAiUsage(db, userEmail, body?.image ? "analyze-photo" : "analyze-text", AI_MODEL, data.usage);
       const text = (data.content || []).map((b) => b.text || "").join("").trim();
       const clean = text.replace(/```json|```/g, "").trim();
       try {
@@ -267,7 +309,11 @@ export default {
         console.error("Anthropic error", aiResp.status, await aiResp.text());
         return jsonResponse({ error: "AI request failed" }, 502);
       }
-      const data = (await aiResp.json()) as { content?: Array<{ text?: string }> };
+      const data = (await aiResp.json()) as {
+        content?: Array<{ text?: string }>;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
+      await recordAiUsage(db, userEmail, "coach", AI_MODEL, data.usage);
       const text = (data.content || []).map((b) => b.text || "").join("").trim();
       const clean = text.replace(/```json|```/g, "").trim();
       try {
@@ -608,6 +654,79 @@ export default {
       }
     }
 
+    // ---- Admin usage dashboard (admin-only) ----
+    if (segments[1] === "admin" && segments[2] === "stats" && request.method === "GET") {
+      if (!isAdmin(userEmail, env)) {
+        return jsonResponse({ error: "Forbidden" }, 403);
+      }
+
+      // Per-user tool usage, categorized by the food_log.source prefix.
+      const toolRows = ((await db.prepare(
+        `SELECT user_id,
+           CASE
+             WHEN source LIKE 'AI photo%' THEN 'photo'
+             WHEN source LIKE 'Barcode%' THEN 'barcode'
+             WHEN source LIKE 'Recipe%' THEN 'recipe'
+             WHEN source LIKE 'Meal%' THEN 'meal'
+             WHEN source LIKE 'Quick add%' THEN 'quickadd'
+             WHEN source LIKE 'Custom%' THEN 'custom'
+             ELSE 'other'
+           END AS tool,
+           COUNT(*) AS n
+         FROM food_log GROUP BY user_id, tool`
+      ).all()).results || []) as any[];
+
+      const actRows = ((await db.prepare(
+        `SELECT user_id, COUNT(*) AS entries, COUNT(DISTINCT date) AS active_days, MAX(ts) AS last_ts
+         FROM food_log GROUP BY user_id`
+      ).all()).results || []) as any[];
+
+      const aiRows = ((await db.prepare(
+        `SELECT user_id, endpoint, model, COUNT(*) AS calls,
+           SUM(input_tokens) AS in_tok, SUM(output_tokens) AS out_tok
+         FROM ai_usage GROUP BY user_id, endpoint, model`
+      ).all()).results || []) as any[];
+
+      const userRows = ((await db.prepare(`SELECT id, name FROM users`).all()).results || []) as any[];
+
+      const users: Record<string, any> = {};
+      const ensure = (id: string) => {
+        if (!users[id]) {
+          users[id] = {
+            email: id, name: (id.split("@")[0] || id),
+            entries: 0, activeDays: 0, lastTs: 0,
+            tools: {}, ai: { calls: 0, inputTokens: 0, outputTokens: 0, cost: 0, byEndpoint: {} },
+          };
+        }
+        return users[id];
+      };
+      userRows.forEach((r) => { const u = ensure(r.id); if (r.name) u.name = r.name; });
+      actRows.forEach((r) => { const u = ensure(r.user_id); u.entries = r.entries; u.activeDays = r.active_days; u.lastTs = r.last_ts || 0; });
+      toolRows.forEach((r) => { ensure(r.user_id).tools[r.tool] = r.n; });
+
+      const price = AI_PRICING[AI_MODEL];
+      const cost = (inT: number, outT: number) => (inT / 1e6) * price.in + (outT / 1e6) * price.out;
+      aiRows.forEach((r) => {
+        const u = ensure(r.user_id);
+        const inT = r.in_tok || 0, outT = r.out_tok || 0, c = cost(inT, outT);
+        u.ai.calls += r.calls; u.ai.inputTokens += inT; u.ai.outputTokens += outT; u.ai.cost += c;
+        u.ai.byEndpoint[r.endpoint] = { calls: r.calls, inputTokens: inT, outputTokens: outT, cost: c };
+      });
+
+      const userList = Object.values(users).sort((a: any, b: any) => b.entries - a.entries);
+      const totals = userList.reduce((t: any, u: any) => {
+        t.entries += u.entries; t.aiCalls += u.ai.calls; t.aiCost += u.ai.cost;
+        Object.keys(u.tools).forEach((k) => { t.toolTotals[k] = (t.toolTotals[k] || 0) + u.tools[k]; });
+        return t;
+      }, { users: userList.length, entries: 0, aiCalls: 0, aiCost: 0, toolTotals: {} });
+
+      return jsonResponse({
+        users: userList,
+        totals,
+        pricing: { model: AI_MODEL, inputPerM: price.in, outputPerM: price.out },
+      });
+    }
+
     if (segments[1] === "goals") {
       if (request.method === "GET") {
         const { results } = await db
@@ -676,4 +795,5 @@ type Env = {
   ANTHROPIC_API_KEY?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
+  ADMIN_EMAILS?: string;
 };

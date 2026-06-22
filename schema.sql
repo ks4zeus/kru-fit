@@ -65,6 +65,16 @@ CREATE TABLE meal_templates (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE ai_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  endpoint TEXT NOT NULL,        -- 'analyze-photo' | 'analyze-text' | 'coach'
+  model TEXT,
+  input_tokens INTEGER DEFAULT 0,
+  output_tokens INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE goals (
   user_id TEXT PRIMARY KEY,
   cal INTEGER DEFAULT 1800,
@@ -85,3 +95,4 @@ CREATE INDEX IF NOT EXISTS idx_food_user_date ON food_log(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_weight_user_date ON weight_log(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_custom_foods_user ON custom_foods(user_id);
 CREATE INDEX IF NOT EXISTS idx_meal_templates_user ON meal_templates(user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_user ON ai_usage(user_id);

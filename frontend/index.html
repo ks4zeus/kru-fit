@@ -98,6 +98,22 @@
     font-size: 13px; font-weight: 600; flex-shrink: 0; white-space: nowrap;
   }
 
+  .admin-wrap { padding: 4px 16px 16px; }
+  .admin-totals { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 14px; }
+  .admin-stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+  .admin-stat .as-val { font-size: 20px; font-weight: 700; font-family: var(--mono); }
+  .admin-stat .as-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin-top: 2px; }
+  .admin-user { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  .admin-user-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .admin-user-name { font-weight: 700; font-size: 14px; }
+  .admin-user-sub { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .admin-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .admin-chip { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: var(--surface2); border: 1px solid var(--border); font-family: var(--mono); }
+  .admin-chip.zero { opacity: .38; }
+  .admin-ai { font-size: 12px; color: var(--muted); font-family: var(--mono); border-top: 1px solid var(--border); padding-top: 8px; }
+  .admin-ai b { color: var(--text); }
+  .admin-note { font-size: 11px; color: var(--muted); margin-top: 10px; text-align: center; line-height: 1.4; }
+
   .cal-section {
     padding: 20px 20px 10px;
     display: flex;
@@ -1291,6 +1307,7 @@
   <button class="tab-btn" id="tabHistory" onclick="switchTab('history')">📈 History</button>
   <button class="tab-btn" id="tabWeight" onclick="switchTab('weight')">⚖️ Weight</button>
   <button class="tab-btn" id="tabAnalysis" onclick="switchTab('analysis')">🔬 Insights</button>
+  <button class="tab-btn" id="tabAdmin" onclick="switchTab('admin')" style="display:none">📊 Admin</button>
 </div>
 <div class="tab-content active" id="tabContentToday">
   <div class="weigh-reminder" id="weighReminder" style="display:none">
@@ -1494,6 +1511,17 @@
   <div id="analysisEmpty" class="hist-empty" style="display:none">
     <div class="he-icon">🔬</div>
     <p>No data yet.<br>Log food for a few days to see insights.</p>
+  </div>
+</div>
+<div class="tab-content" id="tabContentAdmin">
+  <div class="admin-wrap">
+    <div class="section-head"><h2>📊 Usage (admin)</h2>
+      <button class="clear-btn" style="color:var(--protein);opacity:.85" onclick="renderAdmin()">↻ Refresh</button>
+    </div>
+    <div id="adminContent"></div>
+    <div id="adminEmpty" class="hist-empty" style="display:none">
+      <div class="he-icon">📊</div><p>No usage data yet.</p>
+    </div>
   </div>
 </div>
 <div class="modal-bg" id="customFoodModal">
@@ -2931,14 +2959,74 @@ function switchTab(tab) {
   activeTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(ct => ct.classList.remove('active'));
-  const btnMap = { today: 'tabToday', history: 'tabHistory', weight: 'tabWeight', analysis: 'tabAnalysis' };
-  const contentMap = { today: 'tabContentToday', history: 'tabContentHistory', weight: 'tabContentWeight', analysis: 'tabContentAnalysis' };
+  const btnMap = { today: 'tabToday', history: 'tabHistory', weight: 'tabWeight', analysis: 'tabAnalysis', admin: 'tabAdmin' };
+  const contentMap = { today: 'tabContentToday', history: 'tabContentHistory', weight: 'tabContentWeight', analysis: 'tabContentAnalysis', admin: 'tabContentAdmin' };
   document.getElementById(btnMap[tab]).classList.add('active');
   document.getElementById(contentMap[tab]).classList.add('active');
   if (tab === 'today') { viewDate = todayKey(); loadViewDate(); }
   if (tab === 'history') renderHistory();
   if (tab === 'weight') renderWeightTab();
   if (tab === 'analysis') renderAnalysis();
+  if (tab === 'admin') renderAdmin();
+}
+
+// Show the Admin tab only for admin users (server still enforces /api/admin/stats).
+function applyAdminVisibility() {
+  const btn = document.getElementById('tabAdmin');
+  if (btn) btn.style.display = (currentUser && currentUser.admin) ? '' : 'none';
+}
+
+const ADMIN_TOOLS = [['photo', '📷 Photo'], ['barcode', '📸 Barcode'], ['recipe', '🍲 Recipe'], ['meal', '📋 Meal'], ['quickadd', '⚡ Quick'], ['custom', '✏️ Custom']];
+
+async function renderAdmin() {
+  const content = document.getElementById('adminContent');
+  const empty = document.getElementById('adminEmpty');
+  empty.style.display = 'none';
+  content.innerHTML = '<div class="coach-loading">Loading usage…</div>';
+  const result = await apiRequest('/admin/stats');
+  if (!result.ok) {
+    content.innerHTML = `<div class="hist-empty"><p>${result.status === 403 ? 'Admins only.' : 'Could not load usage — are you online?'}</p></div>`;
+    return;
+  }
+  const data = result.body || {};
+  const users = data.users || [];
+  const totals = data.totals || {};
+  const pricing = data.pricing || {};
+  if (!users.length) { content.innerHTML = ''; empty.style.display = 'block'; return; }
+
+  const money = n => '$' + (Number(n) || 0).toFixed(2);
+  const tok = n => { n = Number(n) || 0; return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); };
+  const ago = ts => {
+    if (!ts) return 'never';
+    const d = Math.floor((Date.now() - ts) / 86400000);
+    return d <= 0 ? 'today' : d === 1 ? 'yesterday' : d + 'd ago';
+  };
+
+  let html = '<div class="admin-totals">'
+    + `<div class="admin-stat"><div class="as-val">${totals.users || 0}</div><div class="as-label">Users</div></div>`
+    + `<div class="admin-stat"><div class="as-val">${totals.entries || 0}</div><div class="as-label">Entries logged</div></div>`
+    + `<div class="admin-stat"><div class="as-val">${totals.aiCalls || 0}</div><div class="as-label">AI calls</div></div>`
+    + `<div class="admin-stat"><div class="as-val">${money(totals.aiCost)}</div><div class="as-label">AI cost</div></div>`
+    + '</div>';
+
+  html += users.map(u => {
+    const chips = ADMIN_TOOLS.map(([key, label]) => {
+      const n = (u.tools && u.tools[key]) || 0;
+      return `<span class="admin-chip${n === 0 ? ' zero' : ''}">${label} ${n}</span>`;
+    }).join('');
+    const ai = u.ai || {};
+    return `<div class="admin-user">
+      <div class="admin-user-head">
+        <span class="admin-user-name">${cfEsc(u.name || u.email)}</span>
+        <span class="admin-user-sub">${u.entries || 0} entries · ${u.activeDays || 0} days · ${ago(u.lastTs)}</span>
+      </div>
+      <div class="admin-tools">${chips}</div>
+      <div class="admin-ai">🤖 ${ai.calls || 0} AI calls · ${tok(ai.inputTokens)} in / ${tok(ai.outputTokens)} out · <b>${money(ai.cost)}</b></div>
+    </div>`;
+  }).join('');
+
+  html += `<div class="admin-note">AI cost estimated at ${cfEsc(pricing.model || '')} — $${pricing.inputPerM}/$${pricing.outputPerM} per 1M tokens (in/out). Token tracking began when this feature shipped.</div>`;
+  content.innerHTML = html;
 }
 
 // Hydrate the per-day local cache from the server so History, Insights, and the
@@ -4470,6 +4558,7 @@ window.addEventListener('appinstalled', () => {
 document.addEventListener('DOMContentLoaded', async () => {
   setDateDisplay();
   await getMe();
+  applyAdminVisibility();
   await loadGoals();
   await loadTodayLog();
   await loadWater();
