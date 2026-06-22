@@ -1055,6 +1055,8 @@
     border-radius: 99px;
     transition: width 0.4s ease;
   }
+  .water-fill.met { background: linear-gradient(90deg, #22c55e, #4ade80); }
+  .water-over { color: var(--protein); font-size: 12px; }
   .water-btns {
     display: flex;
     gap: 6px;
@@ -1424,7 +1426,7 @@
   <div class="water-bar-wrap today-only">
     <div class="water-bar-head">
       <span class="wlabel">💧 Water</span>
-      <span class="wval"><span id="waterCups">0</span> / <span id="waterGoal">64</span> oz</span>
+      <span class="wval"><span id="waterCups">0</span> / <span id="waterGoal">64</span> oz <span class="water-over" id="waterOver"></span></span>
     </div>
     <div class="water-track"><div class="water-fill" id="waterFill" style="width:0%"></div></div>
     <div class="water-btns">
@@ -1432,6 +1434,7 @@
       <button class="water-btn" onclick="addWater(8)">+8 oz</button>
       <button class="water-btn" onclick="addWater(16)">+16 oz</button>
       <button class="water-btn" onclick="addWater(24)">+24 oz</button>
+      <button class="water-btn" onclick="addWater(32)">+32 oz</button>
     </div>
   </div>
   <div class="netcarb-toggle today-only">
@@ -3418,9 +3421,16 @@ function dismissWeighReminder() {
 function updateWaterUI(oz) {
   const normalized = Number(oz) || 0;
   waterEntry.oz = normalized;
-  document.getElementById('waterCups').textContent = normalized % 1 === 0 ? normalized : normalized.toFixed(1);
+  const fmtOz = v => v % 1 === 0 ? v : v.toFixed(1);
+  document.getElementById('waterCups').textContent = fmtOz(normalized);
   document.getElementById('waterGoal').textContent = waterGoalOz;
-  document.getElementById('waterFill').style.width = Math.min(100, (normalized / waterGoalOz) * 100) + '%';
+  const fill = document.getElementById('waterFill');
+  fill.style.width = Math.min(100, (normalized / waterGoalOz) * 100) + '%';
+  // You can log past the goal — show the bar as "met" and how far over.
+  const over = normalized - waterGoalOz;
+  fill.classList.toggle('met', over >= 0 && normalized > 0);
+  const overEl = document.getElementById('waterOver');
+  if (overEl) overEl.textContent = over > 0 ? `🎉 +${fmtOz(over)} over` : '';
 }
 
 async function addWater(delta) {
