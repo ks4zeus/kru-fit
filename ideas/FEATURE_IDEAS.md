@@ -31,6 +31,10 @@ as we go. ⭐ = top picks (high daily value or unlocks bigger things).
       describe-estimate inline instead of a dead end.
 
 ## 📊 Insights
+- [x] **Admin usage dashboard** — hidden admin-only 📊 tab: per-user tool usage
+      (from `food_log.source`), activity (entries/active days/last-seen), and AI
+      tokens + cost, plus app-wide totals. `ADMIN_EMAILS` gating, new `ai_usage`
+      table recording tokens on every `/analyze` & `/coach` call. (shipped 2026-06-22)
 - [ ] ⭐ **Weight trend + projection** — moving-average trend line and "at this
       rate you'll reach X by [date]" based on the goal.
 - [ ] **Photo thumbnails in the log** — the photo flow already captures an image;

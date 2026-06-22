@@ -85,6 +85,7 @@ CREATE TABLE goals (
   water_oz INTEGER DEFAULT 64,
   diet TEXT DEFAULT 'none',
   restrictions TEXT DEFAULT '',
+  goal_weight REAL,           -- target weight in lbs (canonical); null = unset
   updated_at TEXT DEFAULT (datetime('now'))
 );
 

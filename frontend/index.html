@@ -114,6 +114,28 @@
   .admin-ai b { color: var(--text); }
   .admin-note { font-size: 11px; color: var(--muted); margin-top: 10px; text-align: center; line-height: 1.4; }
 
+  .trend-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 14px 16px; margin-bottom: 14px;
+  }
+  .trend-card .tc-line { font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.4; }
+  .trend-card .tc-proj { font-size: 13px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
+  .trend-card .tc-goal {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
+    font-size: 13px; color: var(--muted);
+  }
+  .trend-card .tc-goal input {
+    width: 80px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 9px; color: var(--text); font-family: var(--mono); font-size: 14px; text-align: center; outline: none;
+  }
+  .trend-card .tc-goal input:focus { border-color: var(--protein); }
+  .trend-card .tc-goal-unit { font-family: var(--mono); }
+  .trend-card .tc-goal-set {
+    background: var(--protein); color: #0a1a12; border: none; border-radius: 8px;
+    padding: 7px 14px; font-weight: 700; font-size: 13px; cursor: pointer;
+  }
+
   .cal-section {
     padding: 20px 20px 10px;
     display: flex;
@@ -1484,6 +1506,16 @@
       <h3>⚖️ Weight Trend</h3>
       <canvas id="chartWeight" height="220"></canvas>
     </div>
+    <div class="trend-card" id="weightTrendCard" style="display:none">
+      <div class="tc-line" id="weightTrendLine"></div>
+      <div class="tc-proj" id="weightProjLine"></div>
+      <div class="tc-goal">
+        <span>🎯 Goal weight</span>
+        <input type="number" id="goalWeightInput" step="0.1" min="50" max="700" inputmode="decimal" placeholder="—">
+        <span class="tc-goal-unit" id="goalWeightUnit">lbs</span>
+        <button class="tc-goal-set" onclick="saveGoalWeight()">Set</button>
+      </div>
+    </div>
     <div id="weightLogSection" style="display:none">
       <div class="section-head" style="padding:0 0 10px">
         <h2>Recent Entries</h2>
@@ -1886,7 +1918,7 @@
 </div>
 <script>
 const API_BASE = '/api';
-const defaultGoals = { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, water_oz: 64, diet: 'none', restrictions: '' };
+const defaultGoals = { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, water_oz: 64, diet: 'none', restrictions: '', goal_weight: null };
 const STORAGE_KEYS = {
   user: 'fuellog_user',
   goals: 'fuellog_goals',
@@ -4023,6 +4055,96 @@ function toggleNetCarbs() {
   renderLog();
 }
 
+// Trailing moving average over a value series.
+function movingAvg(vals, w) {
+  return vals.map((_, i) => {
+    const start = Math.max(0, i - w + 1);
+    let s = 0;
+    for (let j = start; j <= i; j++) s += vals[j];
+    return s / (i - start + 1);
+  });
+}
+
+// Least-squares trend over the filtered weigh-ins: slope in display-unit per day.
+function weightTrend(filteredKeys) {
+  const pts = filteredKeys.map(k => ({
+    x: new Date(k + 'T12:00:00').getTime() / 86400000,   // days
+    y: toDisplayWeight(weightLog[k].val, weightLog[k].unit),
+  }));
+  const n = pts.length;
+  if (n < 2) return null;
+  const x0 = pts[0].x;
+  let sx = 0, sy = 0, sxx = 0, sxy = 0;
+  pts.forEach(p => { const x = p.x - x0; sx += x; sy += p.y; sxx += x * x; sxy += x * p.y; });
+  const denom = n * sxx - sx * sx;
+  if (denom === 0) return null;
+  const slope = (n * sxy - sx * sy) / denom;
+  return { slope, spanDays: pts[n - 1].x - x0, n };
+}
+
+// Persist the goal weight (entered in the current display unit, stored as lbs).
+async function saveGoalWeight() {
+  const input = document.getElementById('goalWeightInput');
+  const raw = parseFloat(input.value);
+  if (input.value.trim() === '' || isNaN(raw) || raw <= 0) {
+    goals.goal_weight = null;
+  } else {
+    goals.goal_weight = weightUnit === 'kg' ? raw * 2.20462 : raw;   // → lbs
+  }
+  await persistGoals();
+  renderWeightTab();
+}
+
+// Render the trend rate + projection-to-goal lines and sync the goal input.
+function renderWeightTrend(filteredKeys, current) {
+  const card = document.getElementById('weightTrendCard');
+  const lineEl = document.getElementById('weightTrendLine');
+  const projEl = document.getElementById('weightProjLine');
+  card.style.display = 'block';
+
+  document.getElementById('goalWeightUnit').textContent = weightUnit;
+  const goalInput = document.getElementById('goalWeightInput');
+  const goalDisp = goals.goal_weight != null ? toDisplayWeight(goals.goal_weight, 'lbs') : null;
+  if (document.activeElement !== goalInput) {
+    goalInput.value = goalDisp != null ? goalDisp.toFixed(1) : '';
+  }
+
+  const t = weightTrend(filteredKeys);
+  if (!t || t.spanDays < 1) {
+    lineEl.textContent = '📊 Log a few more weigh-ins to see your trend.';
+    projEl.textContent = '';
+    return;
+  }
+  const perWeek = t.slope * 7;
+  const absWk = Math.abs(perWeek);
+  const dir = perWeek < -0.05 ? 'down' : perWeek > 0.05 ? 'up' : 'flat';
+  lineEl.textContent = dir === 'flat'
+    ? `➡️ Holding steady (~${absWk.toFixed(2)} ${weightUnit}/wk)`
+    : `${dir === 'down' ? '📉' : '📈'} ${dir === 'down' ? 'Losing' : 'Gaining'} ${absWk.toFixed(2)} ${weightUnit}/week`;
+
+  if (goalDisp == null) {
+    projEl.textContent = 'Set a goal weight below to see your projected date.';
+    return;
+  }
+  const remaining = goalDisp - current;
+  if (Math.abs(remaining) < 0.1) {
+    projEl.textContent = `🎉 You're at your goal of ${goalDisp.toFixed(1)} ${weightUnit}.`;
+  } else if (dir === 'flat' || Math.sign(t.slope) !== Math.sign(remaining)) {
+    projEl.textContent = `Goal ${goalDisp.toFixed(1)} ${weightUnit} is ${Math.abs(remaining).toFixed(1)} ${weightUnit} ${remaining < 0 ? 'below' : 'above'} you — but the current trend isn't heading there.`;
+  } else {
+    const days = remaining / t.slope;
+    if (days > 5 * 365) {
+      projEl.textContent = `🎯 At this rate, reaching ${goalDisp.toFixed(1)} ${weightUnit} is 5+ years out — the trend is very gradual.`;
+    } else {
+      const eta = new Date(Date.now() + days * 86400000);
+      const weeks = days / 7;
+      const when = weeks < 1.5 ? '~1 week' : weeks < 9 ? `~${Math.round(weeks)} weeks` : `~${Math.round(days / 30.4)} months`;
+      const etaStr = eta.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      projEl.textContent = `🎯 At this rate you'll reach ${goalDisp.toFixed(1)} ${weightUnit} around ${etaStr} (${when}).`;
+    }
+  }
+}
+
 function renderWeightTab() {
   const savedUnit = loadLocal(STORAGE_KEYS.weightUnit, weightUnit);
   if (savedUnit) {
@@ -4041,6 +4163,7 @@ function renderWeightTab() {
   document.getElementById('weightLogSection').style.display = isEmpty ? 'none' : 'block';
   if (isEmpty) {
     document.getElementById('weightSummary').innerHTML = '';
+    document.getElementById('weightTrendCard').style.display = 'none';
     return;
   }
   const allVals = keys.map(k => toDisplayWeight(weightLog[k].val, weightLog[k].unit));
@@ -4077,7 +4200,12 @@ function renderWeightTab() {
   if (filteredKeys.length >= 1) {
     const labels = filteredKeys.map(k => new Date(k + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
     const vals = filteredKeys.map(k => parseFloat(toDisplayWeight(weightLog[k].val, weightLog[k].unit).toFixed(1)));
-    drawWeightChart('chartWeight', labels, vals, weightUnit);
+    const maW = Math.min(7, Math.max(2, Math.round(vals.length / 3)));
+    const ma = vals.length >= 3 ? movingAvg(vals, maW) : null;
+    drawWeightChart('chartWeight', labels, vals, weightUnit, ma);
+    renderWeightTrend(filteredKeys, current);
+  } else {
+    document.getElementById('weightTrendCard').style.display = 'none';
   }
   const recent = [...keys].reverse().slice(0, 20);
   document.getElementById('weightEntryList').innerHTML = recent.map((k, i) => {
@@ -4104,7 +4232,7 @@ function renderWeightTab() {
 }
 
 let _wchartState = null;
-function drawWeightChart(id, labels, vals, unit) {
+function drawWeightChart(id, labels, vals, unit, trend) {
   const canvas = document.getElementById(id);
   if (!canvas) return;
   const dpr = window.devicePixelRatio || 1;
@@ -4164,6 +4292,21 @@ function drawWeightChart(id, labels, vals, unit) {
   ctx.beginPath();
   vals.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)));
   ctx.stroke();
+  // Moving-average trend line (dashed amber), drawn under the data points.
+  if (trend && trend.length === n) {
+    ctx.save();
+    ctx.strokeStyle = '#f5a623';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    trend.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)));
+    ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = '#f5a623';
+    ctx.font = '10px Inter, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('— trend', pad.left + plotW, pad.top - 6);
+  }
   vals.forEach((v, i) => {
     ctx.fillStyle = '#a78bfa';
     ctx.beginPath(); ctx.arc(toX(i), toY(v), 4, 0, Math.PI * 2); ctx.fill();
@@ -4178,7 +4321,7 @@ function drawWeightChart(id, labels, vals, unit) {
     if (i % step !== 0 && i !== n - 1) return;
     ctx.fillText(lbl, toX(i), cssH - 6);
   });
-  _wchartState = { ctx, pad, plotW, plotH, toX, toY, labels, vals, unit };
+  _wchartState = { ctx, pad, plotW, plotH, toX, toY, labels, vals, unit, trend };
   canvas.onmousemove = (e) => {
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left - pad.left;
@@ -4186,7 +4329,7 @@ function drawWeightChart(id, labels, vals, unit) {
     const idx = Math.min(n - 1, Math.round((x / plotW) * (n - 1)));
     drawWeightTooltip(canvas, idx);
   };
-  canvas.onmouseleave = () => drawWeightChart(id, labels, vals, unit);
+  canvas.onmouseleave = () => drawWeightChart(id, labels, vals, unit, trend);
 }
 
 function drawWeightTooltip(canvas, idx) {
@@ -4515,7 +4658,8 @@ async function saveSettings() {
     fiber: parseInt(document.getElementById('goalFiber').value) || 30,
     water_oz: waterGoalOz,
     diet: document.getElementById('profDiet').value || 'none',
-    restrictions: document.getElementById('profRestrictions').value.trim()
+    restrictions: document.getElementById('profRestrictions').value.trim(),
+    goal_weight: goals.goal_weight ?? null   // preserve — set on the Weight tab, not here
   };
   await persistGoals();
   closeSettings();
