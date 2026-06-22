@@ -40,6 +40,12 @@ as we go. ⭐ = top picks (high daily value or unlocks bigger things).
 - [ ] **Photo thumbnails in the log** — the photo flow already captures an image;
       store a small thumbnail so the diary is visual.
 
+## 💪 Fitness
+- [x] **Exercise tracker** — 💪 Exercise tab: log workouts (activity + minutes,
+      MET×weight calorie estimate, editable), summary tiles, calories-burned &
+      active-minutes charts, recent-workouts list. New `workouts` table; tracked
+      separately from the food calorie ring. (shipped 2026-06-22)
+
 ## 📱 Platform / polish
 - [x] ⭐ **Install as an app (PWA)** — manifest + 192/512/maskable icons,
       service worker (network-first HTML, /api bypassed, offline shell), iOS

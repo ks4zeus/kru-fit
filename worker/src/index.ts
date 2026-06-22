@@ -431,6 +431,60 @@ export default {
       }
     }
 
+    if (segments[1] === "workouts") {
+      if (request.method === "GET" && segments[2] === "range") {
+        const days = Number(url.searchParams.get("days")) || 365;
+        const { results } = await db
+          .prepare("SELECT * FROM workouts WHERE user_id = ? AND date >= date('now', ?) ORDER BY date ASC, ts ASC")
+          .bind(userEmail, `-${days} days`)
+          .all();
+        return jsonResponse(results || []);
+      }
+
+      if (request.method === "GET") {
+        const date = url.searchParams.get("date");
+        if (!date) {
+          return jsonResponse({ error: "Missing date" }, 400);
+        }
+        const { results } = await db
+          .prepare("SELECT * FROM workouts WHERE user_id = ? AND date = ? ORDER BY ts ASC")
+          .bind(userEmail, date)
+          .all();
+        return jsonResponse(results || []);
+      }
+
+      if (request.method === "POST") {
+        const body = await parseJson(request);
+        if (!body?.date || !body?.name) {
+          return jsonResponse({ error: "Missing required fields" }, 400);
+        }
+        const inserted = await db
+          .prepare(
+            `INSERT INTO workouts (user_id, date, name, minutes, calories, ts)
+             VALUES (?, ?, ?, ?, ?, ?)`
+          )
+          .bind(userEmail, body.date, body.name, body.minutes ?? 0, body.calories ?? 0, body.ts ?? null)
+          .run();
+        return jsonResponse({ id: inserted.meta?.last_row_id, ...body });
+      }
+
+      if (request.method === "DELETE") {
+        const idSegment = segments[2];
+        if (!idSegment) {
+          return jsonResponse({ error: "Missing id" }, 400);
+        }
+        const id = Number(idSegment);
+        if (!Number.isFinite(id) || id <= 0) {
+          return jsonResponse({ error: "Invalid id" }, 400);
+        }
+        await db
+          .prepare("DELETE FROM workouts WHERE id = ? AND user_id = ?")
+          .bind(id, userEmail)
+          .run();
+        return jsonResponse({ success: true });
+      }
+    }
+
     if (segments[1] === "weight") {
       if (request.method === "GET") {
         const daysParam = url.searchParams.get("days") || "365";

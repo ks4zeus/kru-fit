@@ -865,10 +865,10 @@
     overflow: hidden;
   }
   .tab-btn {
-    flex: 1; background: none; border: none; color: var(--muted);
-    font-family: var(--font); font-size: 13px; font-weight: 600;
-    padding: 11px 8px; cursor: pointer; transition: color 0.2s, background 0.2s;
-    display: flex; align-items: center; justify-content: center; gap: 6px;
+    flex: 1; min-width: 0; background: none; border: none; color: var(--muted);
+    font-family: var(--font); font-size: 12px; font-weight: 600;
+    padding: 11px 5px; cursor: pointer; transition: color 0.2s, background 0.2s;
+    display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap;
   }
   .tab-btn.active { color: var(--text); background: var(--surface2); }
   .tab-content { display: none; }
@@ -937,6 +937,22 @@
   .theme-toggle { display: inline-flex; gap: 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
   .theme-btn { border: none; background: none; color: var(--muted); font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
   .theme-btn.active { background: var(--surface); color: var(--text); }
+  .wk-form .setting-row { margin-bottom: 10px; }
+  .wk-form select {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; color: var(--text); font-family: var(--font); font-size: 14px; outline: none; min-width: 165px;
+  }
+  .wk-form select:focus { border-color: var(--protein); }
+  .wk-form .btn-primary { margin-top: 4px; }
+  .wk-hint { font-size: 12px; color: #60a5fa; min-height: 14px; margin: 2px 0 10px; }
+  .workout-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
+  .workout-row .wk-emoji { font-size: 20px; flex-shrink: 0; }
+  .workout-row .wk-main { flex: 1; min-width: 0; }
+  .workout-row .wk-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .workout-row .wk-sub { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 1px; }
+  .workout-row .wk-cals { font-family: var(--mono); font-weight: 700; color: var(--fiber); flex-shrink: 0; }
+  .workout-row .wk-del { background: none; border: none; color: var(--muted); font-size: 14px; cursor: pointer; flex-shrink: 0; padding: 2px 4px; }
+  .workout-row .wk-del:hover { color: var(--danger); }
   .hist-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
   .hist-stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
   .hist-stat .hs-val { font-size: 20px; font-weight: 700; font-family: var(--mono); line-height: 1; }
@@ -1362,6 +1378,7 @@
   <button class="tab-btn active" id="tabToday" onclick="switchTab('today')">📋 Today</button>
   <button class="tab-btn" id="tabHistory" onclick="switchTab('history')">📈 History</button>
   <button class="tab-btn" id="tabWeight" onclick="switchTab('weight')">⚖️ Weight</button>
+  <button class="tab-btn" id="tabExercise" onclick="switchTab('exercise')">💪 Exercise</button>
   <button class="tab-btn" id="tabAnalysis" onclick="switchTab('analysis')">🔬 Insights</button>
   <button class="tab-btn" id="tabAdmin" onclick="switchTab('admin')" style="display:none">📊 Admin</button>
 </div>
@@ -1571,6 +1588,54 @@
     <div id="weightEmpty" class="hist-empty">
       <div class="he-icon">⚖️</div>
       <p>No weight logged yet.<br>Enter your weight above to start tracking.</p>
+    </div>
+  </div>
+</div>
+<div class="tab-content" id="tabContentExercise">
+  <div class="history-wrap">
+    <div class="weight-entry-card">
+      <div class="we-title">Log a Workout</div>
+      <div class="wk-form">
+        <div class="setting-row"><label>Activity</label>
+          <select id="wkActivity" onchange="onWorkoutInput()"></select>
+        </div>
+        <div class="setting-row" id="wkNameRow" style="display:none"><label>Name</label>
+          <input type="text" id="wkName" placeholder="e.g. Rock climbing" oninput="onWorkoutInput()" style="width:150px">
+        </div>
+        <div class="setting-row"><label>Minutes</label>
+          <input type="number" id="wkMinutes" min="1" max="600" step="1" inputmode="numeric" placeholder="30" oninput="onWorkoutInput()" style="width:90px">
+        </div>
+        <div class="setting-row"><label>Calories burned</label>
+          <input type="number" id="wkCalories" min="0" step="1" inputmode="numeric" placeholder="0" oninput="wkCalEdited = true" style="width:90px">
+        </div>
+        <div class="wk-hint" id="wkHint"></div>
+        <button class="btn-primary" onclick="logWorkout()">＋ Log workout</button>
+        <div class="we-feedback" id="wkFeedback"></div>
+      </div>
+    </div>
+    <div class="hist-period" style="margin-top:14px">
+      <button class="period-btn active" onclick="setExercisePeriod(7,this)">7 days</button>
+      <button class="period-btn" onclick="setExercisePeriod(30,this)">30 days</button>
+      <button class="period-btn" onclick="setExercisePeriod(90,this)">90 days</button>
+    </div>
+    <div class="hist-summary" id="exerciseSummary"></div>
+    <div class="chart-card" id="burnChartCard" style="display:none">
+      <h3>🔥 Calories Burned</h3>
+      <canvas id="chartBurn" height="160"></canvas>
+    </div>
+    <div class="chart-card" id="minsChartCard" style="display:none">
+      <h3>⏱️ Active Minutes</h3>
+      <canvas id="chartMins" height="160"></canvas>
+    </div>
+    <div id="workoutLogSection" style="display:none">
+      <div class="section-head" style="padding:0 0 10px">
+        <h2>Recent Workouts</h2>
+      </div>
+      <div id="workoutList"></div>
+    </div>
+    <div id="exerciseEmpty" class="hist-empty">
+      <div class="he-icon">💪</div>
+      <p>No workouts logged yet.<br>Log one above to start tracking.</p>
     </div>
   </div>
 </div>
@@ -1982,6 +2047,7 @@ const STORAGE_KEYS = {
   mealTemplates: 'fuellog_meal_templates',
   macrosView: 'fuellog_macros_view',
   theme: 'fuellog_theme',
+  workouts: 'fuellog_workouts',
   water: 'fuellog_water_',
   log: 'fuellog_log_'
 };
@@ -2059,6 +2125,31 @@ let weightPeriod = 30;
 let histPeriod = 7;
 let analysisPeriod = 7;
 let macrosCombined = loadLocal(STORAGE_KEYS.macrosView, false) === true;
+let exercisePeriod = 30;
+let workouts = [];
+let wkCalEdited = false;
+// Activities with MET values (used to estimate calories from minutes + body weight).
+const WORKOUTS = [
+  { name: 'Walking', met: 3.5, emoji: '🚶' },
+  { name: 'Brisk walking', met: 4.3, emoji: '🚶' },
+  { name: 'Running', met: 9.8, emoji: '🏃' },
+  { name: 'Cycling', met: 7.5, emoji: '🚴' },
+  { name: 'Swimming', met: 7.0, emoji: '🏊' },
+  { name: 'Strength / weights', met: 5.0, emoji: '🏋️' },
+  { name: 'HIIT', met: 8.0, emoji: '🔥' },
+  { name: 'Elliptical', met: 5.0, emoji: '🏃' },
+  { name: 'Rowing', met: 7.0, emoji: '🚣' },
+  { name: 'Yoga', met: 2.5, emoji: '🧘' },
+  { name: 'Pilates', met: 3.0, emoji: '🧘' },
+  { name: 'Hiking', met: 6.0, emoji: '🥾' },
+  { name: 'Basketball', met: 6.5, emoji: '🏀' },
+  { name: 'Soccer', met: 7.0, emoji: '⚽' },
+  { name: 'Tennis', met: 7.3, emoji: '🎾' },
+  { name: 'Dancing', met: 5.0, emoji: '💃' },
+  { name: 'Jump rope', met: 11.0, emoji: '🪢' },
+  { name: 'Stair climbing', met: 9.0, emoji: '🪜' },
+  { name: 'Other', met: 5.0, emoji: '💪' }
+];
 let showNetCarbs = false;
 let waterGoalOz = defaultGoals.water_oz;
 
@@ -3070,13 +3161,14 @@ function switchTab(tab) {
   activeTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(ct => ct.classList.remove('active'));
-  const btnMap = { today: 'tabToday', history: 'tabHistory', weight: 'tabWeight', analysis: 'tabAnalysis', admin: 'tabAdmin' };
-  const contentMap = { today: 'tabContentToday', history: 'tabContentHistory', weight: 'tabContentWeight', analysis: 'tabContentAnalysis', admin: 'tabContentAdmin' };
+  const btnMap = { today: 'tabToday', history: 'tabHistory', weight: 'tabWeight', exercise: 'tabExercise', analysis: 'tabAnalysis', admin: 'tabAdmin' };
+  const contentMap = { today: 'tabContentToday', history: 'tabContentHistory', weight: 'tabContentWeight', exercise: 'tabContentExercise', analysis: 'tabContentAnalysis', admin: 'tabContentAdmin' };
   document.getElementById(btnMap[tab]).classList.add('active');
   document.getElementById(contentMap[tab]).classList.add('active');
   if (tab === 'today') { viewDate = todayKey(); loadViewDate(); }
   if (tab === 'history') renderHistory();
   if (tab === 'weight') renderWeightTab();
+  if (tab === 'exercise') renderExercise();
   if (tab === 'analysis') renderAnalysis();
   if (tab === 'admin') renderAdmin();
 }
@@ -3295,6 +3387,154 @@ function toggleMacrosView() {
   macrosCombined = !macrosCombined;
   saveLocal(STORAGE_KEYS.macrosView, macrosCombined);
   renderHistory();
+}
+
+// ---- Exercise / workouts ----
+function populateActivities() {
+  const sel = document.getElementById('wkActivity');
+  if (!sel || sel.options.length) return;
+  sel.innerHTML = WORKOUTS.map(w => `<option value="${cfEsc(w.name)}">${w.emoji} ${cfEsc(w.name)}</option>`).join('');
+}
+
+function workoutMeta(name) {
+  return WORKOUTS.find(w => w.name === name) || { name, met: 5.0, emoji: '💪' };
+}
+
+// Latest logged body weight in kg (default ~70 kg if none logged).
+function latestWeightKg() {
+  const keys = Object.keys(weightLog).sort();
+  if (!keys.length) return 70;
+  const e = weightLog[keys[keys.length - 1]];
+  return e.unit === 'kg' ? e.val : e.val * 0.453592;
+}
+
+// kcal = MET × weight(kg) × hours
+function estimateWorkoutCals(met, minutes) {
+  return Math.round(met * latestWeightKg() * (minutes / 60));
+}
+
+async function loadWorkouts() {
+  const result = await apiRequest('/workouts/range?days=365');
+  if (result.ok) {
+    workouts = result.body || [];
+    saveLocal(STORAGE_KEYS.workouts, workouts);
+  } else {
+    workouts = loadLocal(STORAGE_KEYS.workouts, []);
+  }
+  return workouts;
+}
+
+// Live estimate as activity/minutes change; fills the editable calories field.
+function onWorkoutInput() {
+  const sel = document.getElementById('wkActivity');
+  if (!sel) return;
+  const meta = workoutMeta(sel.value);
+  document.getElementById('wkNameRow').style.display = sel.value === 'Other' ? '' : 'none';
+  const mins = parseFloat(document.getElementById('wkMinutes').value) || 0;
+  const hint = document.getElementById('wkHint');
+  if (mins > 0) {
+    const est = estimateWorkoutCals(meta.met, mins);
+    hint.textContent = `≈ ${est} cal (est. from ${meta.name.toLowerCase()} · your weight)`;
+    if (!wkCalEdited) document.getElementById('wkCalories').value = est;
+  } else {
+    hint.textContent = '';
+  }
+}
+
+async function logWorkout() {
+  const sel = document.getElementById('wkActivity');
+  const meta = workoutMeta(sel.value);
+  const fb = document.getElementById('wkFeedback');
+  const mins = parseFloat(document.getElementById('wkMinutes').value) || 0;
+  let name = meta.name;
+  if (sel.value === 'Other') name = document.getElementById('wkName').value.trim() || 'Workout';
+  if (mins <= 0) { fb.style.color = 'var(--danger)'; fb.textContent = 'Enter how many minutes.'; return; }
+  const calories = Math.max(0, parseFloat(document.getElementById('wkCalories').value) || 0);
+  const entry = { name, minutes: mins, calories, date: todayKey(), ts: Date.now() };
+  const result = await apiRequest('/workouts', { method: 'POST', body: JSON.stringify(entry) });
+  const saved = result.ok ? result.body : { id: Date.now(), ...entry };
+  workouts.push(saved);
+  saveLocal(STORAGE_KEYS.workouts, workouts);
+  document.getElementById('wkMinutes').value = '';
+  document.getElementById('wkCalories').value = '';
+  document.getElementById('wkName').value = '';
+  wkCalEdited = false;
+  onWorkoutInput();
+  fb.style.color = 'var(--protein)';
+  fb.textContent = `✓ Logged ${name} · ${Math.round(calories)} cal`;
+  setTimeout(() => { fb.textContent = ''; }, 3000);
+  renderExercise();
+}
+
+async function deleteWorkout(id) {
+  if (!confirm('Remove this workout?')) return;
+  if (currentUser) await apiRequest('/workouts/' + encodeURIComponent(id), { method: 'DELETE' });
+  workouts = workouts.filter(w => String(w.id) !== String(id));
+  saveLocal(STORAGE_KEYS.workouts, workouts);
+  renderExercise();
+}
+
+function setExercisePeriod(days, btn) {
+  exercisePeriod = days;
+  document.querySelectorAll('#tabContentExercise .period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderExercise();
+}
+
+function renderExercise() {
+  populateActivities();
+  onWorkoutInput();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - exercisePeriod);
+  const cutoffKey = dateKey(cutoff);
+  const inPeriod = workouts.filter(w => w.date >= cutoffKey);
+  const hasAny = workouts.length > 0;
+  document.getElementById('exerciseEmpty').style.display = hasAny ? 'none' : 'block';
+  document.getElementById('workoutLogSection').style.display = hasAny ? 'block' : 'none';
+  document.getElementById('burnChartCard').style.display = inPeriod.length ? 'block' : 'none';
+  document.getElementById('minsChartCard').style.display = inPeriod.length ? 'block' : 'none';
+
+  const totalCals = inPeriod.reduce((s, w) => s + (w.calories || 0), 0);
+  const totalMins = inPeriod.reduce((s, w) => s + (w.minutes || 0), 0);
+  const activeDays = new Set(inPeriod.map(w => w.date)).size;
+  document.getElementById('exerciseSummary').innerHTML = `
+    <div class="hist-stat"><div class="hs-val" style="color:var(--text)">${inPeriod.length}</div><div class="hs-label">Workouts</div><div class="hs-sub">last ${exercisePeriod}d</div></div>
+    <div class="hist-stat"><div class="hs-val" style="color:#a78bfa">${Math.round(totalMins)}</div><div class="hs-label">Minutes</div><div class="hs-sub">total</div></div>
+    <div class="hist-stat"><div class="hs-val" style="color:var(--fiber)">${Math.round(totalCals)}</div><div class="hs-label">Cal burned</div><div class="hs-sub">total</div></div>
+    <div class="hist-stat"><div class="hs-val" style="color:var(--protein)">${activeDays}</div><div class="hs-label">Active days</div><div class="hs-sub">of ${exercisePeriod}</div></div>`;
+
+  if (inPeriod.length) {
+    const days = [];
+    for (let i = exercisePeriod - 1; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      days.push(dateKey(d));
+    }
+    const calByDay = {}, minByDay = {};
+    inPeriod.forEach(w => {
+      calByDay[w.date] = (calByDay[w.date] || 0) + (w.calories || 0);
+      minByDay[w.date] = (minByDay[w.date] || 0) + (w.minutes || 0);
+    });
+    const labels = days.map(k => new Date(k + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    const burnData = days.map(k => calByDay[k] ? Math.round(calByDay[k]) : null);
+    const minData = days.map(k => minByDay[k] ? Math.round(minByDay[k]) : null);
+    drawBarChart('chartBurn', labels, [{ label: 'Cal burned', data: burnData, color: '#fb923c' }]);
+    drawBarChart('chartMins', labels, [{ label: 'Minutes', data: minData, color: '#a78bfa' }]);
+  }
+
+  const recent = [...workouts].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 30);
+  document.getElementById('workoutList').innerHTML = recent.map(w => {
+    const meta = workoutMeta(w.name);
+    const dateLabel = w.date === todayKey() ? 'Today' : new Date(w.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    return `<div class="workout-row">
+      <span class="wk-emoji">${meta.emoji}</span>
+      <div class="wk-main">
+        <div class="wk-name">${cfEsc(w.name)}</div>
+        <div class="wk-sub">${dateLabel} · ${Math.round(w.minutes || 0)} min</div>
+      </div>
+      <span class="wk-cals">${Math.round(w.calories || 0)} cal</span>
+      <button class="wk-del" onclick="deleteWorkout('${w.id}')" title="Remove">✕</button>
+    </div>`;
+  }).join('');
 }
 
 function calcStreak() {
@@ -4845,6 +5085,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadCustomFoods();
   await loadMealTemplates();
   await loadWeightLog();
+  await loadWorkouts();
   await syncHistoryCache(365);
   loadViewDate();
   checkWeighReminder();

@@ -65,6 +65,17 @@ CREATE TABLE meal_templates (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE workouts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  name TEXT NOT NULL,         -- activity name
+  minutes REAL DEFAULT 0,
+  calories REAL DEFAULT 0,
+  ts INTEGER,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE ai_usage (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT NOT NULL,
@@ -97,3 +108,4 @@ CREATE INDEX IF NOT EXISTS idx_weight_user_date ON weight_log(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_custom_foods_user ON custom_foods(user_id);
 CREATE INDEX IF NOT EXISTS idx_meal_templates_user ON meal_templates(user_id);
 CREATE INDEX IF NOT EXISTS idx_ai_usage_user ON ai_usage(user_id);
+CREATE INDEX IF NOT EXISTS idx_workouts_user_date ON workouts(user_id, date);
