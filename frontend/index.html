@@ -949,6 +949,7 @@
   .wk-form select:focus { border-color: var(--protein); }
   .wk-form .btn-primary { margin-top: 4px; }
   .wk-hint { font-size: 12px; color: #60a5fa; min-height: 14px; margin: 2px 0 10px; }
+  .ax-summary { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-bottom: 10px; }
   .workout-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
   .workout-row .wk-emoji { font-size: 20px; flex-shrink: 0; }
   .workout-row .wk-main { flex: 1; min-width: 0; }
@@ -4748,12 +4749,33 @@ async function renderAnalysis() {
     if (raw) JSON.parse(raw).forEach(e => entries.push(e));
   }
   const el = document.getElementById('analysisContent');
-  if (entries.length === 0) {
+  const ex = gatherExerciseSummary(analysisPeriod);
+  if (entries.length === 0 && !ex) {
     el.innerHTML = '';
     document.getElementById('analysisEmpty').style.display = 'block';
     return;
   }
   document.getElementById('analysisEmpty').style.display = 'none';
+  // Exercise insight section — only when workouts were logged in the window.
+  function exerciseSection(e) {
+    const top = e.top.slice(0, 5);
+    const maxCal = top[0][1].cal || 1;
+    return `<div class="analysis-section"><h3>🏃 Exercise</h3>
+      <div class="ax-summary">${e.count} workout${e.count !== 1 ? 's' : ''} · ${e.activeDays} active day${e.activeDays !== 1 ? 's' : ''} · ${e.totalMin} min · ${e.totalCal} cal burned</div>
+      ${top.map(([name, v]) => {
+        const meta = workoutMeta(name);
+        return `<div class="analysis-bar-row">
+          <span class="ab-name">${meta.emoji} ${cfEsc(name)}</span>
+          <div class="ab-track"><div class="ab-fill" style="width:${(v.cal / maxCal * 100).toFixed(1)}%;background:var(--fiber)"></div></div>
+          <span class="ab-val">${Math.round(v.cal)}</span>
+        </div>`;
+      }).join('')}</div>`;
+  }
+  // If only exercise is logged (no food yet), show just the exercise section.
+  if (entries.length === 0) {
+    el.innerHTML = exerciseSection(ex);
+    return;
+  }
   const foodMap = {};
   entries.forEach(e => {
     const key = e.name;
@@ -4791,10 +4813,30 @@ async function renderAnalysis() {
         <span class="ab-name">${f.emoji} ${f.name}</span>
         <div class="ab-track"><div class="ab-fill" style="width:${(f.count/byCount[0].count*100).toFixed(1)}%;background:#a78bfa"></div></div>
         <span class="ab-val">${f.count}×</span>
-      </div>`).join('')}</div>`;
+      </div>`).join('')}</div>` +
+    (ex ? exerciseSection(ex) : '');
 }
 
 // ---- AI diet coach (Insights tab) ----
+// Aggregate logged workouts over the last `days`; returns null if none logged.
+function gatherExerciseSummary(days) {
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
+  const cutoffKey = dateKey(cutoff);
+  const inP = workouts.filter(w => w.date >= cutoffKey);
+  if (!inP.length) return null;
+  const totalCal = inP.reduce((s, w) => s + (w.calories || 0), 0);
+  const totalMin = inP.reduce((s, w) => s + (w.minutes || 0), 0);
+  const activeDays = new Set(inP.map(w => w.date)).size;
+  const byAct = {};
+  inP.forEach(w => {
+    const k = w.name;
+    if (!byAct[k]) byAct[k] = { count: 0, cal: 0, min: 0 };
+    byAct[k].count++; byAct[k].cal += w.calories || 0; byAct[k].min += w.minutes || 0;
+  });
+  const top = Object.entries(byAct).sort((a, b) => b[1].cal - a[1].cal);
+  return { count: inP.length, activeDays, totalCal: Math.round(totalCal), totalMin: Math.round(totalMin), top };
+}
+
 function gatherDietSummary(days) {
   const data = getHistoryData(days);
   const withData = data.filter(d => d.hasData);
@@ -4807,7 +4849,7 @@ function gatherDietSummary(days) {
     if (raw) { try { JSON.parse(raw).forEach(e => { const k = (e.name || '').trim(); if (k) map[k] = (map[k] || 0) + 1; }); } catch (e) {} }
   }
   const topFoods = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([name, count]) => `${name} (${count}x)`);
-  return {
+  const summary = {
     period_days: days,
     days_logged: withData.length,
     daily_averages: { calories: avg('cal'), protein_g: avg('protein'), carbs_g: avg('carbs'), fat_g: avg('fat'), fiber_g: avg('fiber') },
@@ -4816,6 +4858,19 @@ function gatherDietSummary(days) {
     restrictions: goals.restrictions || '',
     most_eaten_foods: topFoods
   };
+  // Only include exercise when the user actually logged workouts in the window.
+  const ex = gatherExerciseSummary(days);
+  if (ex) {
+    summary.exercise = {
+      workouts: ex.count,
+      active_days: ex.activeDays,
+      total_calories_burned: ex.totalCal,
+      avg_calories_burned_per_day: Math.round(ex.totalCal / days),
+      total_minutes: ex.totalMin,
+      top_activities: ex.top.slice(0, 6).map(([name, v]) => `${name} (${v.count}x, ${Math.round(v.cal)} cal)`)
+    };
+  }
+  return summary;
 }
 
 async function analyzeDiet() {
