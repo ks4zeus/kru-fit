@@ -905,6 +905,16 @@
     font-size: 13px; font-weight: 600; color: var(--muted);
     text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;
   }
+  .macros-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .macros-head h3 {
+    font-size: 13px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.5px; margin: 0;
+  }
+  .macros-toggle {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 999px; padding: 5px 13px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .macros-toggle:hover { border-color: var(--protein); }
   .hist-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
   .hist-stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
   .hist-stat .hs-val { font-size: 20px; font-weight: 700; font-family: var(--mono); line-height: 1; }
@@ -1470,9 +1480,19 @@
       <h3>🔥 Calories</h3>
       <canvas id="chartCal" height="160"></canvas>
     </div>
-    <div class="chart-card">
-      <h3>Macros</h3>
-      <canvas id="chartMacros" height="160"></canvas>
+    <div id="macroSection">
+      <div class="macros-head">
+        <h3>🍗 Macros</h3>
+        <button class="macros-toggle" id="macrosToggle" onclick="toggleMacrosView()">Combine</button>
+      </div>
+      <div class="chart-card" id="macroCombinedCard" style="display:none">
+        <canvas id="chartMacros" height="160"></canvas>
+      </div>
+      <div id="macroSeparateCards">
+        <div class="chart-card"><h3>💪🏾 Protein</h3><canvas id="chartProtein" height="140"></canvas></div>
+        <div class="chart-card"><h3>🍞 Carbs</h3><canvas id="chartCarbs" height="140"></canvas></div>
+        <div class="chart-card"><h3>🥑 Fat</h3><canvas id="chartFat" height="140"></canvas></div>
+      </div>
     </div>
     <div class="chart-card">
       <h3>🌾 Fiber</h3>
@@ -1929,6 +1949,7 @@ const STORAGE_KEYS = {
   weightUnit: 'fuellog_wunit',
   customFoods: 'fuellog_custom_foods',
   mealTemplates: 'fuellog_meal_templates',
+  macrosView: 'fuellog_macros_view',
   water: 'fuellog_water_',
   log: 'fuellog_log_'
 };
@@ -2005,6 +2026,7 @@ let weightUnit = 'lbs';
 let weightPeriod = 30;
 let histPeriod = 7;
 let analysisPeriod = 7;
+let macrosCombined = loadLocal(STORAGE_KEYS.macrosView, false) === true;
 let showNetCarbs = false;
 let waterGoalOz = defaultGoals.water_oz;
 
@@ -3144,13 +3166,13 @@ async function renderHistory() {
     document.getElementById('histSummary').innerHTML = '';
     document.getElementById('histEmpty').style.display = 'block';
     document.getElementById('chartCal').style.display = 'none';
-    document.getElementById('chartMacros').style.display = 'none';
+    document.getElementById('macroSection').style.display = 'none';
     document.getElementById('chartFiber').style.display = 'none';
     return;
   }
   document.getElementById('histEmpty').style.display = 'none';
   document.getElementById('chartCal').style.display = 'block';
-  document.getElementById('chartMacros').style.display = 'block';
+  document.getElementById('macroSection').style.display = 'block';
   document.getElementById('chartFiber').style.display = 'block';
   const avgCal = daysWithData.reduce((s, d) => s + d.cal, 0) / daysWithData.length;
   const avgProtein = daysWithData.reduce((s, d) => s + d.protein, 0) / daysWithData.length;
@@ -3196,12 +3218,28 @@ async function renderHistory() {
   const fatData = data.map(d => d.hasData ? Math.round(d.fat) : null);
   const fiberData = data.map(d => d.hasData ? Math.round(d.fiber || 0) : null);
   drawBarChart('chartCal', labels, [{ label: 'Calories', data: calData, color: '#f5a623' }], goals.cal);
-  drawLineChart('chartMacros', labels, [
-    { label: 'Protein', data: proteinData, color: '#4ade80' },
-    { label: 'Carbs', data: carbsData, color: '#60a5fa' },
-    { label: 'Fat', data: fatData, color: '#f472b6' }
-  ]);
+  // Macros: separate per-macro charts by default, or one combined chart via the toggle.
+  document.getElementById('macrosToggle').textContent = macrosCombined ? 'Separate' : 'Combine';
+  document.getElementById('macroCombinedCard').style.display = macrosCombined ? 'block' : 'none';
+  document.getElementById('macroSeparateCards').style.display = macrosCombined ? 'none' : 'block';
+  if (macrosCombined) {
+    drawLineChart('chartMacros', labels, [
+      { label: 'Protein', data: proteinData, color: '#4ade80' },
+      { label: 'Carbs', data: carbsData, color: '#60a5fa' },
+      { label: 'Fat', data: fatData, color: '#f472b6' }
+    ]);
+  } else {
+    drawBarChart('chartProtein', labels, [{ label: 'Protein', data: proteinData, color: '#4ade80' }], goals.protein);
+    drawBarChart('chartCarbs', labels, [{ label: 'Carbs', data: carbsData, color: '#60a5fa' }], goals.carbs);
+    drawBarChart('chartFat', labels, [{ label: 'Fat', data: fatData, color: '#f472b6' }], goals.fat);
+  }
   drawBarChart('chartFiber', labels, [{ label: 'Fiber', data: fiberData, color: '#fb923c' }], goals.fiber || defaultGoals.fiber);
+}
+
+function toggleMacrosView() {
+  macrosCombined = !macrosCombined;
+  saveLocal(STORAGE_KEYS.macrosView, macrosCombined);
+  renderHistory();
 }
 
 function calcStreak() {
