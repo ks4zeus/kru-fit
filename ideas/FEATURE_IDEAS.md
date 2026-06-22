@@ -17,6 +17,9 @@ as we go. ⭐ = top picks (high daily value or unlocks bigger things).
       builder with an adjustable per-ingredient amount/unit; total auto-sums
       scanned (exact) + AI freeform, ÷ servings. Persists structured items via a
       new `custom_foods.recipe_items` column. (shipped 2026-06-22)
+- [x] **Photo portion adjustment** — the AI estimates the whole plate; a portion
+      control (¼/½/¾/All + custom multiplier) rescales the macros live before
+      logging, so you can log only what you actually ate. (shipped 2026-06-22)
 
 ## ⚡ Faster logging
 - [ ] ⭐ **Meal templates** — save a combo as "My usual breakfast" and log all
@@ -33,8 +36,9 @@ as we go. ⭐ = top picks (high daily value or unlocks bigger things).
       store a small thumbnail so the diary is visual.
 
 ## 📱 Platform / polish
-- [ ] ⭐ **Install as an app (PWA)** — manifest + icon for home-screen install,
-      full-screen, offline. Also the foundation for real push notifications.
+- [x] ⭐ **Install as an app (PWA)** — manifest + 192/512/maskable icons,
+      service worker (network-first HTML, /api bypassed, offline shell), iOS
+      standalone meta, and a header Install button. (shipped 2026-06-22)
 - [ ] **Push notifications** — true weekly weigh-in / meal reminders even when the
       app is closed (service worker + scheduled Cloudflare Worker + VAPID).
       Currently implemented as an in-app reminder only.
