@@ -951,6 +951,11 @@
   .wk-intensity { display: inline-flex; gap: 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
   .wki-btn { border: none; background: none; color: var(--muted); font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
   .wki-btn.active { background: var(--surface); color: var(--text); }
+  .wk-opt { font-size: 11px; color: var(--muted); font-weight: 400; }
+  .wk-dist { display: inline-flex; gap: 6px; align-items: center; }
+  .wk-dist input { width: 70px; }
+  .wk-dist select { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 6px; color: var(--text); font-size: 13px; outline: none; }
+  .wk-dist select:focus { border-color: var(--protein); }
   .wk-hint { font-size: 12px; color: #60a5fa; min-height: 14px; margin: 2px 0 10px; }
   .ax-summary { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-bottom: 10px; }
   .workout-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
@@ -1617,6 +1622,12 @@
             <button type="button" class="wki-btn" data-int="hard" onclick="setIntensity('hard')">Hard</button>
           </div>
         </div>
+        <div class="setting-row" id="wkDistanceRow" style="display:none"><label>Distance <span class="wk-opt">(optional)</span></label>
+          <div class="wk-dist">
+            <input type="number" id="wkDistance" min="0" step="0.1" inputmode="decimal" placeholder="0" oninput="wkCalEdited = false; onWorkoutInput()">
+            <select id="wkDistUnitSel" onchange="setDistUnit(this.value)"><option value="mi">mi</option><option value="km">km</option></select>
+          </div>
+        </div>
         <div class="setting-row"><label>Minutes</label>
           <input type="number" id="wkMinutes" min="1" max="600" step="1" inputmode="numeric" placeholder="30" oninput="onWorkoutInput()" style="width:90px">
         </div>
@@ -2063,6 +2074,7 @@ const STORAGE_KEYS = {
   macrosView: 'fuellog_macros_view',
   theme: 'fuellog_theme',
   workouts: 'fuellog_workouts',
+  distUnit: 'fuellog_dist_unit',
   water: 'fuellog_water_',
   log: 'fuellog_log_'
 };
@@ -2147,15 +2159,15 @@ let wkIntensity = 'moderate';
 // Activities with MET values for the calorie estimate. `met` is either a single
 // number (intensity doesn't vary much) or {easy, moderate, hard} tiers.
 const WORKOUTS = [
-  { name: 'Walking', emoji: '🚶', met: { easy: 2.8, moderate: 3.5, hard: 4.3 } },
-  { name: 'Running', emoji: '🏃', met: { easy: 8.0, moderate: 9.8, hard: 11.8 } },
-  { name: 'Cycling', emoji: '🚴', met: { easy: 5.0, moderate: 7.5, hard: 10.0 } },
+  { name: 'Walking', emoji: '🚶', met: { easy: 2.8, moderate: 3.5, hard: 4.3 }, kcalPerKm: 0.53 },
+  { name: 'Running', emoji: '🏃', met: { easy: 8.0, moderate: 9.8, hard: 11.8 }, kcalPerKm: 1.0 },
+  { name: 'Cycling', emoji: '🚴', met: { easy: 5.0, moderate: 7.5, hard: 10.0 }, kcalPerKm: 0.35 },
   { name: 'Swimming', emoji: '🏊', met: { easy: 5.3, moderate: 7.0, hard: 9.5 } },
   { name: 'Strength / weights', emoji: '🏋️', met: { easy: 3.5, moderate: 5.0, hard: 6.0 } },
   { name: 'HIIT', emoji: '🔥', met: { easy: 6.0, moderate: 8.0, hard: 10.0 } },
   { name: 'Elliptical', emoji: '🏃', met: { easy: 4.0, moderate: 5.0, hard: 7.0 } },
   { name: 'Rowing', emoji: '🚣', met: { easy: 4.8, moderate: 7.0, hard: 8.5 } },
-  { name: 'Hiking', emoji: '🥾', met: { easy: 5.0, moderate: 6.0, hard: 7.8 } },
+  { name: 'Hiking', emoji: '🥾', met: { easy: 5.0, moderate: 6.0, hard: 7.8 }, kcalPerKm: 0.72 },
   { name: 'Basketball', emoji: '🏀', met: { easy: 4.5, moderate: 6.5, hard: 8.0 } },
   { name: 'Soccer', emoji: '⚽', met: { easy: 5.0, moderate: 7.0, hard: 10.0 } },
   { name: 'Tennis', emoji: '🎾', met: { easy: 5.0, moderate: 7.3, hard: 8.0 } },
@@ -2170,6 +2182,9 @@ function hasIntensity(meta) { return typeof meta.met === 'object'; }
 function workoutMet(meta, intensity) {
   return typeof meta.met === 'number' ? meta.met : (meta.met[intensity] || meta.met.moderate);
 }
+function supportsDistance(meta) { return typeof meta.kcalPerKm === 'number'; }
+const MI_TO_KM = 1.60934;
+let wkDistUnit = loadLocal(STORAGE_KEYS.distUnit, 'mi') === 'km' ? 'km' : 'mi';
 let showNetCarbs = false;
 let waterGoalOz = defaultGoals.water_oz;
 
@@ -3451,18 +3466,47 @@ async function loadWorkouts() {
 }
 
 // Live estimate as activity/minutes change; fills the editable calories field.
+function setDistUnit(unit) {
+  wkDistUnit = unit === 'km' ? 'km' : 'mi';
+  saveLocal(STORAGE_KEYS.distUnit, wkDistUnit);
+  onWorkoutInput();
+}
+
+// Distance entered, converted to km (canonical). 0 if none / unsupported.
+function currentDistanceKm(meta) {
+  if (!supportsDistance(meta)) return 0;
+  const d = parseFloat(document.getElementById('wkDistance').value) || 0;
+  return d > 0 ? (wkDistUnit === 'km' ? d : d * MI_TO_KM) : 0;
+}
+
+// Format a stored km distance in the user's chosen unit.
+function fmtDist(km) {
+  return wkDistUnit === 'km' ? `${km.toFixed(1)} km` : `${(km / MI_TO_KM).toFixed(1)} mi`;
+}
+
 function onWorkoutInput() {
   const sel = document.getElementById('wkActivity');
   if (!sel) return;
   const meta = workoutMeta(sel.value);
   document.getElementById('wkNameRow').style.display = sel.value === 'Other' ? '' : 'none';
   document.getElementById('wkIntensityRow').style.display = hasIntensity(meta) ? '' : 'none';
+  document.getElementById('wkDistanceRow').style.display = supportsDistance(meta) ? '' : 'none';
+  document.getElementById('wkDistUnitSel').value = wkDistUnit;
   const mins = parseFloat(document.getElementById('wkMinutes').value) || 0;
+  const distKm = currentDistanceKm(meta);
   const hint = document.getElementById('wkHint');
-  if (mins > 0) {
-    const est = estimateWorkoutCals(workoutMet(meta, wkIntensity), mins);
-    const inty = hasIntensity(meta) ? `${wkIntensity} ` : '';
-    hint.textContent = `≈ ${est} cal (est. from ${inty}${meta.name.toLowerCase()} · your weight)`;
+  let est = 0, basis = '';
+  if (distKm > 0) {
+    // Distance × body weight is pace-independent and more accurate than MET×time.
+    est = Math.round(meta.kcalPerKm * latestWeightKg() * distKm);
+    const dv = parseFloat(document.getElementById('wkDistance').value) || 0;
+    basis = `${dv} ${wkDistUnit} of ${meta.name.toLowerCase()}`;
+  } else if (mins > 0) {
+    est = estimateWorkoutCals(workoutMet(meta, wkIntensity), mins);
+    basis = `${hasIntensity(meta) ? wkIntensity + ' ' : ''}${meta.name.toLowerCase()}`;
+  }
+  if (est > 0) {
+    hint.textContent = `≈ ${est} cal (est. from ${basis} · your weight)`;
     if (!wkCalEdited) document.getElementById('wkCalories').value = est;
   } else {
     hint.textContent = '';
@@ -3474,12 +3518,13 @@ async function logWorkout() {
   const meta = workoutMeta(sel.value);
   const fb = document.getElementById('wkFeedback');
   const mins = parseFloat(document.getElementById('wkMinutes').value) || 0;
+  const distKm = currentDistanceKm(meta);
   let name = meta.name;
   if (sel.value === 'Other') name = document.getElementById('wkName').value.trim() || 'Workout';
   if (hasIntensity(meta)) name += ` (${wkIntensity})`;
-  if (mins <= 0) { fb.style.color = 'var(--danger)'; fb.textContent = 'Enter how many minutes.'; return; }
+  if (mins <= 0 && distKm <= 0) { fb.style.color = 'var(--danger)'; fb.textContent = 'Enter minutes or distance.'; return; }
   const calories = Math.max(0, parseFloat(document.getElementById('wkCalories').value) || 0);
-  const entry = { name, minutes: mins, calories, date: todayKey(), ts: Date.now() };
+  const entry = { name, minutes: mins, calories, distance: distKm > 0 ? Math.round(distKm * 100) / 100 : null, date: todayKey(), ts: Date.now() };
   const result = await apiRequest('/workouts', { method: 'POST', body: JSON.stringify(entry) });
   const saved = result.ok ? result.body : { id: Date.now(), ...entry };
   workouts.push(saved);
@@ -3487,6 +3532,7 @@ async function logWorkout() {
   document.getElementById('wkMinutes').value = '';
   document.getElementById('wkCalories').value = '';
   document.getElementById('wkName').value = '';
+  document.getElementById('wkDistance').value = '';
   wkCalEdited = false;
   onWorkoutInput();
   fb.style.color = 'var(--protein)';
@@ -3554,11 +3600,14 @@ function renderExercise() {
   document.getElementById('workoutList').innerHTML = recent.map(w => {
     const meta = workoutMeta(w.name);
     const dateLabel = w.date === todayKey() ? 'Today' : new Date(w.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const parts = [dateLabel];
+    if (w.minutes) parts.push(Math.round(w.minutes) + ' min');
+    if (w.distance) parts.push(fmtDist(w.distance));
     return `<div class="workout-row">
       <span class="wk-emoji">${meta.emoji}</span>
       <div class="wk-main">
         <div class="wk-name">${cfEsc(w.name)}</div>
-        <div class="wk-sub">${dateLabel} · ${Math.round(w.minutes || 0)} min</div>
+        <div class="wk-sub">${parts.join(' · ')}</div>
       </div>
       <span class="wk-cals">${Math.round(w.calories || 0)} cal</span>
       <button class="wk-del" onclick="deleteWorkout('${w.id}')" title="Remove">✕</button>

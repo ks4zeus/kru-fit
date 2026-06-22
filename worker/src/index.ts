@@ -460,10 +460,10 @@ export default {
         }
         const inserted = await db
           .prepare(
-            `INSERT INTO workouts (user_id, date, name, minutes, calories, ts)
-             VALUES (?, ?, ?, ?, ?, ?)`
+            `INSERT INTO workouts (user_id, date, name, minutes, calories, distance, ts)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
           )
-          .bind(userEmail, body.date, body.name, body.minutes ?? 0, body.calories ?? 0, body.ts ?? null)
+          .bind(userEmail, body.date, body.name, body.minutes ?? 0, body.calories ?? 0, body.distance ?? null, body.ts ?? null)
           .run();
         return jsonResponse({ id: inserted.meta?.last_row_id, ...body });
       }

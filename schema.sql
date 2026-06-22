@@ -72,6 +72,7 @@ CREATE TABLE workouts (
   name TEXT NOT NULL,         -- activity name
   minutes REAL DEFAULT 0,
   calories REAL DEFAULT 0,
+  distance REAL,              -- km (canonical), null if logged by time
   ts INTEGER,
   created_at TEXT DEFAULT (datetime('now'))
 );
