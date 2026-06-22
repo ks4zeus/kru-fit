@@ -857,20 +857,24 @@
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 
   .tab-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    max-width: 480px; margin: 0 auto;
     display: flex;
     background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    margin: 14px 20px 0;
-    border-radius: 12px 12px 0 0;
-    overflow: hidden;
+    border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    z-index: 50;
   }
   .tab-btn {
     flex: 1; min-width: 0; background: none; border: none; color: var(--muted);
-    font-family: var(--font); font-size: 12px; font-weight: 600;
-    padding: 11px 5px; cursor: pointer; transition: color 0.2s, background 0.2s;
-    display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap;
+    font-family: var(--font); font-weight: 600;
+    padding: 7px 4px 9px; cursor: pointer; transition: color 0.2s;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    border-top: 2px solid transparent;
   }
-  .tab-btn.active { color: var(--text); background: var(--surface2); }
+  .tab-btn .tab-ico { font-size: 19px; line-height: 1; }
+  .tab-btn .tab-lbl { font-size: 10px; white-space: nowrap; }
+  .tab-btn.active { color: var(--text); border-top-color: var(--protein); }
   .tab-content { display: none; }
   .tab-content.active { display: block; }
   .history-wrap { padding: 16px 20px; }
@@ -1374,14 +1378,14 @@
   <button class="install-btn" id="installBtn" onclick="promptInstall()" style="display:none" title="Install Kru Fit">⬇️ Install</button>
   <button class="settings-btn" onclick="openSettings()" title="Profile">👤</button>
 </div>
-<div class="tab-bar">
-  <button class="tab-btn active" id="tabToday" onclick="switchTab('today')">📋 Today</button>
-  <button class="tab-btn" id="tabHistory" onclick="switchTab('history')">📈 History</button>
-  <button class="tab-btn" id="tabWeight" onclick="switchTab('weight')">⚖️ Weight</button>
-  <button class="tab-btn" id="tabExercise" onclick="switchTab('exercise')">💪 Exercise</button>
-  <button class="tab-btn" id="tabAnalysis" onclick="switchTab('analysis')">🔬 Insights</button>
-  <button class="tab-btn" id="tabAdmin" onclick="switchTab('admin')" style="display:none">📊 Admin</button>
-</div>
+<nav class="tab-bar">
+  <button class="tab-btn active" id="tabToday" onclick="switchTab('today')"><span class="tab-ico">📋</span><span class="tab-lbl">Today</span></button>
+  <button class="tab-btn" id="tabHistory" onclick="switchTab('history')"><span class="tab-ico">📈</span><span class="tab-lbl">History</span></button>
+  <button class="tab-btn" id="tabWeight" onclick="switchTab('weight')"><span class="tab-ico">⚖️</span><span class="tab-lbl">Weight</span></button>
+  <button class="tab-btn" id="tabExercise" onclick="switchTab('exercise')"><span class="tab-ico">💪</span><span class="tab-lbl">Exercise</span></button>
+  <button class="tab-btn" id="tabAnalysis" onclick="switchTab('analysis')"><span class="tab-ico">🔬</span><span class="tab-lbl">Insights</span></button>
+  <button class="tab-btn" id="tabAdmin" onclick="switchTab('admin')" style="display:none"><span class="tab-ico">📊</span><span class="tab-lbl">Admin</span></button>
+</nav>
 <div class="tab-content active" id="tabContentToday">
   <div class="weigh-reminder" id="weighReminder" style="display:none">
     <span>⚖️</span>
