@@ -2994,7 +2994,13 @@ async function renderAdmin() {
   const pricing = data.pricing || {};
   if (!users.length) { content.innerHTML = ''; empty.style.display = 'block'; return; }
 
-  const money = n => '$' + (Number(n) || 0).toFixed(2);
+  // AI costs are often a fraction of a cent — show enough precision to see them.
+  const money = n => {
+    n = Number(n) || 0;
+    if (n === 0) return '$0';
+    if (n < 1) return '$' + n.toFixed(4);   // sub-dollar: hundredths of a cent
+    return '$' + n.toFixed(2);
+  };
   const tok = n => { n = Number(n) || 0; return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); };
   const ago = ts => {
     if (!ts) return 'never';
