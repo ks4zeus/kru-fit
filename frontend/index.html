@@ -2163,7 +2163,7 @@ function setUserEmail(text) {
 }
 
 // ---- Theme (dark default / light) ----
-function setTheme(theme) {
+function setTheme(theme, rerender = true) {
   const t = theme === 'light' ? 'light' : 'dark';
   if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
   else document.documentElement.removeAttribute('data-theme');
@@ -2174,9 +2174,14 @@ function setTheme(theme) {
   if (lightBtn) lightBtn.classList.toggle('active', t === 'light');
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', t === 'light' ? '#f3f4f8' : '#0f1117');
+  // Canvas charts don't auto-repaint — re-render the visible ones on a theme change.
+  if (rerender && typeof activeTab !== 'undefined') {
+    if (activeTab === 'history') renderHistory();
+    else if (activeTab === 'weight') renderWeightTab();
+  }
 }
 function applyTheme() {
-  setTheme(loadLocal(STORAGE_KEYS.theme, 'dark') === 'light' ? 'light' : 'dark');
+  setTheme(loadLocal(STORAGE_KEYS.theme, 'dark') === 'light' ? 'light' : 'dark', false);
 }
 
 function setDateDisplay() {
@@ -3323,8 +3328,21 @@ function canvasSetup(id) {
   return { ctx, cssW, cssH };
 }
 
+// Read theme colors from the live CSS variables so charts adapt to dark/light.
+function chartColors() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name, fb) => cs.getPropertyValue(name).trim() || fb;
+  return {
+    grid: v('--border', '#2e3347'),
+    muted: v('--muted', '#7b82a0'),
+    surface: v('--surface', '#1a1d27'),
+    text: v('--text', '#e8eaf0'),
+  };
+}
+
 function drawBarChart(id, labels, datasets, goalLine) {
   const { ctx, cssW, cssH } = canvasSetup(id);
+  const c = chartColors();
   const pad = CHART_PAD;
   const plotW = cssW - pad.left - pad.right;
   const plotH = cssH - pad.top - pad.bottom;
@@ -3332,13 +3350,13 @@ function drawBarChart(id, labels, datasets, goalLine) {
   const maxVal = Math.max(...allVals, goalLine || 0) * 1.15 || 100;
   ctx.clearRect(0, 0, cssW, cssH);
   const gridCount = 4;
-  ctx.strokeStyle = '#2e3347';
+  ctx.strokeStyle = c.grid;
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
   for (let i = 0; i <= gridCount; i++) {
     const y = pad.top + plotH - (i / gridCount) * plotH;
     ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + plotW, y); ctx.stroke();
-    ctx.fillStyle = '#7b82a0';
+    ctx.fillStyle = c.muted;
     ctx.font = '10px DM Mono, monospace';
     ctx.textAlign = 'right';
     ctx.fillText(Math.round((i / gridCount) * maxVal), pad.left - 5, y + 3);
@@ -3371,7 +3389,7 @@ function drawBarChart(id, labels, datasets, goalLine) {
       ctx.fill();
     });
   });
-  ctx.fillStyle = '#7b82a0';
+  ctx.fillStyle = c.muted;
   ctx.font = '10px Inter, sans-serif';
   ctx.textAlign = 'center';
   const step = Math.max(1, Math.floor(n / 7));
@@ -3384,6 +3402,7 @@ function drawBarChart(id, labels, datasets, goalLine) {
 
 function drawLineChart(id, labels, datasets) {
   const { ctx, cssW, cssH } = canvasSetup(id);
+  const c = chartColors();
   // Local padding: extra top room for the legend, so it doesn't collide with the
   // x-axis (month) labels at the bottom.
   const pad = { top: 24, right: 10, bottom: 26, left: 44 };
@@ -3393,13 +3412,13 @@ function drawLineChart(id, labels, datasets) {
   const maxVal = Math.max(...allVals) * 1.2 || 100;
   ctx.clearRect(0, 0, cssW, cssH);
   const gridCount = 4;
-  ctx.strokeStyle = '#2e3347';
+  ctx.strokeStyle = c.grid;
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
   for (let i = 0; i <= gridCount; i++) {
     const y = pad.top + plotH - (i / gridCount) * plotH;
     ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + plotW, y); ctx.stroke();
-    ctx.fillStyle = '#7b82a0';
+    ctx.fillStyle = c.muted;
     ctx.font = '10px DM Mono, monospace';
     ctx.textAlign = 'right';
     ctx.fillText(Math.round((i / gridCount) * maxVal) + 'g', pad.left - 4, y + 3);
@@ -3411,7 +3430,7 @@ function drawLineChart(id, labels, datasets) {
   datasets.forEach(ds => {
     ctx.fillStyle = ds.color;
     ctx.beginPath(); ctx.arc(lx + 5, 9, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#7b82a0';
+    ctx.fillStyle = c.muted;
     ctx.font = '10px Inter, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText(ds.label, lx + 13, 12);
@@ -3436,7 +3455,7 @@ function drawLineChart(id, labels, datasets) {
       ctx.beginPath(); ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2); ctx.fill();
     });
   });
-  ctx.fillStyle = '#7b82a0';
+  ctx.fillStyle = c.muted;
   ctx.font = '10px Inter, sans-serif';
   ctx.textAlign = 'center';
   const step = Math.max(1, Math.floor(n / 7));
@@ -4351,6 +4370,7 @@ function drawWeightChart(id, labels, vals, unit, trend) {
   canvas.style.height = cssH + 'px';
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
+  const c = chartColors();
   const pad = { top: 20, right: 16, bottom: 38, left: 52 };
   const plotW = cssW - pad.left - pad.right;
   const plotH = cssH - pad.top - pad.bottom;
@@ -4367,17 +4387,17 @@ function drawWeightChart(id, labels, vals, unit, trend) {
   for (let i = 0; i <= gridCount; i++) {
     const y = pad.top + plotH - (i / gridCount) * plotH;
     const v = rangeMin + (i / gridCount) * (rangeMax - rangeMin);
-    ctx.strokeStyle = '#2e3347';
+    ctx.strokeStyle = c.grid;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
     ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + plotW, y); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = '#7b82a0';
+    ctx.fillStyle = c.muted;
     ctx.font = '10px DM Mono, monospace';
     ctx.textAlign = 'right';
     ctx.fillText(v.toFixed(1), pad.left - 5, y + 3);
   }
-  ctx.fillStyle = '#7b82a0';
+  ctx.fillStyle = c.muted;
   ctx.font = '10px Inter, sans-serif';
   ctx.textAlign = 'left';
   ctx.fillText(unit, pad.left, pad.top - 6);
@@ -4416,11 +4436,11 @@ function drawWeightChart(id, labels, vals, unit, trend) {
   vals.forEach((v, i) => {
     ctx.fillStyle = '#a78bfa';
     ctx.beginPath(); ctx.arc(toX(i), toY(v), 4, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#0f1117';
+    ctx.fillStyle = c.surface;
     ctx.beginPath(); ctx.arc(toX(i), toY(v), 1.8, 0, Math.PI * 2); ctx.fill();
   });
   const step = Math.max(1, Math.floor(n / 7));
-  ctx.fillStyle = '#7b82a0';
+  ctx.fillStyle = c.muted;
   ctx.font = '10px Inter, sans-serif';
   ctx.textAlign = 'center';
   labels.forEach((lbl, i) => {
@@ -4439,10 +4459,11 @@ function drawWeightChart(id, labels, vals, unit, trend) {
 }
 
 function drawWeightTooltip(canvas, idx) {
-  const { ctx, pad, vals, toX, toY, labels, unit } = _wchartState;
+  const { ctx, pad, vals, toX, toY, labels, unit, trend } = _wchartState;
+  const c = chartColors();
   const cssW = canvas.width / (window.devicePixelRatio || 1);
   const cssH = canvas.height / (window.devicePixelRatio || 1);
-  drawWeightChart(canvas.id, labels, vals, unit);
+  drawWeightChart(canvas.id, labels, vals, unit, trend);
   const x = toX(idx);
   const y = toY(vals[idx]);
   ctx.strokeStyle = 'rgba(167,139,250,0.4)';
@@ -4454,7 +4475,7 @@ function drawWeightTooltip(canvas, idx) {
   const height = 28;
   const tx = Math.min(Math.max(x - width / 2, pad.left), cssW - pad.right - width);
   const ty = y - height - 10;
-  ctx.fillStyle = '#1a1d27';
+  ctx.fillStyle = c.surface;
   ctx.strokeStyle = '#a78bfa';
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -4462,7 +4483,7 @@ function drawWeightTooltip(canvas, idx) {
   else ctx.rect(tx, ty, width, height);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = '#e8eaf0';
+  ctx.fillStyle = c.text;
   ctx.font = '11px DM Mono, monospace';
   ctx.textAlign = 'center';
   ctx.fillText(text, tx + width / 2, ty + 18);
