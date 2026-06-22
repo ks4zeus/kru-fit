@@ -948,6 +948,9 @@
   }
   .wk-form select:focus { border-color: var(--protein); }
   .wk-form .btn-primary { margin-top: 4px; }
+  .wk-intensity { display: inline-flex; gap: 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+  .wki-btn { border: none; background: none; color: var(--muted); font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+  .wki-btn.active { background: var(--surface); color: var(--text); }
   .wk-hint { font-size: 12px; color: #60a5fa; min-height: 14px; margin: 2px 0 10px; }
   .ax-summary { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-bottom: 10px; }
   .workout-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
@@ -1607,6 +1610,13 @@
         <div class="setting-row" id="wkNameRow" style="display:none"><label>Name</label>
           <input type="text" id="wkName" placeholder="e.g. Rock climbing" oninput="onWorkoutInput()" style="width:150px">
         </div>
+        <div class="setting-row" id="wkIntensityRow"><label>Intensity</label>
+          <div class="wk-intensity">
+            <button type="button" class="wki-btn" data-int="easy" onclick="setIntensity('easy')">Easy</button>
+            <button type="button" class="wki-btn active" data-int="moderate" onclick="setIntensity('moderate')">Moderate</button>
+            <button type="button" class="wki-btn" data-int="hard" onclick="setIntensity('hard')">Hard</button>
+          </div>
+        </div>
         <div class="setting-row"><label>Minutes</label>
           <input type="number" id="wkMinutes" min="1" max="600" step="1" inputmode="numeric" placeholder="30" oninput="onWorkoutInput()" style="width:90px">
         </div>
@@ -2133,28 +2143,33 @@ let macrosCombined = loadLocal(STORAGE_KEYS.macrosView, false) === true;
 let exercisePeriod = 30;
 let workouts = [];
 let wkCalEdited = false;
-// Activities with MET values (used to estimate calories from minutes + body weight).
+let wkIntensity = 'moderate';
+// Activities with MET values for the calorie estimate. `met` is either a single
+// number (intensity doesn't vary much) or {easy, moderate, hard} tiers.
 const WORKOUTS = [
-  { name: 'Walking', met: 3.5, emoji: '🚶' },
-  { name: 'Brisk walking', met: 4.3, emoji: '🚶' },
-  { name: 'Running', met: 9.8, emoji: '🏃' },
-  { name: 'Cycling', met: 7.5, emoji: '🚴' },
-  { name: 'Swimming', met: 7.0, emoji: '🏊' },
-  { name: 'Strength / weights', met: 5.0, emoji: '🏋️' },
-  { name: 'HIIT', met: 8.0, emoji: '🔥' },
-  { name: 'Elliptical', met: 5.0, emoji: '🏃' },
-  { name: 'Rowing', met: 7.0, emoji: '🚣' },
-  { name: 'Yoga', met: 2.5, emoji: '🧘' },
-  { name: 'Pilates', met: 3.0, emoji: '🧘' },
-  { name: 'Hiking', met: 6.0, emoji: '🥾' },
-  { name: 'Basketball', met: 6.5, emoji: '🏀' },
-  { name: 'Soccer', met: 7.0, emoji: '⚽' },
-  { name: 'Tennis', met: 7.3, emoji: '🎾' },
-  { name: 'Dancing', met: 5.0, emoji: '💃' },
-  { name: 'Jump rope', met: 11.0, emoji: '🪢' },
-  { name: 'Stair climbing', met: 9.0, emoji: '🪜' },
-  { name: 'Other', met: 5.0, emoji: '💪' }
+  { name: 'Walking', emoji: '🚶', met: { easy: 2.8, moderate: 3.5, hard: 4.3 } },
+  { name: 'Running', emoji: '🏃', met: { easy: 8.0, moderate: 9.8, hard: 11.8 } },
+  { name: 'Cycling', emoji: '🚴', met: { easy: 5.0, moderate: 7.5, hard: 10.0 } },
+  { name: 'Swimming', emoji: '🏊', met: { easy: 5.3, moderate: 7.0, hard: 9.5 } },
+  { name: 'Strength / weights', emoji: '🏋️', met: { easy: 3.5, moderate: 5.0, hard: 6.0 } },
+  { name: 'HIIT', emoji: '🔥', met: { easy: 6.0, moderate: 8.0, hard: 10.0 } },
+  { name: 'Elliptical', emoji: '🏃', met: { easy: 4.0, moderate: 5.0, hard: 7.0 } },
+  { name: 'Rowing', emoji: '🚣', met: { easy: 4.8, moderate: 7.0, hard: 8.5 } },
+  { name: 'Hiking', emoji: '🥾', met: { easy: 5.0, moderate: 6.0, hard: 7.8 } },
+  { name: 'Basketball', emoji: '🏀', met: { easy: 4.5, moderate: 6.5, hard: 8.0 } },
+  { name: 'Soccer', emoji: '⚽', met: { easy: 5.0, moderate: 7.0, hard: 10.0 } },
+  { name: 'Tennis', emoji: '🎾', met: { easy: 5.0, moderate: 7.3, hard: 8.0 } },
+  { name: 'Dancing', emoji: '💃', met: { easy: 3.0, moderate: 5.0, hard: 7.8 } },
+  { name: 'Jump rope', emoji: '🪢', met: { easy: 8.8, moderate: 11.0, hard: 12.3 } },
+  { name: 'Stair climbing', emoji: '🪜', met: { easy: 4.0, moderate: 9.0, hard: 12.0 } },
+  { name: 'Yoga', emoji: '🧘', met: 2.5 },
+  { name: 'Pilates', emoji: '🧘', met: 3.0 },
+  { name: 'Other', emoji: '💪', met: { easy: 3.5, moderate: 5.0, hard: 7.0 } }
 ];
+function hasIntensity(meta) { return typeof meta.met === 'object'; }
+function workoutMet(meta, intensity) {
+  return typeof meta.met === 'number' ? meta.met : (meta.met[intensity] || meta.met.moderate);
+}
 let showNetCarbs = false;
 let waterGoalOz = defaultGoals.water_oz;
 
@@ -3402,7 +3417,13 @@ function populateActivities() {
 }
 
 function workoutMeta(name) {
-  return WORKOUTS.find(w => w.name === name) || { name, met: 5.0, emoji: '💪' };
+  const base = (name || '').replace(/\s*\((easy|moderate|hard)\)\s*$/i, '');
+  return WORKOUTS.find(w => w.name === base) || { name, met: 5.0, emoji: '💪' };
+}
+function setIntensity(level) {
+  wkIntensity = level;
+  document.querySelectorAll('.wki-btn').forEach(b => b.classList.toggle('active', b.dataset.int === level));
+  onWorkoutInput();
 }
 
 // Latest logged body weight in kg (default ~70 kg if none logged).
@@ -3435,11 +3456,13 @@ function onWorkoutInput() {
   if (!sel) return;
   const meta = workoutMeta(sel.value);
   document.getElementById('wkNameRow').style.display = sel.value === 'Other' ? '' : 'none';
+  document.getElementById('wkIntensityRow').style.display = hasIntensity(meta) ? '' : 'none';
   const mins = parseFloat(document.getElementById('wkMinutes').value) || 0;
   const hint = document.getElementById('wkHint');
   if (mins > 0) {
-    const est = estimateWorkoutCals(meta.met, mins);
-    hint.textContent = `≈ ${est} cal (est. from ${meta.name.toLowerCase()} · your weight)`;
+    const est = estimateWorkoutCals(workoutMet(meta, wkIntensity), mins);
+    const inty = hasIntensity(meta) ? `${wkIntensity} ` : '';
+    hint.textContent = `≈ ${est} cal (est. from ${inty}${meta.name.toLowerCase()} · your weight)`;
     if (!wkCalEdited) document.getElementById('wkCalories').value = est;
   } else {
     hint.textContent = '';
@@ -3453,6 +3476,7 @@ async function logWorkout() {
   const mins = parseFloat(document.getElementById('wkMinutes').value) || 0;
   let name = meta.name;
   if (sel.value === 'Other') name = document.getElementById('wkName').value.trim() || 'Workout';
+  if (hasIntensity(meta)) name += ` (${wkIntensity})`;
   if (mins <= 0) { fb.style.color = 'var(--danger)'; fb.textContent = 'Enter how many minutes.'; return; }
   const calories = Math.max(0, parseFloat(document.getElementById('wkCalories').value) || 0);
   const entry = { name, minutes: mins, calories, date: todayKey(), ts: Date.now() };
