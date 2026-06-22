@@ -22,8 +22,9 @@ as we go. ⭐ = top picks (high daily value or unlocks bigger things).
       logging, so you can log only what you actually ate. (shipped 2026-06-22)
 
 ## ⚡ Faster logging
-- [ ] ⭐ **Meal templates** — save a combo as "My usual breakfast" and log all
-      items in one tap. Biggest day-to-day time-saver.
+- [x] ⭐ **Meal templates** — save the day's log (or a subset) as a named meal
+      from the Today tab; log every item in one tap from a "📋 Your meals"
+      section in Quick Add. New `meal_templates` table. (shipped 2026-06-22)
 - [ ] **Copy a past day** — extend the day-nav with a "copy this whole day to
       today" button. Trivial given day navigation already exists.
 - [ ] **Barcode AI fallback** — when OpenFoodFacts has no match, offer the AI

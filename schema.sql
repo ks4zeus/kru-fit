@@ -56,6 +56,15 @@ CREATE TABLE custom_foods (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE meal_templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  emoji TEXT,
+  items TEXT,                 -- JSON array of {name,emoji,cal,protein,carbs,fiber,fat}
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE goals (
   user_id TEXT PRIMARY KEY,
   cal INTEGER DEFAULT 1800,
@@ -75,3 +84,4 @@ CREATE TABLE goals (
 CREATE INDEX IF NOT EXISTS idx_food_user_date ON food_log(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_weight_user_date ON weight_log(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_custom_foods_user ON custom_foods(user_id);
+CREATE INDEX IF NOT EXISTS idx_meal_templates_user ON meal_templates(user_id);

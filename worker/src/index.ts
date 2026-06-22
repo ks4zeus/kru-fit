@@ -548,6 +548,66 @@ export default {
       }
     }
 
+    if (segments[1] === "meal-templates") {
+      if (request.method === "GET") {
+        const { results } = await db
+          .prepare("SELECT * FROM meal_templates WHERE user_id = ? ORDER BY created_at DESC")
+          .bind(userEmail)
+          .all();
+        return jsonResponse(results || []);
+      }
+
+      if (request.method === "POST") {
+        const body = await parseJson(request);
+        if (!body?.name) {
+          return jsonResponse({ error: "Missing name" }, 400);
+        }
+        const inserted = await db
+          .prepare(
+            `INSERT INTO meal_templates (user_id, name, emoji, items)
+             VALUES (?, ?, ?, ?)`
+          )
+          .bind(userEmail, body.name, body.emoji || null, body.items || "[]")
+          .run();
+        return jsonResponse({ id: inserted.meta?.last_row_id, ...body });
+      }
+
+      if (request.method === "PUT") {
+        const id = Number(segments[2]);
+        if (!Number.isFinite(id) || id <= 0) {
+          return jsonResponse({ error: "Invalid id" }, 400);
+        }
+        const body = await parseJson(request);
+        if (!body?.name) {
+          return jsonResponse({ error: "Missing name" }, 400);
+        }
+        await db
+          .prepare(
+            `UPDATE meal_templates SET name = ?, emoji = ?, items = ?
+             WHERE id = ? AND user_id = ?`
+          )
+          .bind(body.name, body.emoji || null, body.items || "[]", id, userEmail)
+          .run();
+        return jsonResponse({ id, ...body });
+      }
+
+      if (request.method === "DELETE") {
+        const idSegment = segments[2];
+        if (!idSegment) {
+          return jsonResponse({ error: "Missing id" }, 400);
+        }
+        const id = Number(idSegment);
+        if (!Number.isFinite(id) || id <= 0) {
+          return jsonResponse({ error: "Invalid id" }, 400);
+        }
+        await db
+          .prepare("DELETE FROM meal_templates WHERE id = ? AND user_id = ?")
+          .bind(id, userEmail)
+          .run();
+        return jsonResponse({ success: true });
+      }
+    }
+
     if (segments[1] === "goals") {
       if (request.method === "GET") {
         const { results } = await db

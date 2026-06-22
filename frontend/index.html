@@ -280,6 +280,12 @@
     opacity: 0.7;
   }
   .clear-btn:active { opacity: 1; }
+  .section-head-actions { display: flex; align-items: center; gap: 12px; }
+  .save-meal-btn {
+    background: none; border: none; color: var(--protein);
+    font-size: 12px; font-family: var(--font); font-weight: 600; cursor: pointer; opacity: 0.85;
+  }
+  .save-meal-btn:active { opacity: 1; }
 
   .log-list {
     padding: 0 20px;
@@ -1219,6 +1225,20 @@
   .qa-qty:focus { border-color: var(--protein); }
   .qa-add { background: var(--protein); color: #0a1a12; border: none; border-radius: 8px; font-weight: 700; font-size: 18px; line-height: 1; padding: 7px 12px; cursor: pointer; flex-shrink: 0; }
   .qa-empty { text-align: center; color: var(--muted); font-size: 14px; padding: 24px 10px; }
+  /* Save-as-meal item picker */
+  .sm-pick-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .sm-item { display: flex; align-items: center; gap: 9px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; }
+  .sm-item input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--protein); flex-shrink: 0; }
+  .sm-emoji { font-size: 18px; flex-shrink: 0; }
+  .sm-info { flex: 1; min-width: 0; }
+  .sm-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sm-macros { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 1px; }
+  .sm-total { font-size: 12px; color: var(--muted); font-family: var(--mono); text-align: right; margin: 4px 0 12px; min-height: 14px; }
+  /* Meal-template rows in Quick Add */
+  .mt-item { display: flex; align-items: center; gap: 9px; background: var(--surface2); border: 1px solid #7c3aed55; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
+  .mt-add { background: #7c3aed; color: #fff; border: none; border-radius: 8px; font-weight: 700; font-size: 18px; line-height: 1; padding: 7px 12px; cursor: pointer; flex-shrink: 0; }
+  .mt-del { background: none; border: none; color: var(--muted); font-size: 14px; cursor: pointer; padding: 2px 4px; flex-shrink: 0; }
+  .mt-del:hover { color: var(--danger); }
 
   .form-grid {
     display: grid;
@@ -1384,7 +1404,10 @@
   </div>
   <div class="section-head">
     <h2 id="logHeading">Today's Log</h2>
-    <button class="clear-btn today-only" onclick="clearLog()">Clear all</button>
+    <div class="section-head-actions today-only">
+      <button class="save-meal-btn" onclick="openSaveMeal()" title="Save these as a reusable meal">💾 Save as meal</button>
+      <button class="clear-btn" onclick="clearLog()">Clear all</button>
+    </div>
   </div>
   <div class="log-list" id="logList">
     <div class="empty-state">
@@ -1649,6 +1672,22 @@
     <button class="btn-cancel" onclick="closeQuickAdd()">Done</button>
   </div>
 </div>
+<div class="modal-bg" id="saveMealModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">💾 Save as Meal</div>
+    <div class="error-msg" id="smError"></div>
+    <div class="form-field full" style="margin-bottom:12px">
+      <label>Meal name</label>
+      <input type="text" id="smName" placeholder="e.g. My usual breakfast">
+    </div>
+    <div class="sm-pick-label">Include these items:</div>
+    <div id="smItems"></div>
+    <div class="sm-total" id="smTotal"></div>
+    <button class="btn-primary" onclick="saveMealTemplate()" style="background:#7c3aed;color:#fff">Save Meal</button>
+    <button class="btn-cancel" onclick="closeSaveMeal()">Cancel</button>
+  </div>
+</div>
 <div class="modal-bg" id="editEntryModal">
   <div class="modal">
     <div class="modal-handle"></div>
@@ -1826,6 +1865,7 @@ const STORAGE_KEYS = {
   weight: 'fuellog_weight',
   weightUnit: 'fuellog_wunit',
   customFoods: 'fuellog_custom_foods',
+  mealTemplates: 'fuellog_meal_templates',
   water: 'fuellog_water_',
   log: 'fuellog_log_'
 };
@@ -1886,6 +1926,7 @@ let log = [];
 let weightLog = {};
 let waterEntry = { oz: 0, date: todayKey() };
 let customFoods = [];
+let mealTemplates = [];
 let photoData = null;
 let photoMime = 'image/jpeg';
 let photoResult = null;
@@ -2284,6 +2325,27 @@ async function loadCustomFoods() {
     customFoods = loadLocal(STORAGE_KEYS.customFoods, []);
   }
   return customFoods;
+}
+
+async function loadMealTemplates() {
+  const result = await apiRequest('/meal-templates');
+  if (result.ok) {
+    mealTemplates = result.body || [];
+    saveLocal(STORAGE_KEYS.mealTemplates, mealTemplates);
+  } else {
+    mealTemplates = loadLocal(STORAGE_KEYS.mealTemplates, []);
+  }
+  return mealTemplates;
+}
+
+// Parse a template's stored items (JSON string from the API/localStorage).
+function templateItems(t) {
+  if (!t || !t.items) return [];
+  try { const a = typeof t.items === 'string' ? JSON.parse(t.items) : t.items; return Array.isArray(a) ? a : []; }
+  catch (e) { return []; }
+}
+function findMealTemplate(id) {
+  return mealTemplates.find(t => String(t.id) === String(id));
 }
 
 async function saveCustomFood(logNow) {
@@ -3570,30 +3632,35 @@ function renderQuickAddList(query) {
   const listEl = document.getElementById('qaList');
   const emptyEl = document.getElementById('qaEmpty');
 
-  // Search mode: one flat, relevance-sorted list.
+  // Search mode: one flat, relevance-sorted list (saved meals first).
   if (query) {
+    const tpls = (mealTemplates || []).filter(t => (t.name || '').toLowerCase().includes(query));
     const items = quickCatalog.filter(f => f.name.toLowerCase().includes(query))
       .sort((a, b) => b.count - a.count || b.lastTs - a.lastTs);
     quickRendered = items;
-    if (items.length === 0) {
+    if (items.length === 0 && tpls.length === 0) {
       listEl.innerHTML = '';
       emptyEl.style.display = 'block';
-      emptyEl.textContent = 'No matching foods.';
+      emptyEl.textContent = 'No matching foods or meals.';
       return;
     }
     emptyEl.style.display = 'none';
-    listEl.innerHTML = items.map((f, i) => qaRow(f, i)).join('');
+    let html = '';
+    if (tpls.length) html += '<div class="qa-head">📋 Your meals</div>' + tpls.map(mtRow).join('');
+    if (items.length) html += (tpls.length ? '<div class="qa-head">🍎 Foods</div>' : '') + items.map((f, i) => qaRow(f, i)).join('');
+    listEl.innerHTML = html;
     return;
   }
 
-  // Default: a Recent row (last distinct foods) then your most-logged staples.
+  // Default: saved meals, then a Recent row (last distinct foods), then staples.
+  const tpls = mealTemplates || [];
   const recent = [...quickCatalog].filter(f => f.lastTs > 0).sort((a, b) => b.lastTs - a.lastTs).slice(0, 5);
   const recentKeys = new Set(recent.map(f => f.name.toLowerCase()));
   const top = [...quickCatalog].sort((a, b) => b.count - a.count || b.lastTs - a.lastTs)
     .filter(f => !recentKeys.has(f.name.toLowerCase())).slice(0, 10);
   quickRendered = [...recent, ...top];
 
-  if (quickRendered.length === 0) {
+  if (quickRendered.length === 0 && tpls.length === 0) {
     listEl.innerHTML = '';
     emptyEl.style.display = 'block';
     emptyEl.textContent = 'No foods yet — log something once and it shows up here.';
@@ -3601,9 +3668,56 @@ function renderQuickAddList(query) {
   }
   emptyEl.style.display = 'none';
   let html = '';
+  if (tpls.length) html += '<div class="qa-head">📋 Your meals</div>' + tpls.map(mtRow).join('');
   if (recent.length) html += '<div class="qa-head">🕘 Recent</div>' + recent.map((f, i) => qaRow(f, i)).join('');
   if (top.length) html += '<div class="qa-head">⭐ Your top foods</div>' + top.map((f, j) => qaRow(f, recent.length + j)).join('');
   listEl.innerHTML = html;
+}
+
+// A saved-meal row in Quick Add: logs every item in one tap.
+function mtRow(t) {
+  const items = templateItems(t);
+  const cal = items.reduce((s, it) => s + (Number(it.cal) || 0), 0);
+  return `
+    <div class="mt-item">
+      <span class="qa-emoji">${cfEsc(displayEmoji(t.name, t.emoji))}</span>
+      <div class="qa-info">
+        <div class="qa-name">${cfEsc(t.name)}</div>
+        <div class="qa-macros">${items.length} item${items.length !== 1 ? 's' : ''} · ${Math.round(cal)} cal</div>
+      </div>
+      <button class="mt-del" onclick="deleteMealTemplate('${t.id}')" title="Remove meal">✕</button>
+      <button class="mt-add" onclick="logMealTemplate('${t.id}')" title="Log all items">＋</button>
+    </div>`;
+}
+
+async function logMealTemplate(id) {
+  const t = findMealTemplate(id);
+  if (!t) return;
+  const items = templateItems(t);
+  if (!items.length) return;
+  for (const it of items) {
+    const entry = {
+      name: it.name, emoji: it.emoji || '🍽️',
+      cal: Number(it.cal) || 0, protein: Number(it.protein) || 0, carbs: Number(it.carbs) || 0,
+      fiber: Number(it.fiber) || 0, fat: Number(it.fat) || 0,
+      source: 'Meal · ' + t.name, ts: Date.now(), date: todayKey()
+    };
+    const saved = await saveFoodEntry(entry);
+    log.push(saved);
+  }
+  saveLog();
+  renderLog();
+  updateTotals();
+  const fb = document.getElementById('qaFeedback');
+  if (fb) fb.textContent = `✓ Added ${t.name} (${items.length} item${items.length !== 1 ? 's' : ''})`;
+}
+
+async function deleteMealTemplate(id) {
+  if (!confirm('Remove this saved meal?')) return;
+  if (currentUser) await apiRequest(`/meal-templates/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  mealTemplates = mealTemplates.filter(t => String(t.id) !== String(id));
+  saveLocal(STORAGE_KEYS.mealTemplates, mealTemplates);
+  renderQuickAddList(document.getElementById('qaSearch').value);
 }
 
 async function quickLog(i) {
@@ -3624,6 +3738,71 @@ async function quickLog(i) {
   updateTotals();
   const fb = document.getElementById('qaFeedback');
   fb.textContent = `✓ Added ${f.name}${qty !== 1 ? ' ×' + qty : ''}`;
+}
+
+// ---- Save the current day's log (or a subset) as a reusable meal template ----
+function openSaveMeal() {
+  const entries = activeEntries();
+  const err = document.getElementById('smError');
+  err.classList.remove('show');
+  document.getElementById('smName').value = '';
+  if (!entries.length) {
+    document.getElementById('smItems').innerHTML = '';
+    document.getElementById('smTotal').textContent = '';
+    err.textContent = 'Log some food first, then save it as a meal.';
+    err.classList.add('show');
+    document.getElementById('saveMealModal').classList.add('open');
+    return;
+  }
+  document.getElementById('smItems').innerHTML = entries.map((e, i) => `
+    <label class="sm-item">
+      <input type="checkbox" checked id="smChk_${i}" onchange="smRecalcTotal()">
+      <span class="sm-emoji">${cfEsc(displayEmoji(e.name, e.emoji))}</span>
+      <div class="sm-info">
+        <div class="sm-name">${cfEsc(e.name)}</div>
+        <div class="sm-macros">${Math.round(e.cal || 0)} cal · P${Math.round(e.protein || 0)} C${Math.round(e.carbs || 0)} F${Math.round(e.fat || 0)}</div>
+      </div>
+    </label>`).join('');
+  smRecalcTotal();
+  document.getElementById('saveMealModal').classList.add('open');
+  setTimeout(() => document.getElementById('smName').focus(), 100);
+}
+
+function smRecalcTotal() {
+  const entries = activeEntries();
+  let cal = 0, n = 0;
+  entries.forEach((e, i) => {
+    const chk = document.getElementById('smChk_' + i);
+    if (chk && chk.checked) { cal += (e.cal || 0); n++; }
+  });
+  document.getElementById('smTotal').textContent = n ? `${n} item${n !== 1 ? 's' : ''} · ${Math.round(cal)} cal total` : 'No items selected';
+}
+
+function closeSaveMeal() {
+  document.getElementById('saveMealModal').classList.remove('open');
+}
+
+async function saveMealTemplate() {
+  const name = document.getElementById('smName').value.trim();
+  const err = document.getElementById('smError');
+  if (!name) { err.textContent = 'Give the meal a name.'; err.classList.add('show'); return; }
+  const entries = activeEntries();
+  const items = entries.filter((e, i) => {
+    const chk = document.getElementById('smChk_' + i);
+    return chk && chk.checked;
+  }).map(e => ({
+    name: e.name, emoji: e.emoji || '🍽️',
+    cal: Number(e.cal || 0), protein: Number(e.protein || 0), carbs: Number(e.carbs || 0),
+    fiber: Number(e.fiber || 0), fat: Number(e.fat || 0)
+  }));
+  if (!items.length) { err.textContent = 'Select at least one item.'; err.classList.add('show'); return; }
+  err.classList.remove('show');
+  const tpl = { name, emoji: items[0].emoji || '📋', items: JSON.stringify(items) };
+  const result = await apiRequest('/meal-templates', { method: 'POST', body: JSON.stringify(tpl) });
+  const saved = result.ok ? result.body : { id: Date.now(), ...tpl };
+  mealTemplates = [saved, ...mealTemplates];
+  saveLocal(STORAGE_KEYS.mealTemplates, mealTemplates);
+  closeSaveMeal();
 }
 
 // Estimate macros from a free-text description via the AI proxy, then fill the form.
@@ -4295,6 +4474,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadTodayLog();
   await loadWater();
   await loadCustomFoods();
+  await loadMealTemplates();
   await loadWeightLog();
   await syncHistoryCache(365);
   loadViewDate();
