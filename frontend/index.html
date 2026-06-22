@@ -1484,14 +1484,14 @@
 <div class="tab-content" id="tabContentWeight">
   <div class="history-wrap">
     <div class="weight-entry-card" id="weightEntryCard">
-      <div class="we-title">Log Today's Weight</div>
+      <div class="we-title" id="weTitle">Log Today's Weight</div>
       <div class="we-row">
         <input type="number" id="weightInput" placeholder="0.0" step="0.1" min="50" max="500" inputmode="decimal">
         <div class="we-unit-toggle">
           <button class="unit-btn active" id="unitLbs" onclick="setUnit('lbs')">lbs</button>
           <button class="unit-btn" id="unitKg" onclick="setUnit('kg')">kg</button>
         </div>
-        <button class="btn-primary" onclick="logWeight()" style="width:auto;padding:11px 20px;flex-shrink:0">Log</button>
+        <button class="btn-primary" id="weLogBtn" onclick="logWeight()" style="width:auto;padding:11px 20px;flex-shrink:0">Log</button>
       </div>
       <div class="we-feedback" id="weFeedback"></div>
     </div>
@@ -4152,6 +4152,16 @@ function renderWeightTab() {
     document.getElementById('unitLbs').classList.toggle('active', weightUnit === 'lbs');
     document.getElementById('unitKg').classList.toggle('active', weightUnit === 'kg');
   }
+  // Reflect whether today's weight is already logged in the card title + button.
+  const todayEntry = weightLog[todayKey()];
+  const titleEl = document.getElementById('weTitle');
+  const logBtn = document.getElementById('weLogBtn');
+  if (titleEl) {
+    titleEl.textContent = todayEntry
+      ? `✓ Logged today — ${toDisplayWeight(todayEntry.val, todayEntry.unit).toFixed(1)} ${weightUnit}`
+      : "Log Today's Weight";
+  }
+  if (logBtn) logBtn.textContent = todayEntry ? 'Update' : 'Log';
   const keys = Object.keys(weightLog).sort();
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - weightPeriod);
