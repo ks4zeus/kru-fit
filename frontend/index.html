@@ -662,6 +662,13 @@
     margin-bottom: 10px;
     min-height: 14px;
   }
+  .portion-presets { display: flex; gap: 6px; margin-bottom: 8px; }
+  .portion-presets button {
+    flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 0; color: var(--text); font-size: 14px; cursor: pointer; outline: none;
+  }
+  .portion-presets button:hover { border-color: var(--protein); }
+  .portion-presets button.active { background: var(--protein); border-color: var(--protein); color: #fff; }
 
   .spinner {
     display: none;
@@ -1541,6 +1548,18 @@
     <img class="preview-img" id="previewImg">
     <div class="result-card" id="photoResult">
       <div class="rc-name" id="photoFoodName"></div>
+      <div class="serving-row">
+        <label>Portion:</label>
+        <input type="number" id="photoPortion" value="1" min="0" step="0.25" inputmode="decimal" oninput="updatePhotoPortion()">
+        <span class="serving-unit">× of the photo</span>
+      </div>
+      <div class="portion-presets">
+        <button type="button" data-p="0.25" onclick="setPhotoPortion(0.25)">¼</button>
+        <button type="button" data-p="0.5" onclick="setPhotoPortion(0.5)">½</button>
+        <button type="button" data-p="0.75" onclick="setPhotoPortion(0.75)">¾</button>
+        <button type="button" data-p="1" onclick="setPhotoPortion(1)">All</button>
+      </div>
+      <div class="serving-hint" id="photoPortionHint"></div>
       <div class="result-macro-grid">
         <div class="rmc"><div class="rmc-val" id="prCal" style="color:var(--cal)">—</div><div class="rmc-label">kcal</div></div>
         <div class="rmc"><div class="rmc-val" id="prPro" style="color:var(--protein)">—</div><div class="rmc-label">Protein</div></div>
@@ -2400,6 +2419,7 @@ function openPhotoModal() {
   document.getElementById('photoSpinner').classList.remove('show');
   document.getElementById('photoError').classList.remove('show');
   document.getElementById('photoInput').value = '';
+  document.getElementById('photoPortion').value = '1';
 }
 
 function closePhotoModal() {
@@ -2449,10 +2469,8 @@ async function analyzePhoto() {
 
     photoResult = result.body;
     document.getElementById('photoFoodName').textContent = photoResult.name;
-    document.getElementById('prCal').textContent = Math.round(photoResult.calories);
-    document.getElementById('prPro').textContent = Math.round(photoResult.protein_g) + 'g';
-    document.getElementById('prCarb').textContent = Math.round(photoResult.carbs_g) + 'g';
-    document.getElementById('prFat').textContent = Math.round(photoResult.fat_g) + 'g';
+    document.getElementById('photoPortion').value = '1';
+    updatePhotoPortion();   // fills the macro readouts, scaled by the portion
     document.getElementById('photoNote').textContent = `${photoResult.serving_note} · Confidence: ${photoResult.confidence}`;
     document.getElementById('photoResult').classList.add('show');
     document.getElementById('addPhotoBtn').style.display = 'block';
@@ -2465,17 +2483,47 @@ async function analyzePhoto() {
   }
 }
 
+// Pretty fraction for the log source line.
+function fmtPortion(p) {
+  return ({ 0.25: '¼', 0.5: '½', 0.75: '¾' })[p] || (p + '×');
+}
+
+// Read the chosen portion (how much of the photo the user actually ate).
+function photoPortionVal() {
+  return Math.max(0, parseFloat(document.getElementById('photoPortion').value) || 0);
+}
+
+// Re-scale the macro readouts to the chosen portion of the analyzed plate.
+function updatePhotoPortion() {
+  if (!photoResult) return;
+  const p = photoPortionVal();
+  document.getElementById('prCal').textContent = Math.round((photoResult.calories || 0) * p);
+  document.getElementById('prPro').textContent = Math.round((photoResult.protein_g || 0) * p) + 'g';
+  document.getElementById('prCarb').textContent = Math.round((photoResult.carbs_g || 0) * p) + 'g';
+  document.getElementById('prFat').textContent = Math.round((photoResult.fat_g || 0) * p) + 'g';
+  document.querySelectorAll('.portion-presets button').forEach(b => b.classList.toggle('active', parseFloat(b.dataset.p) === p));
+  document.getElementById('photoPortionHint').textContent = p === 1
+    ? 'Logging the whole photo'
+    : `Logging ${fmtPortion(p)} of what's in the photo`;
+}
+
+function setPhotoPortion(v) {
+  document.getElementById('photoPortion').value = v;
+  updatePhotoPortion();
+}
+
 async function addPhotoEntry() {
   if (!photoResult) return;
+  const p = photoPortionVal() || 1;
   const entry = {
     name: photoResult.name,
     emoji: photoResult.emoji || '📷',
-    cal: photoResult.calories,
-    protein: photoResult.protein_g,
-    carbs: photoResult.carbs_g,
-    fiber: photoResult.fiber_g || 0,
-    fat: photoResult.fat_g,
-    source: 'AI photo analysis',
+    cal: (photoResult.calories || 0) * p,
+    protein: (photoResult.protein_g || 0) * p,
+    carbs: (photoResult.carbs_g || 0) * p,
+    fiber: (photoResult.fiber_g || 0) * p,
+    fat: (photoResult.fat_g || 0) * p,
+    source: p === 1 ? 'AI photo analysis' : `AI photo · ${fmtPortion(p)} portion`,
     ts: Date.now(),
     date: todayKey()
   };
