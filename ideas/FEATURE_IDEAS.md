@@ -13,6 +13,10 @@ as we go. ⭐ = top picks (high daily value or unlocks bigger things).
       for next week). Pairs with the weigh-in reminder.
 - [x] **Recipe builder** — type/dictate ingredients + servings → AI computes
       per-serving macros → saved recipe library, log servings. (shipped 2026-06-20)
+- [x] **Scan ingredients into a recipe** — barcode-scan items into the recipe
+      builder with an adjustable per-ingredient amount/unit; total auto-sums
+      scanned (exact) + AI freeform, ÷ servings. Persists structured items via a
+      new `custom_foods.recipe_items` column. (shipped 2026-06-22)
 
 ## ⚡ Faster logging
 - [ ] ⭐ **Meal templates** — save a combo as "My usual breakfast" and log all
