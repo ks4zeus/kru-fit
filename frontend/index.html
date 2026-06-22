@@ -632,6 +632,8 @@
   }
   .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
   .btn-primary.blue { background: var(--carbs); color: #0a1020; }
+  /* Light mode darkens --carbs, so the dark button text becomes unreadable — go white. */
+  :root[data-theme="light"] .btn-primary.blue { color: #fff; }
   .btn-cancel {
     width: 100%;
     background: none;
