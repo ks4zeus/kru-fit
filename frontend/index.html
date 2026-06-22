@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Kru Fit">
 <meta name="theme-color" content="#0f1117">
+<script>try{if(JSON.parse(localStorage.getItem('fuellog_theme'))==='light'){document.documentElement.setAttribute('data-theme','light');}}catch(e){}</script>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
 <link rel="icon" type="image/png" sizes="64x64" href="/assets/favicon-64.png">
@@ -31,6 +32,22 @@
     --radius: 14px;
     --font: 'Inter', sans-serif;
     --mono: 'DM Mono', monospace;
+  }
+
+  /* Light mode — overrides the structural palette; accents darken a touch for
+     legibility on white. Default (no attribute) stays dark. */
+  :root[data-theme="light"] {
+    --bg: #f3f4f8;
+    --surface: #ffffff;
+    --surface2: #eceef5;
+    --border: #d9dde7;
+    --text: #1b1e28;
+    --muted: #5d6473;
+    --cal: #d9881a;
+    --protein: #16a34a;
+    --carbs: #2563eb;
+    --fat: #db2777;
+    --fiber: #ea7317;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -915,6 +932,9 @@
     border-radius: 999px; padding: 5px 13px; font-size: 12px; font-weight: 600; cursor: pointer;
   }
   .macros-toggle:hover { border-color: var(--protein); }
+  .theme-toggle { display: inline-flex; gap: 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+  .theme-btn { border: none; background: none; color: var(--muted); font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+  .theme-btn.active { background: var(--surface); color: var(--text); }
   .hist-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
   .hist-stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
   .hist-stat .hs-val { font-size: 20px; font-weight: 700; font-family: var(--mono); line-height: 1; }
@@ -1815,6 +1835,15 @@
     <div class="modal-handle"></div>
     <div class="modal-title">👤 Profile</div>
     <div class="profile-box">
+      <div class="calc-sub">Appearance</div>
+      <div class="setting-row"><label>Theme</label>
+        <div class="theme-toggle">
+          <button class="theme-btn active" id="themeDark" onclick="setTheme('dark')">🌙 Dark</button>
+          <button class="theme-btn" id="themeLight" onclick="setTheme('light')">☀️ Light</button>
+        </div>
+      </div>
+    </div>
+    <div class="profile-box">
       <div class="calc-sub">Diet &amp; preferences</div>
       <div class="setting-row"><label>Diet</label>
         <select id="profDiet">
@@ -1950,6 +1979,7 @@ const STORAGE_KEYS = {
   customFoods: 'fuellog_custom_foods',
   mealTemplates: 'fuellog_meal_templates',
   macrosView: 'fuellog_macros_view',
+  theme: 'fuellog_theme',
   water: 'fuellog_water_',
   log: 'fuellog_log_'
 };
@@ -2130,6 +2160,23 @@ async function addPastToToday(i, btn) {
 function setUserEmail(text) {
   const el = document.getElementById('userEmail');
   if (el) el.textContent = text;
+}
+
+// ---- Theme (dark default / light) ----
+function setTheme(theme) {
+  const t = theme === 'light' ? 'light' : 'dark';
+  if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  else document.documentElement.removeAttribute('data-theme');
+  saveLocal(STORAGE_KEYS.theme, t);
+  const darkBtn = document.getElementById('themeDark');
+  const lightBtn = document.getElementById('themeLight');
+  if (darkBtn) darkBtn.classList.toggle('active', t === 'dark');
+  if (lightBtn) lightBtn.classList.toggle('active', t === 'light');
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', t === 'light' ? '#f3f4f8' : '#0f1117');
+}
+function applyTheme() {
+  setTheme(loadLocal(STORAGE_KEYS.theme, 'dark') === 'light' ? 'light' : 'dark');
 }
 
 function setDateDisplay() {
@@ -4766,6 +4813,7 @@ window.addEventListener('appinstalled', () => {
 
 document.addEventListener('DOMContentLoaded', async () => {
   setDateDisplay();
+  applyTheme();
   await getMe();
   applyAdminVisibility();
   await loadGoals();
