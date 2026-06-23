@@ -2383,7 +2383,8 @@ function applyGoalsUI() {
 // Header shows the display name when set, otherwise the email.
 function updateUserHeader(suffix) {
   if (!currentUser) return;
-  setUserEmail((currentUser.name || currentUser.email) + (suffix || ''));
+  const who = currentUser.name ? `Welcome back, ${currentUser.name}` : currentUser.email;
+  setUserEmail(who + (suffix || ''));
 }
 
 async function getMe() {
