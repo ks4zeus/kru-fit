@@ -374,8 +374,8 @@ export default {
 
         const inserted = await db
           .prepare(
-            `INSERT INTO food_log (user_id, date, name, emoji, cal, protein, carbs, fat, fiber, source, ts)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO food_log (user_id, date, name, emoji, cal, protein, carbs, fat, fiber, source, serving, ts)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             userEmail,
@@ -388,6 +388,7 @@ export default {
             body.fat ?? 0,
             body.fiber ?? 0,
             body.source || null,
+            body.serving || null,
             body.ts ?? null
           )
           .run();
@@ -406,7 +407,7 @@ export default {
         }
         await db
           .prepare(
-            `UPDATE food_log SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?
+            `UPDATE food_log SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, serving = ?
              WHERE id = ? AND user_id = ?`
           )
           .bind(
@@ -417,6 +418,7 @@ export default {
             body.carbs ?? 0,
             body.fat ?? 0,
             body.fiber ?? 0,
+            body.serving ?? null,
             id,
             userEmail
           )

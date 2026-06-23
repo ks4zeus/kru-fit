@@ -16,6 +16,7 @@ CREATE TABLE food_log (
   fat REAL DEFAULT 0,
   fiber REAL DEFAULT 0,
   source TEXT,
+  serving TEXT,              -- editable serving/portion descriptor
   ts INTEGER,
   created_at TEXT DEFAULT (datetime('now'))
 );

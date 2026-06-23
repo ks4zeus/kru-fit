@@ -1952,6 +1952,10 @@
         <label>Fat (g)</label>
         <input type="number" id="eeFat" inputmode="decimal">
       </div>
+      <div class="form-field full">
+        <label>Serving size</label>
+        <input type="text" id="eeServing" placeholder="e.g. 1 cup, 2 eggs">
+      </div>
     </div>
     <button class="btn-primary" onclick="saveEntryEdit()">Save Changes</button>
     <button class="btn-cancel" onclick="closeEditEntry()">Cancel</button>
@@ -2534,6 +2538,7 @@ function openEditEntry(index) {
   document.getElementById('eeCarbs').value = Math.round(e.carbs || 0);
   document.getElementById('eeFiber').value = Math.round(e.fiber || 0);
   document.getElementById('eeFat').value = Math.round(e.fat || 0);
+  document.getElementById('eeServing').value = e.serving || '';
   document.getElementById('eeError').classList.remove('show');
   document.getElementById('editEntryModal').classList.add('open');
 }
@@ -2561,13 +2566,14 @@ async function saveEntryEdit() {
   e.carbs = parseFloat(document.getElementById('eeCarbs').value) || 0;
   e.fiber = parseFloat(document.getElementById('eeFiber').value) || 0;
   e.fat = parseFloat(document.getElementById('eeFat').value) || 0;
+  e.serving = document.getElementById('eeServing').value.trim() || null;
   saveLog();
   renderLog();
   updateTotals();
   if (e.id && currentUser) {
     await apiRequest(`/food/${e.id}`, {
       method: 'PUT',
-      body: JSON.stringify({ name: e.name, emoji: e.emoji, cal: e.cal, protein: e.protein, carbs: e.carbs, fat: e.fat, fiber: e.fiber })
+      body: JSON.stringify({ name: e.name, emoji: e.emoji, cal: e.cal, protein: e.protein, carbs: e.carbs, fat: e.fat, fiber: e.fiber, serving: e.serving })
     });
   }
   closeEditEntry();
@@ -2743,7 +2749,7 @@ async function saveCustomFood(logNow) {
     const entry = {
       name: food.name, emoji: food.emoji, cal: food.cal, protein: food.protein,
       carbs: food.carbs, fiber: food.fiber, fat: food.fat,
-      source: isRecipe ? 'Recipe · 1 serving' : `Custom · ${food.serving}`, ts: Date.now(), date: todayKey()
+      source: isRecipe ? 'Recipe · 1 serving' : `Custom · ${food.serving}`, serving: isRecipe ? '1 serving' : food.serving, ts: Date.now(), date: todayKey()
     };
     const saved = await saveFoodEntry(entry);
     log.push(saved);
@@ -2824,7 +2830,7 @@ function renderLog() {
       <div class="entry-thumb">${displayEmoji(e.name, e.emoji)}</div>
       <div class="entry-info">
         <div class="entry-name">${e.name}</div>
-        <div class="entry-time">${timeStr}${timeStr ? ' · ' : ''}${e.source || ''}</div>
+        <div class="entry-time">${timeStr}${(e.serving || e.source) ? (timeStr ? ' · ' : '') + cfEsc(e.serving || e.source) : ''}</div>
         <div class="entry-macros">
           <span class="entry-macro" style="color:var(--protein)">P: ${Math.round(e.protein||0)}g</span>
           ${carbDisplay}
@@ -2954,6 +2960,7 @@ async function addPhotoEntry() {
     fiber: (photoResult.fiber_g || 0) * p,
     fat: (photoResult.fat_g || 0) * p,
     source: p === 1 ? 'AI photo analysis' : `AI photo · ${fmtPortion(p)} portion`,
+    serving: p === 1 ? (photoResult.serving_note || '1 portion') : `${fmtPortion(p)} portion`,
     ts: Date.now(),
     date: todayKey()
   };
@@ -3272,6 +3279,7 @@ async function addBarcodeEntry() {
     fiber: (bcBaseNutrition.fiber || 0) * f,
     fat: bcBaseNutrition.fat * f,
     source: `Barcode · ${amount} ${unitLabel} (${Math.round(grams)} g)`,
+    serving: `${amount} ${unitLabel} (${Math.round(grams)} g)`,
     ts: Date.now(),
     date: todayKey()
   };
@@ -4278,6 +4286,7 @@ async function logCustomFood(id) {
     cal: (f.cal || 0) * qty, protein: (f.protein || 0) * qty, carbs: (f.carbs || 0) * qty,
     fiber: (f.fiber || 0) * qty, fat: (f.fat || 0) * qty,
     source: isRecipe ? `Recipe · ${qty} serving${qty !== 1 ? 's' : ''}` : `Custom · ${qty !== 1 ? qty + '× ' : ''}${f.serving || '1 serving'}`,
+    serving: isRecipe ? `${qty} serving${qty !== 1 ? 's' : ''}` : `${qty !== 1 ? qty + '× ' : ''}${f.serving || '1 serving'}`,
     ts: Date.now(), date: todayKey()
   };
   const saved = await saveFoodEntry(entry);
@@ -4488,11 +4497,12 @@ async function quickLog(i) {
   const qty = parseFloat(document.getElementById('qaQty_' + i).value) || 1;
   const qtyTag = qty !== 1 ? ` · ${qty}×` : '';
   const source = f._restaurant ? `${f.brand || 'Restaurant'}${qtyTag}` : (qty === 1 ? 'Quick add' : `Quick add · ${qty}×`);
+  const serving = f._restaurant && f.serving ? (qty === 1 ? f.serving : `${qty} × ${f.serving}`) : null;
   const entry = {
     name: f.name, emoji: f.emoji || '🍽️',
     cal: f.cal * qty, protein: f.protein * qty, carbs: f.carbs * qty,
     fiber: (f.fiber || 0) * qty, fat: f.fat * qty,
-    source, ts: Date.now(), date: todayKey()
+    source, serving, ts: Date.now(), date: todayKey()
   };
   const saved = await saveFoodEntry(entry);
   log.push(saved);
@@ -4522,7 +4532,7 @@ async function quickAiEstimate() {
     name: r.name || query, emoji: r.emoji || foodEmoji(query) || '🍽️',
     cal: Math.round(r.calories || 0), protein: Math.round(r.protein_g || 0), carbs: Math.round(r.carbs_g || 0),
     fiber: Math.round(r.fiber_g || 0), fat: Math.round(r.fat_g || 0),
-    source: 'AI estimate', ts: Date.now(), date: todayKey()
+    source: 'AI estimate', serving: r.serving_note || null, ts: Date.now(), date: todayKey()
   };
   const saved = await saveFoodEntry(entry);
   log.push(saved);
