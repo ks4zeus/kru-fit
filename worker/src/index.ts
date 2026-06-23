@@ -818,7 +818,7 @@ export default {
           .bind(userEmail)
           .all();
         if (results?.length) {
-          return jsonResponse(results[0]);
+          return jsonResponse({ ...results[0], configured: true });
         }
         return jsonResponse({
           user_id: userEmail,
@@ -831,6 +831,7 @@ export default {
           diet: "none",
           restrictions: "",
           goal_weight: null,
+          configured: false,
         });
       }
 
