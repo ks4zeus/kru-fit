@@ -1956,7 +1956,7 @@
         <label>Serving size</label>
         <div style="display:flex;gap:8px">
           <input type="number" id="eeServingQty" inputmode="decimal" step="0.25" min="0" placeholder="1" oninput="onEditServingInput()" style="flex:0 0 90px">
-          <input type="text" id="eeServingUnit" list="servingUnits" placeholder="cup, oz, g, serving…" style="flex:1">
+          <input type="text" id="eeServingUnit" list="servingUnits" placeholder="cup, oz, g, serving…" style="flex:1" oninput="onEditServingInput()">
         </div>
         <datalist id="servingUnits">
           <option value="serving"></option><option value="oz"></option><option value="g"></option>
@@ -2545,14 +2545,39 @@ function parseServingQty(str) {
   return (m[1] ? parseFloat(m[1]) : 0) + (m[2] ? frac[m[2]] : 0);
 }
 
-let editEntryBase = null;   // macros + serving qty captured when the edit modal opened
+let editEntryBase = null;   // macros + serving qty/unit captured when the edit modal opened
 
-// When the serving's quantity changes, rescale the macro fields proportionally.
+// Convertible units → [dimension, factor to a base unit] (grams for mass, ml for volume).
+// Cross-dimension changes (e.g. oz↔cup) need a food density we don't have, so they don't convert.
+const UNIT_CONV = {
+  g: ['mass', 1], gram: ['mass', 1], grams: ['mass', 1], mg: ['mass', 0.001], kg: ['mass', 1000],
+  oz: ['mass', 28.3495], ounce: ['mass', 28.3495], ounces: ['mass', 28.3495],
+  lb: ['mass', 453.592], lbs: ['mass', 453.592], pound: ['mass', 453.592], pounds: ['mass', 453.592],
+  ml: ['vol', 1], milliliter: ['vol', 1], l: ['vol', 1000], liter: ['vol', 1000], litre: ['vol', 1000],
+  cup: ['vol', 240], cups: ['vol', 240],
+  tbsp: ['vol', 14.7868], tablespoon: ['vol', 14.7868], tablespoons: ['vol', 14.7868],
+  tsp: ['vol', 4.92892], teaspoon: ['vol', 4.92892], teaspoons: ['vol', 4.92892],
+  'fl oz': ['vol', 29.5735], floz: ['vol', 29.5735], pint: ['vol', 473.176], quart: ['vol', 946.353]
+};
+function unitInfo(u) { return UNIT_CONV[(u || '').trim().toLowerCase()] || null; }
+
+// Scale factor between two servings. Same convertible family → real conversion;
+// same unit string → quantity ratio; otherwise null (can't know).
+function servingFactor(baseQty, baseUnit, newQty, newUnit) {
+  if (!(baseQty > 0) || !(newQty > 0)) return null;
+  const bu = unitInfo(baseUnit), nu = unitInfo(newUnit);
+  if (bu && nu && bu[0] === nu[0]) return (newQty * nu[1]) / (baseQty * bu[1]);
+  if ((baseUnit || '').trim().toLowerCase() === (newUnit || '').trim().toLowerCase()) return newQty / baseQty;
+  return null;
+}
+
+// When the serving's quantity or unit changes, rescale the macro fields.
 function onEditServingInput() {
   if (!editEntryBase) return;
   const newQty = parseFloat(document.getElementById('eeServingQty').value);
-  if (!(editEntryBase.qty > 0) || !(newQty > 0)) return;   // need a numeric base + target
-  const f = newQty / editEntryBase.qty;
+  const newUnit = document.getElementById('eeServingUnit').value;
+  const f = servingFactor(editEntryBase.qty, editEntryBase.unit, newQty, newUnit);
+  if (f == null) return;
   document.getElementById('eeCal').value = Math.round(editEntryBase.cal * f);
   document.getElementById('eeProtein').value = Math.round(editEntryBase.protein * f);
   document.getElementById('eeCarbs').value = Math.round(editEntryBase.carbs * f);
@@ -2576,7 +2601,7 @@ function openEditEntry(index) {
   document.getElementById('eeServingQty').value = isNaN(sQty) ? '' : sQty;
   document.getElementById('eeServingUnit').value = sUnit;
   editEntryBase = {
-    qty: sQty,
+    qty: sQty, unit: sUnit,
     cal: e.cal || 0, protein: e.protein || 0, carbs: e.carbs || 0, fiber: e.fiber || 0, fat: e.fat || 0
   };
   document.getElementById('eeError').classList.remove('show');
