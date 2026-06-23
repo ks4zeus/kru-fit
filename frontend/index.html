@@ -964,6 +964,12 @@
   .maint-val span { font-size: 13px; font-weight: 600; color: var(--muted); }
   .maint-sub { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
   .maint-goal { font-size: 13px; color: var(--text); margin-top: 8px; line-height: 1.45; }
+  .maint-conf { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .mc-level { font-size: 12px; font-weight: 700; }
+  .mc-items { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 5px; }
+  .mc-item { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .mc-item.good { color: var(--protein); }
+  .mc-item.weak { color: var(--fat); }
   .workout-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
   .workout-row .wk-emoji { font-size: 20px; flex-shrink: 0; }
   .workout-row .wk-main { flex: 1; min-width: 0; }
@@ -4837,7 +4843,27 @@ function observedMaintenance(days) {
     avgIntake: Math.round(avgIntake),
     slopePerWeek: t.slope * 7,
     loggedDays: logged.length,
+    weighIns: wkeys.length,
     span: Math.round(t.spanDays)
+  };
+}
+
+// Confidence in the observed estimate — span weighted heaviest, then weigh-in
+// frequency and food-log completeness. Returns a Low/Medium/High tier + checklist.
+function maintenanceConfidence(span, weighIns, loggedDays) {
+  const spanScore = span >= 21 ? 2 : span >= 14 ? 1 : 0;
+  const wiScore = weighIns >= 8 ? 2 : weighIns >= 4 ? 1 : 0;
+  const fdScore = loggedDays >= 18 ? 2 : loggedDays >= 12 ? 1 : 0;
+  const total = spanScore * 2 + wiScore + fdScore;   // span double-weighted, max 8
+  const level = total >= 6 ? 'High' : total >= 3 ? 'Medium' : 'Low';
+  const color = level === 'High' ? 'var(--protein)' : level === 'Medium' ? 'var(--cal)' : 'var(--fat)';
+  return {
+    level, color,
+    items: [
+      { label: `${span} day span`, good: spanScore >= 1 },
+      { label: `${weighIns} weigh-in${weighIns !== 1 ? 's' : ''}`, good: wiScore >= 1 },
+      { label: `${loggedDays} food logs`, good: fdScore >= 1 }
+    ]
   };
 }
 
@@ -4858,11 +4884,19 @@ function maintenanceCard() {
   if (diff > 50) goalLine = `Your goal of ${goal.toLocaleString()} is ~${diff.toLocaleString()} below maintenance — a deficit (losing).`;
   else if (diff < -50) goalLine = `Your goal of ${goal.toLocaleString()} is ~${Math.abs(diff).toLocaleString()} above maintenance — a surplus (gaining).`;
   else goalLine = `Your goal of ${goal.toLocaleString()} is right around maintenance.`;
+  const conf = maintenanceConfidence(m.span, m.weighIns, m.loggedDays);
+  const checklist = conf.items.map(it =>
+    `<span class="mc-item ${it.good ? 'good' : 'weak'}">${it.good ? '✓' : '⚠'} ${it.label}</span>`
+  ).join('');
   return `<div class="maint-card">
     <div class="maint-title">⚖️ Observed Maintenance</div>
     <div class="maint-val">~${m.maintenance.toLocaleString()} <span>kcal/day</span></div>
     <div class="maint-sub">Measured from your last ${m.span} days — avg intake ${m.avgIntake.toLocaleString()}, ${dir}.</div>
     <div class="maint-goal">${goalLine}</div>
+    <div class="maint-conf">
+      <div class="mc-level" style="color:${conf.color}">Confidence: ${conf.level}</div>
+      <div class="mc-items">${checklist}</div>
+    </div>
   </div>`;
 }
 
