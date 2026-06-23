@@ -35,6 +35,10 @@ as we go. ⭐ = top picks (high daily value or unlocks bigger things).
       logged with the brand as source; an "✨ Estimate with AI" action is always
       offered as the fallback (existing `/analyze`). No separate button, no new
       API/key — static asset searched client-side; expandable. (shipped 2026-06-22)
+- [x] **Editable serving size** — Today's Log entries carry a serving/portion
+      descriptor (new `food_log.serving` column, migration 007), editable in the
+      Edit Entry modal and shown on the row. Auto-filled on the natural paths
+      (custom food, barcode, restaurant seed, photo portion, AI estimate). (shipped 2026-06-23)
 
 ## 📊 Insights
 - [x] **Admin usage dashboard** — hidden admin-only 📊 tab: per-user tool usage
