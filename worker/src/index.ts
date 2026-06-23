@@ -178,7 +178,7 @@ const NUTRITION_SYSTEM_PROMPT = `You are a nutrition analysis assistant. Given a
 }
 Be realistic with estimates. If multiple items are present, estimate the total. If you cannot identify the food, set name to "Unknown food" with zeroes and confidence "low".`;
 
-const COACH_SYSTEM_PROMPT = `You are a practical, encouraging nutrition and fitness coach. You receive a JSON summary of someone's recent eating: their daily averages, their goals, and their most-eaten foods. The summary may also include an optional "exercise" block (workouts, active days, calories burned, top activities) — when it is present, factor their activity into your assessment (acknowledge consistency, consider overall energy balance, and reference it where relevant in wins/issues); when it is absent, do not mention exercise at all. Identify the most important takeaways and respond ONLY with valid JSON (no markdown), in this exact shape:
+const COACH_SYSTEM_PROMPT = `You are a practical, encouraging nutrition and fitness coach. You receive a JSON summary of someone's recent eating: their daily averages, their goals, and their most-eaten foods. The summary may include the person's "name" — if it's present, address them by it warmly (e.g., open the headline with it); if it's absent, don't invent one. The summary may also include an optional "exercise" block (workouts, active days, calories burned, top activities) — when it is present, factor their activity into your assessment (acknowledge consistency, consider overall energy balance, and reference it where relevant in wins/issues); when it is absent, do not mention exercise at all. Identify the most important takeaways and respond ONLY with valid JSON (no markdown), in this exact shape:
 {
   "headline": "one upbeat sentence summarizing how they're doing",
   "wins": ["short positive observations grounded in the numbers"],
@@ -202,13 +202,25 @@ export default {
     const segments = getPathSegments(url);
     const db = env.DB;
 
-    if (segments.length === 2 && segments[0] === "api" && segments[1] === "me" && request.method === "GET") {
-      const name = userEmail.split("@")[0] || userEmail;
-      await db.prepare(
-        `INSERT INTO users (id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name`
-      ).bind(userEmail, name).run();
-
-      return jsonResponse({ email: userEmail, name, admin: isAdmin(userEmail, env) });
+    if (segments.length === 2 && segments[0] === "api" && segments[1] === "me") {
+      if (request.method === "GET") {
+        // Return the stored display name (null if never set). Ensure a row
+        // exists, but DON'T overwrite a name the user chose.
+        const row = await db.prepare("SELECT name FROM users WHERE id = ?").bind(userEmail).first<{ name: string | null }>();
+        if (!row) {
+          await db.prepare("INSERT INTO users (id) VALUES (?) ON CONFLICT(id) DO NOTHING").bind(userEmail).run();
+        }
+        const name = row?.name ? String(row.name).trim() : null;
+        return jsonResponse({ email: userEmail, name: name || null, admin: isAdmin(userEmail, env) });
+      }
+      if (request.method === "POST") {
+        const body = await parseJson(request);
+        const name = (body?.name ?? "").toString().trim().slice(0, 60);
+        await db.prepare(
+          `INSERT INTO users (id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name`
+        ).bind(userEmail, name || null).run();
+        return jsonResponse({ email: userEmail, name: name || null, admin: isAdmin(userEmail, env) });
+      }
     }
 
     if (segments[0] !== "api") {

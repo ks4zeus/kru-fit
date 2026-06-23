@@ -1949,10 +1949,27 @@
     <button class="btn-cancel" onclick="closeEditEntry()">Cancel</button>
   </div>
 </div>
+<div class="modal-bg" id="welcomeModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">👋 Welcome to Kru Fit!</div>
+    <p style="color:var(--muted);font-size:14px;margin-bottom:14px">What should we call you?</p>
+    <input type="text" id="welcomeName" placeholder="Your name" maxlength="60"
+      style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text);font-size:15px;outline:none;margin-bottom:14px"
+      onkeydown="if(event.key==='Enter')saveWelcomeName()">
+    <button class="btn-primary" onclick="saveWelcomeName()">Continue</button>
+  </div>
+</div>
 <div class="modal-bg" id="settingsModal">
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title">👤 Profile</div>
+    <div class="profile-box">
+      <div class="calc-sub">Display name</div>
+      <div class="setting-row"><label>Name</label>
+        <input type="text" id="profName" placeholder="Your name" maxlength="60" style="width:150px">
+      </div>
+    </div>
     <div class="profile-box">
       <div class="calc-sub">Appearance</div>
       <div class="setting-row"><label>Theme</label>
@@ -2355,6 +2372,12 @@ function applyGoalsUI() {
   updateWaterUI(waterEntry.oz);
 }
 
+// Header shows the display name when set, otherwise the email.
+function updateUserHeader(suffix) {
+  if (!currentUser) return;
+  setUserEmail((currentUser.name || currentUser.email) + (suffix || ''));
+}
+
 async function getMe() {
   const result = await apiRequest('/me');
   if (!result.ok) {
@@ -2365,8 +2388,8 @@ async function getMe() {
     }
     const saved = loadLocal(STORAGE_KEYS.user);
     if (saved?.email) {
-      setUserEmail(`${saved.email} (offline)`);
       currentUser = saved;
+      updateUserHeader(' (offline)');
       return true;
     }
     setUserEmail('Offline');
@@ -2374,8 +2397,33 @@ async function getMe() {
   }
   currentUser = result.body;
   saveLocal(STORAGE_KEYS.user, currentUser);
-  setUserEmail(currentUser.email);
+  updateUserHeader();
+  if (!currentUser.name) showWelcome();   // first-time: ask what to call them
   return true;
+}
+
+function showWelcome() {
+  const input = document.getElementById('welcomeName');
+  if (input) input.value = '';
+  document.getElementById('welcomeModal').classList.add('open');
+  setTimeout(() => input && input.focus(), 150);
+}
+
+async function saveWelcomeName() {
+  const name = document.getElementById('welcomeName').value.trim();
+  if (!name) { document.getElementById('welcomeName').focus(); return; }
+  await saveDisplayName(name);
+  document.getElementById('welcomeModal').classList.remove('open');
+}
+
+// Persist the display name (POST /api/me), update header + local cache.
+async function saveDisplayName(name) {
+  name = (name || '').trim();
+  const result = await apiRequest('/me', { method: 'POST', body: JSON.stringify({ name }) });
+  if (result.ok && result.body) currentUser = { ...currentUser, ...result.body };
+  else if (currentUser) currentUser.name = name || null;
+  saveLocal(STORAGE_KEYS.user, currentUser);
+  updateUserHeader();
 }
 
 async function loadGoals() {
@@ -5112,6 +5160,7 @@ function gatherDietSummary(days) {
   }
   const topFoods = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([name, count]) => `${name} (${count}x)`);
   const summary = {
+    name: (currentUser && currentUser.name) || '',
     period_days: days,
     days_logged: withData.length,
     daily_averages: { calories: avg('cal'), protein_g: avg('protein'), carbs_g: avg('carbs'), fat_g: avg('fat'), fiber_g: avg('fiber') },
@@ -5173,6 +5222,7 @@ function renderDietCoach(r) {
 }
 
 function openSettings() {
+  document.getElementById('profName').value = (currentUser && currentUser.name) || '';
   document.getElementById('goalCal').value = goals.cal;
   document.getElementById('goalProtein').value = goals.protein;
   document.getElementById('goalCarbs').value = goals.carbs;
@@ -5352,6 +5402,9 @@ async function saveSettings() {
     goal_weight: goals.goal_weight ?? null   // preserve — set on the Weight tab, not here
   };
   await persistGoals();
+  // Save the display name if it changed.
+  const newName = document.getElementById('profName').value.trim();
+  if (newName !== ((currentUser && currentUser.name) || '')) await saveDisplayName(newName);
   closeSettings();
 }
 
