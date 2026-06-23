@@ -3346,7 +3346,9 @@ async function renderAdmin() {
     </div>`;
   }).join('');
 
-  html += `<div class="admin-note">AI cost estimated at ${cfEsc(pricing.model || '')} — $${pricing.inputPerM}/$${pricing.outputPerM} per 1M tokens (in/out). Token tracking began when this feature shipped.</div>`;
+  const priceList = Array.isArray(pricing) ? pricing : (pricing && pricing.model ? [pricing] : []);
+  const priceStr = priceList.map(p => `${cfEsc(p.model)} $${p.inputPerM}/$${p.outputPerM}`).join(' · ');
+  html += `<div class="admin-note">AI cost estimated per model — ${priceStr} per 1M tokens (in/out). Token tracking began when this feature shipped.</div>`;
   content.innerHTML = html;
 }
 

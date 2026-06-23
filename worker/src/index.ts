@@ -135,11 +135,14 @@ function isAdmin(email: string, env: Env): boolean {
   return adminEmails(env).includes((email || "").toLowerCase());
 }
 
-// Anthropic per-model pricing, USD per 1M tokens (input, output). Sonnet 4.6.
+// Anthropic per-model pricing, USD per 1M tokens (input, output).
 const AI_PRICING: Record<string, { in: number; out: number }> = {
   "claude-sonnet-4-6": { in: 3.0, out: 15.0 },
+  "claude-haiku-4-5-20251001": { in: 1.0, out: 5.0 },
 };
-const AI_MODEL = "claude-sonnet-4-6";
+// Image input needs vision (Sonnet); text-only is fine on Haiku (faster + cheaper).
+const AI_MODEL_VISION = "claude-sonnet-4-6";
+const AI_MODEL_TEXT = "claude-haiku-4-5-20251001";
 
 // Record one AI call's token usage for the admin dashboard. Best-effort —
 // a logging failure must never break the user-facing response.
@@ -252,6 +255,8 @@ export default {
         ];
       }
 
+      // Photo needs vision (Sonnet); a written description is text-only → Haiku.
+      const model = body?.image ? AI_MODEL_VISION : AI_MODEL_TEXT;
       const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -260,7 +265,7 @@ export default {
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model,
           max_tokens: 1000,
           system: NUTRITION_SYSTEM_PROMPT,
           messages: [{ role: "user", content }],
@@ -276,7 +281,7 @@ export default {
         content?: Array<{ text?: string }>;
         usage?: { input_tokens?: number; output_tokens?: number };
       };
-      await recordAiUsage(db, userEmail, body?.image ? "analyze-photo" : "analyze-text", AI_MODEL, data.usage);
+      await recordAiUsage(db, userEmail, body?.image ? "analyze-photo" : "analyze-text", model, data.usage);
       const text = (data.content || []).map((b) => b.text || "").join("").trim();
       const clean = text.replace(/```json|```/g, "").trim();
       try {
@@ -304,7 +309,7 @@ export default {
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model: AI_MODEL_TEXT,
           max_tokens: 1024,
           system: COACH_SYSTEM_PROMPT,
           messages: [
@@ -325,7 +330,7 @@ export default {
         content?: Array<{ text?: string }>;
         usage?: { input_tokens?: number; output_tokens?: number };
       };
-      await recordAiUsage(db, userEmail, "coach", AI_MODEL, data.usage);
+      await recordAiUsage(db, userEmail, "coach", AI_MODEL_TEXT, data.usage);
       const text = (data.content || []).map((b) => b.text || "").join("").trim();
       const clean = text.replace(/```json|```/g, "").trim();
       try {
@@ -770,11 +775,14 @@ export default {
       actRows.forEach((r) => { const u = ensure(r.user_id); u.entries = r.entries; u.activeDays = r.active_days; u.lastTs = r.last_ts || 0; });
       toolRows.forEach((r) => { ensure(r.user_id).tools[r.tool] = r.n; });
 
-      const price = AI_PRICING[AI_MODEL];
-      const cost = (inT: number, outT: number) => (inT / 1e6) * price.in + (outT / 1e6) * price.out;
+      // Cost is per-row by the model that actually ran the call.
+      const cost = (model: string, inT: number, outT: number) => {
+        const p = AI_PRICING[model] || AI_PRICING["claude-sonnet-4-6"];
+        return (inT / 1e6) * p.in + (outT / 1e6) * p.out;
+      };
       aiRows.forEach((r) => {
         const u = ensure(r.user_id);
-        const inT = r.in_tok || 0, outT = r.out_tok || 0, c = cost(inT, outT);
+        const inT = r.in_tok || 0, outT = r.out_tok || 0, c = cost(r.model, inT, outT);
         u.ai.calls += r.calls; u.ai.inputTokens += inT; u.ai.outputTokens += outT; u.ai.cost += c;
         u.ai.byEndpoint[r.endpoint] = { calls: r.calls, inputTokens: inT, outputTokens: outT, cost: c };
       });
@@ -789,7 +797,7 @@ export default {
       return jsonResponse({
         users: userList,
         totals,
-        pricing: { model: AI_MODEL, inputPerM: price.in, outputPerM: price.out },
+        pricing: Object.entries(AI_PRICING).map(([model, p]) => ({ model, inputPerM: p.in, outputPerM: p.out })),
       });
     }
 
