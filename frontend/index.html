@@ -958,6 +958,12 @@
   .wk-dist select:focus { border-color: var(--protein); }
   .wk-hint { font-size: 12px; color: #60a5fa; min-height: 14px; margin: 2px 0 10px; }
   .ax-summary { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-bottom: 10px; }
+  .maint-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .maint-title { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+  .maint-val { font-size: 26px; font-weight: 800; font-family: var(--mono); color: var(--cal); line-height: 1.1; }
+  .maint-val span { font-size: 13px; font-weight: 600; color: var(--muted); }
+  .maint-sub { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
+  .maint-goal { font-size: 13px; color: var(--text); margin-top: 8px; line-height: 1.45; }
   .workout-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
   .workout-row .wk-emoji { font-size: 20px; flex-shrink: 0; }
   .workout-row .wk-main { flex: 1; min-width: 0; }
@@ -4809,6 +4815,57 @@ function drawWeightTooltip(canvas, idx) {
   ctx.fillText(text, tx + width / 2, ty + 18);
 }
 
+// Observed maintenance (TDEE) = avg daily intake − energy from the smoothed
+// weight trend. Empirical, not predicted. Gated on enough food + weight data.
+function observedMaintenance(days) {
+  const data = getHistoryData(days);
+  const logged = data.filter(d => d.hasData);
+  const needDays = Math.min(days, 10);
+  if (logged.length < needDays) return { ok: false, reason: 'food', loggedDays: logged.length, needDays };
+  const avgIntake = logged.reduce((s, d) => s + d.cal, 0) / logged.length;
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
+  const cutoffKey = dateKey(cutoff);
+  const wkeys = Object.keys(weightLog).filter(k => k >= cutoffKey).sort();
+  if (wkeys.length < 2) return { ok: false, reason: 'weight' };
+  const t = weightTrend(wkeys);                 // slope in display-unit/day
+  if (!t || t.spanDays < 7) return { ok: false, reason: 'weightspan' };
+  const kcalPerUnit = weightUnit === 'kg' ? 7700 : 3500;
+  const dailyBalance = t.slope * kcalPerUnit;   // negative when losing
+  return {
+    ok: true,
+    maintenance: Math.round(avgIntake - dailyBalance),
+    avgIntake: Math.round(avgIntake),
+    slopePerWeek: t.slope * 7,
+    loggedDays: logged.length,
+    span: Math.round(t.spanDays)
+  };
+}
+
+function maintenanceCard() {
+  const m = observedMaintenance(Math.max(analysisPeriod, 14));
+  if (!m.ok) {
+    let msg;
+    if (m.reason === 'food') msg = `Log food on a few more days (${m.loggedDays}/${m.needDays}) to estimate your real maintenance calories.`;
+    else if (m.reason === 'weight') msg = 'Log at least two weigh-ins so I can read your weight trend.';
+    else msg = 'About a week of weight history will unlock your maintenance estimate.';
+    return `<div class="maint-card"><div class="maint-title">⚖️ Observed Maintenance</div><div class="maint-sub">${msg}</div></div>`;
+  }
+  const goal = goals.cal;
+  const diff = m.maintenance - goal;
+  const dir = m.slopePerWeek < -0.05 ? `losing ${Math.abs(m.slopePerWeek).toFixed(1)} ${weightUnit}/wk`
+    : m.slopePerWeek > 0.05 ? `gaining ${m.slopePerWeek.toFixed(1)} ${weightUnit}/wk` : 'holding steady';
+  let goalLine;
+  if (diff > 50) goalLine = `Your goal of ${goal.toLocaleString()} is ~${diff.toLocaleString()} below maintenance — a deficit (losing).`;
+  else if (diff < -50) goalLine = `Your goal of ${goal.toLocaleString()} is ~${Math.abs(diff).toLocaleString()} above maintenance — a surplus (gaining).`;
+  else goalLine = `Your goal of ${goal.toLocaleString()} is right around maintenance.`;
+  return `<div class="maint-card">
+    <div class="maint-title">⚖️ Observed Maintenance</div>
+    <div class="maint-val">~${m.maintenance.toLocaleString()} <span>kcal/day</span></div>
+    <div class="maint-sub">Measured from your last ${m.span} days — avg intake ${m.avgIntake.toLocaleString()}, ${dir}.</div>
+    <div class="maint-goal">${goalLine}</div>
+  </div>`;
+}
+
 async function renderAnalysis() {
   await ensureHistory();
   const cutoff = new Date();
@@ -4876,6 +4933,7 @@ async function renderAnalysis() {
   const byFiber = [...foods].sort((a,b)=>b.fiber-a.fiber).filter(f=>f.fiber>0);
   const byCount = [...foods].sort((a,b)=>b.count-a.count);
   el.innerHTML =
+    maintenanceCard() +
     section('💪 Highest Protein', byProtein, f=>f.protein, 'var(--protein)', 'g') +
     section('🔥 Highest Calories', byCalories, f=>f.cal, 'var(--cal)', '') +
     section('🥗 Lowest Calorie', byLowCal, f=>f.cal, '#34d399', '') +
