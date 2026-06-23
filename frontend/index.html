@@ -1954,7 +1954,7 @@
       </div>
       <div class="form-field full">
         <label>Serving size</label>
-        <input type="text" id="eeServing" placeholder="e.g. 1 cup, 2 eggs">
+        <input type="text" id="eeServing" placeholder="e.g. 1 cup, 2 eggs" oninput="onEditServingInput()">
       </div>
     </div>
     <button class="btn-primary" onclick="saveEntryEdit()">Save Changes</button>
@@ -2527,6 +2527,31 @@ async function deleteEntry(index) {
 
 let editEntryIndex = -1;
 
+// Extract a leading numeric quantity from a serving string ("2 cups" -> 2,
+// "1 ½ scoops" -> 1.5, "½ portion" -> 0.5). NaN if there's no number to scale by.
+function parseServingQty(str) {
+  if (!str) return NaN;
+  const frac = { '½': 0.5, '¼': 0.25, '¾': 0.75, '⅓': 1 / 3, '⅔': 2 / 3, '⅛': 0.125 };
+  const m = String(str).trim().match(/^(\d+(?:\.\d+)?)?\s*([½¼¾⅓⅔⅛])?/);
+  if (!m || (!m[1] && !m[2])) return NaN;
+  return (m[1] ? parseFloat(m[1]) : 0) + (m[2] ? frac[m[2]] : 0);
+}
+
+let editEntryBase = null;   // macros + serving qty captured when the edit modal opened
+
+// When the serving's quantity changes, rescale the macro fields proportionally.
+function onEditServingInput() {
+  if (!editEntryBase) return;
+  const newQty = parseServingQty(document.getElementById('eeServing').value);
+  if (!(editEntryBase.qty > 0) || !(newQty > 0)) return;   // need a numeric base + target
+  const f = newQty / editEntryBase.qty;
+  document.getElementById('eeCal').value = Math.round(editEntryBase.cal * f);
+  document.getElementById('eeProtein').value = Math.round(editEntryBase.protein * f);
+  document.getElementById('eeCarbs').value = Math.round(editEntryBase.carbs * f);
+  document.getElementById('eeFiber').value = Math.round(editEntryBase.fiber * f);
+  document.getElementById('eeFat').value = Math.round(editEntryBase.fat * f);
+}
+
 function openEditEntry(index) {
   const e = log[index];
   if (!e) return;
@@ -2539,6 +2564,10 @@ function openEditEntry(index) {
   document.getElementById('eeFiber').value = Math.round(e.fiber || 0);
   document.getElementById('eeFat').value = Math.round(e.fat || 0);
   document.getElementById('eeServing').value = e.serving || '';
+  editEntryBase = {
+    qty: parseServingQty(e.serving),
+    cal: e.cal || 0, protein: e.protein || 0, carbs: e.carbs || 0, fiber: e.fiber || 0, fat: e.fat || 0
+  };
   document.getElementById('eeError').classList.remove('show');
   document.getElementById('editEntryModal').classList.add('open');
 }
