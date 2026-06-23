@@ -1954,7 +1954,15 @@
       </div>
       <div class="form-field full">
         <label>Serving size</label>
-        <input type="text" id="eeServing" placeholder="e.g. 1 cup, 2 eggs" oninput="onEditServingInput()">
+        <div style="display:flex;gap:8px">
+          <input type="number" id="eeServingQty" inputmode="decimal" step="0.25" min="0" placeholder="1" oninput="onEditServingInput()" style="flex:0 0 90px">
+          <input type="text" id="eeServingUnit" list="servingUnits" placeholder="cup, oz, g, serving…" style="flex:1">
+        </div>
+        <datalist id="servingUnits">
+          <option value="serving"></option><option value="oz"></option><option value="g"></option>
+          <option value="cup"></option><option value="ml"></option><option value="tbsp"></option>
+          <option value="tsp"></option><option value="slice"></option><option value="piece"></option><option value="scoop"></option>
+        </datalist>
       </div>
     </div>
     <button class="btn-primary" onclick="saveEntryEdit()">Save Changes</button>
@@ -2542,7 +2550,7 @@ let editEntryBase = null;   // macros + serving qty captured when the edit modal
 // When the serving's quantity changes, rescale the macro fields proportionally.
 function onEditServingInput() {
   if (!editEntryBase) return;
-  const newQty = parseServingQty(document.getElementById('eeServing').value);
+  const newQty = parseFloat(document.getElementById('eeServingQty').value);
   if (!(editEntryBase.qty > 0) || !(newQty > 0)) return;   // need a numeric base + target
   const f = newQty / editEntryBase.qty;
   document.getElementById('eeCal').value = Math.round(editEntryBase.cal * f);
@@ -2563,9 +2571,12 @@ function openEditEntry(index) {
   document.getElementById('eeCarbs').value = Math.round(e.carbs || 0);
   document.getElementById('eeFiber').value = Math.round(e.fiber || 0);
   document.getElementById('eeFat').value = Math.round(e.fat || 0);
-  document.getElementById('eeServing').value = e.serving || '';
+  const sQty = parseServingQty(e.serving);
+  const sUnit = (e.serving || '').replace(/^(\d+(?:\.\d+)?)?\s*[½¼¾⅓⅔⅛]?\s*/, '').trim();
+  document.getElementById('eeServingQty').value = isNaN(sQty) ? '' : sQty;
+  document.getElementById('eeServingUnit').value = sUnit;
   editEntryBase = {
-    qty: parseServingQty(e.serving),
+    qty: sQty,
     cal: e.cal || 0, protein: e.protein || 0, carbs: e.carbs || 0, fiber: e.fiber || 0, fat: e.fat || 0
   };
   document.getElementById('eeError').classList.remove('show');
@@ -2595,7 +2606,9 @@ async function saveEntryEdit() {
   e.carbs = parseFloat(document.getElementById('eeCarbs').value) || 0;
   e.fiber = parseFloat(document.getElementById('eeFiber').value) || 0;
   e.fat = parseFloat(document.getElementById('eeFat').value) || 0;
-  e.serving = document.getElementById('eeServing').value.trim() || null;
+  const sQty = document.getElementById('eeServingQty').value.trim();
+  const sUnit = document.getElementById('eeServingUnit').value.trim();
+  e.serving = `${sQty}${sQty && sUnit ? ' ' : ''}${sUnit}`.trim() || null;
   saveLog();
   renderLog();
   updateTotals();
