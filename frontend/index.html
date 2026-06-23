@@ -115,6 +115,11 @@
     50% { box-shadow: 0 0 0 7px rgba(96,165,250,0); }
   }
   .settings-btn.nudge { border-color: var(--carbs); color: var(--carbs); animation: profile-nudge 1.4s ease-in-out infinite; }
+  #eeAiRecalc { align-items: center; gap: 10px; }
+  .ee-ai-btn { background: var(--surface2); border: 1px dashed var(--border); color: var(--carbs); border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .ee-ai-btn:hover { border-color: var(--carbs); }
+  .ee-ai-btn:disabled { opacity: .6; cursor: default; }
+  .ee-ai-msg { font-size: 12px; color: var(--muted); }
   .install-btn {
     background: var(--protein); border: none; color: #fff;
     padding: 0 12px; height: 36px; border-radius: 10px; cursor: pointer;
@@ -1964,6 +1969,10 @@
           <option value="tsp"></option><option value="slice"></option><option value="piece"></option><option value="scoop"></option>
         </datalist>
       </div>
+      <div class="form-field full" id="eeAiRecalc" style="display:none">
+        <button type="button" class="ee-ai-btn" id="eeAiBtn" onclick="aiRecalcServing()">✨ Recalc with AI</button>
+        <span id="eeAiMsg" class="ee-ai-msg"></span>
+      </div>
     </div>
     <button class="btn-primary" onclick="saveEntryEdit()">Save Changes</button>
     <button class="btn-cancel" onclick="closeEditEntry()">Cancel</button>
@@ -2572,17 +2581,55 @@ function servingFactor(baseQty, baseUnit, newQty, newUnit) {
 }
 
 // When the serving's quantity or unit changes, rescale the macro fields.
+// If we can't convert locally (e.g. oz→cup), offer an AI recalc instead.
 function onEditServingInput() {
   if (!editEntryBase) return;
   const newQty = parseFloat(document.getElementById('eeServingQty').value);
   const newUnit = document.getElementById('eeServingUnit').value;
   const f = servingFactor(editEntryBase.qty, editEntryBase.unit, newQty, newUnit);
-  if (f == null) return;
-  document.getElementById('eeCal').value = Math.round(editEntryBase.cal * f);
-  document.getElementById('eeProtein').value = Math.round(editEntryBase.protein * f);
-  document.getElementById('eeCarbs').value = Math.round(editEntryBase.carbs * f);
-  document.getElementById('eeFiber').value = Math.round(editEntryBase.fiber * f);
-  document.getElementById('eeFat').value = Math.round(editEntryBase.fat * f);
+  const box = document.getElementById('eeAiRecalc');
+  if (f != null) {
+    document.getElementById('eeCal').value = Math.round(editEntryBase.cal * f);
+    document.getElementById('eeProtein').value = Math.round(editEntryBase.protein * f);
+    document.getElementById('eeCarbs').value = Math.round(editEntryBase.carbs * f);
+    document.getElementById('eeFiber').value = Math.round(editEntryBase.fiber * f);
+    document.getElementById('eeFat').value = Math.round(editEntryBase.fat * f);
+    box.style.display = 'none';
+    return;
+  }
+  // No local conversion — offer AI if there's a name and a target serving.
+  const hasTarget = (newQty > 0 || newUnit.trim()) && document.getElementById('eeName').value.trim();
+  document.getElementById('eeAiMsg').textContent = '';
+  box.style.display = hasTarget ? 'flex' : 'none';
+}
+
+// Ask the AI to estimate the food at the new serving (handles cross-unit changes).
+async function aiRecalcServing() {
+  const name = document.getElementById('eeName').value.trim();
+  const qty = document.getElementById('eeServingQty').value.trim();
+  const unit = document.getElementById('eeServingUnit').value.trim();
+  if (!name) return;
+  const btn = document.getElementById('eeAiBtn');
+  const msg = document.getElementById('eeAiMsg');
+  btn.disabled = true; btn.textContent = '✨ Estimating…'; msg.textContent = '';
+  const desc = `${qty} ${unit} of ${name}`.trim();
+  const result = await apiRequest('/analyze', { method: 'POST', body: JSON.stringify({ description: desc }) });
+  btn.disabled = false; btn.textContent = '✨ Recalc with AI';
+  if (!result.ok || !result.body || result.body.error) { msg.textContent = 'Estimate failed — set it manually.'; return; }
+  const r = result.body;
+  document.getElementById('eeCal').value = Math.round(r.calories || 0);
+  document.getElementById('eeProtein').value = Math.round(r.protein_g || 0);
+  document.getElementById('eeCarbs').value = Math.round(r.carbs_g || 0);
+  document.getElementById('eeFiber').value = Math.round(r.fiber_g || 0);
+  document.getElementById('eeFat').value = Math.round(r.fat_g || 0);
+  // Re-baseline so further same-family tweaks scale from the AI result.
+  editEntryBase = {
+    qty: parseServingQty(`${qty} ${unit}`), unit,
+    cal: Math.round(r.calories || 0), protein: Math.round(r.protein_g || 0),
+    carbs: Math.round(r.carbs_g || 0), fiber: Math.round(r.fiber_g || 0), fat: Math.round(r.fat_g || 0)
+  };
+  msg.textContent = `✓ ${Math.round(r.calories || 0)} cal`;
+  document.getElementById('eeAiRecalc').style.display = 'flex';
 }
 
 function openEditEntry(index) {
@@ -2604,6 +2651,8 @@ function openEditEntry(index) {
     qty: sQty, unit: sUnit,
     cal: e.cal || 0, protein: e.protein || 0, carbs: e.carbs || 0, fiber: e.fiber || 0, fat: e.fat || 0
   };
+  document.getElementById('eeAiRecalc').style.display = 'none';
+  document.getElementById('eeAiMsg').textContent = '';
   document.getElementById('eeError').classList.remove('show');
   document.getElementById('editEntryModal').classList.add('open');
 }
