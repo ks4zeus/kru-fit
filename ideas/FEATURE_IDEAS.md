@@ -37,8 +37,12 @@ as we go. ⭐ = top picks (high daily value or unlocks bigger things).
       API/key — static asset searched client-side; expandable. (shipped 2026-06-22)
 - [x] **Editable serving size** — Today's Log entries carry a serving/portion
       descriptor (new `food_log.serving` column, migration 007), editable in the
-      Edit Entry modal and shown on the row. Auto-filled on the natural paths
-      (custom food, barcode, restaurant seed, photo portion, AI estimate). (shipped 2026-06-23)
+      Edit Entry modal (split qty + unit fields) and shown on the row. Auto-filled
+      on the natural paths (custom food, barcode, restaurant seed, photo portion,
+      AI estimate). Changing the serving **rescales calories + macros**: same-family
+      unit conversion (g↔oz↔lb, ml↔cup↔tbsp↔tsp) and qty ratios are instant; a
+      cross-family change (e.g. oz→cup, needs food density) offers an "✨ Recalc with
+      AI" button (text `/analyze`, Haiku 4.5) that re-estimates at the new serving. (shipped 2026-06-23)
 
 ## 📊 Insights
 - [x] **Admin usage dashboard** — hidden admin-only 📊 tab: per-user tool usage
