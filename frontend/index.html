@@ -948,6 +948,16 @@
   }
   .wk-form select:focus { border-color: var(--protein); }
   .wk-form .btn-primary { margin-top: 4px; }
+  .wk-actions { display: flex; gap: 8px; margin-top: 4px; }
+  .wk-actions .btn-primary { flex: 1; margin-top: 0; }
+  .wk-add-another { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 12px; padding: 0 14px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .wk-add-another:hover { border-color: var(--protein); }
+  .wk-session { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 10px; }
+  .wk-session-head { font-size: 12px; font-weight: 700; color: var(--text); display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .wk-session-clear { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; }
+  .wk-session-item { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); font-family: var(--mono); padding: 2px 0; }
+  .wk-session-item button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 0 4px; }
+  .wk-session-item button:hover { color: var(--danger); }
   .wk-intensity { display: inline-flex; gap: 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
   .wki-btn { border: none; background: none; color: var(--muted); font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
   .wki-btn.active { background: var(--surface); color: var(--text); }
@@ -1647,7 +1657,11 @@
           <input type="number" id="wkCalories" min="0" step="1" inputmode="numeric" placeholder="0" oninput="wkCalEdited = true" style="width:90px">
         </div>
         <div class="wk-hint" id="wkHint"></div>
-        <button class="btn-primary" onclick="logWorkout()">＋ Log workout</button>
+        <div class="wk-session" id="wkSession" style="display:none"></div>
+        <div class="wk-actions">
+          <button class="wk-add-another" onclick="addToSession()">＋ Add another</button>
+          <button class="btn-primary" onclick="logWorkout()">Log workout</button>
+        </div>
         <div class="we-feedback" id="wkFeedback"></div>
       </div>
     </div>
@@ -2168,6 +2182,7 @@ let exercisePeriod = 30;
 let workouts = [];
 let wkCalEdited = false;
 let wkIntensity = 'moderate';
+let pendingSession = [];   // activities staged into the current (multi-activity) workout
 // Activities with MET values for the calorie estimate. `met` is either a single
 // number (intensity doesn't vary much) or {easy, moderate, hard} tiers.
 const WORKOUTS = [
@@ -3525,38 +3540,94 @@ function onWorkoutInput() {
   }
 }
 
-async function logWorkout() {
+// A "session" groups activities logged together — all share one ts.
+function sessionKey(w) { return w.ts != null ? 'ts' + w.ts : 'id' + w.id; }
+function baseWorkoutName(name) { return (name || '').replace(/\s*\((easy|moderate|hard)\)\s*$/i, ''); }
+
+// Build a workout entry from the current form inputs, or null if nothing entered.
+function buildWorkoutEntry() {
   const sel = document.getElementById('wkActivity');
   const meta = workoutMeta(sel.value);
-  const fb = document.getElementById('wkFeedback');
   const mins = parseFloat(document.getElementById('wkMinutes').value) || 0;
   const distKm = currentDistanceKm(meta);
+  if (mins <= 0 && distKm <= 0) return null;
   let name = meta.name;
   if (sel.value === 'Other') name = document.getElementById('wkName').value.trim() || 'Workout';
   if (hasIntensity(meta)) name += ` (${wkIntensity})`;
-  if (mins <= 0 && distKm <= 0) { fb.style.color = 'var(--danger)'; fb.textContent = 'Enter minutes or distance.'; return; }
   const calories = Math.max(0, parseFloat(document.getElementById('wkCalories').value) || 0);
-  const entry = { name, minutes: mins, calories, distance: distKm > 0 ? Math.round(distKm * 100) / 100 : null, date: todayKey(), ts: Date.now() };
-  const result = await apiRequest('/workouts', { method: 'POST', body: JSON.stringify(entry) });
-  const saved = result.ok ? result.body : { id: Date.now(), ...entry };
-  workouts.push(saved);
-  saveLocal(STORAGE_KEYS.workouts, workouts);
+  return { name, minutes: mins, calories, distance: distKm > 0 ? Math.round(distKm * 100) / 100 : null };
+}
+
+function clearWorkoutInputs() {
   document.getElementById('wkMinutes').value = '';
   document.getElementById('wkCalories').value = '';
   document.getElementById('wkName').value = '';
   document.getElementById('wkDistance').value = '';
   wkCalEdited = false;
   onWorkoutInput();
+}
+
+function renderPendingSession() {
+  const wrap = document.getElementById('wkSession');
+  if (!wrap) return;
+  if (!pendingSession.length) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+  const totMin = pendingSession.reduce((s, e) => s + (e.minutes || 0), 0);
+  const totCal = pendingSession.reduce((s, e) => s + (e.calories || 0), 0);
+  wrap.style.display = '';
+  wrap.innerHTML = `<div class="wk-session-head"><span>This workout · ${Math.round(totMin)} min · ${Math.round(totCal)} cal</span><button class="wk-session-clear" onclick="clearSession()">clear</button></div>` +
+    pendingSession.map((e, i) => {
+      const meta = workoutMeta(e.name);
+      return `<div class="wk-session-item"><span>${meta.emoji} ${cfEsc(e.name)} · ${Math.round(e.minutes || 0)}m${e.distance ? ' · ' + fmtDist(e.distance) : ''} · ${Math.round(e.calories || 0)} cal</span><button onclick="removeFromSession(${i})" title="Remove">✕</button></div>`;
+    }).join('');
+}
+
+function addToSession() {
+  const e = buildWorkoutEntry();
+  const fb = document.getElementById('wkFeedback');
+  if (!e) { fb.style.color = 'var(--danger)'; fb.textContent = 'Enter minutes or distance first.'; return; }
+  pendingSession.push(e);
+  clearWorkoutInputs();
+  renderPendingSession();
+  fb.textContent = '';
+}
+function removeFromSession(i) { pendingSession.splice(i, 1); renderPendingSession(); }
+function clearSession() { pendingSession = []; renderPendingSession(); }
+
+async function logWorkout() {
+  const fb = document.getElementById('wkFeedback');
+  const entries = [...pendingSession];
+  const current = buildWorkoutEntry();
+  if (current) entries.push(current);
+  if (!entries.length) { fb.style.color = 'var(--danger)'; fb.textContent = 'Enter minutes or distance.'; return; }
+  const ts = Date.now();           // shared across the session's activities
+  const date = todayKey();
+  for (let i = 0; i < entries.length; i++) {
+    const entry = { ...entries[i], date, ts };
+    const result = await apiRequest('/workouts', { method: 'POST', body: JSON.stringify(entry) });
+    const saved = result.ok ? result.body : { id: `${ts}-${i}`, ...entry };
+    workouts.push(saved);
+  }
+  saveLocal(STORAGE_KEYS.workouts, workouts);
+  pendingSession = [];
+  renderPendingSession();
+  clearWorkoutInputs();
+  const totCal = Math.round(entries.reduce((s, e) => s + (e.calories || 0), 0));
   fb.style.color = 'var(--protein)';
-  fb.textContent = `✓ Logged ${name} · ${Math.round(calories)} cal`;
+  fb.textContent = entries.length > 1
+    ? `✓ Logged workout · ${entries.length} activities · ${totCal} cal`
+    : `✓ Logged ${entries[0].name} · ${totCal} cal`;
   setTimeout(() => { fb.textContent = ''; }, 3000);
   renderExercise();
 }
 
-async function deleteWorkout(id) {
+// Delete a whole session (all activities that share its key).
+async function deleteWorkoutSession(key) {
   if (!confirm('Remove this workout?')) return;
-  if (currentUser) await apiRequest('/workouts/' + encodeURIComponent(id), { method: 'DELETE' });
-  workouts = workouts.filter(w => String(w.id) !== String(id));
+  const items = workouts.filter(w => sessionKey(w) === key);
+  for (const w of items) {
+    if (currentUser) await apiRequest('/workouts/' + encodeURIComponent(w.id), { method: 'DELETE' });
+  }
+  workouts = workouts.filter(w => sessionKey(w) !== key);
   saveLocal(STORAGE_KEYS.workouts, workouts);
   renderExercise();
 }
@@ -3571,6 +3642,7 @@ function setExercisePeriod(days, btn) {
 function renderExercise() {
   populateActivities();
   onWorkoutInput();
+  renderPendingSession();
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - exercisePeriod);
   const cutoffKey = dateKey(cutoff);
@@ -3584,8 +3656,9 @@ function renderExercise() {
   const totalCals = inPeriod.reduce((s, w) => s + (w.calories || 0), 0);
   const totalMins = inPeriod.reduce((s, w) => s + (w.minutes || 0), 0);
   const activeDays = new Set(inPeriod.map(w => w.date)).size;
+  const sessionCount = new Set(inPeriod.map(sessionKey)).size;   // a multi-activity session = 1 workout
   document.getElementById('exerciseSummary').innerHTML = `
-    <div class="hist-stat"><div class="hs-val" style="color:var(--text)">${inPeriod.length}</div><div class="hs-label">Workouts</div><div class="hs-sub">last ${exercisePeriod}d</div></div>
+    <div class="hist-stat"><div class="hs-val" style="color:var(--text)">${sessionCount}</div><div class="hs-label">Workouts</div><div class="hs-sub">last ${exercisePeriod}d</div></div>
     <div class="hist-stat"><div class="hs-val" style="color:#a78bfa">${Math.round(totalMins)}</div><div class="hs-label">Minutes</div><div class="hs-sub">total</div></div>
     <div class="hist-stat"><div class="hs-val" style="color:var(--fiber)">${Math.round(totalCals)}</div><div class="hs-label">Cal burned</div><div class="hs-sub">total</div></div>
     <div class="hist-stat"><div class="hs-val" style="color:var(--protein)">${activeDays}</div><div class="hs-label">Active days</div><div class="hs-sub">of ${exercisePeriod}</div></div>`;
@@ -3608,21 +3681,44 @@ function renderExercise() {
     drawBarChart('chartMins', labels, [{ label: 'Minutes', data: minData, color: '#a78bfa' }]);
   }
 
-  const recent = [...workouts].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 30);
-  document.getElementById('workoutList').innerHTML = recent.map(w => {
-    const meta = workoutMeta(w.name);
-    const dateLabel = w.date === todayKey() ? 'Today' : new Date(w.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    const parts = [dateLabel];
-    if (w.minutes) parts.push(Math.round(w.minutes) + ' min');
-    if (w.distance) parts.push(fmtDist(w.distance));
+  // Group workouts into sessions (shared ts), newest first.
+  const sessions = {};
+  workouts.forEach(w => {
+    const k = sessionKey(w);
+    if (!sessions[k]) sessions[k] = { key: k, ts: w.ts || 0, date: w.date, items: [] };
+    sessions[k].items.push(w);
+  });
+  const sessionList = Object.values(sessions).sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 30);
+  document.getElementById('workoutList').innerHTML = sessionList.map(sess => {
+    const dateLabel = sess.date === todayKey() ? 'Today' : new Date(sess.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const totMin = sess.items.reduce((s, w) => s + (w.minutes || 0), 0);
+    const totCal = sess.items.reduce((s, w) => s + (w.calories || 0), 0);
+    if (sess.items.length === 1) {
+      const w = sess.items[0];
+      const meta = workoutMeta(w.name);
+      const parts = [dateLabel];
+      if (w.minutes) parts.push(Math.round(w.minutes) + ' min');
+      if (w.distance) parts.push(fmtDist(w.distance));
+      return `<div class="workout-row">
+        <span class="wk-emoji">${meta.emoji}</span>
+        <div class="wk-main">
+          <div class="wk-name">${cfEsc(w.name)}</div>
+          <div class="wk-sub">${parts.join(' · ')}</div>
+        </div>
+        <span class="wk-cals">${Math.round(w.calories || 0)} cal</span>
+        <button class="wk-del" onclick="deleteWorkoutSession('${sess.key}')" title="Remove">✕</button>
+      </div>`;
+    }
+    const nameList = sess.items.map(w => baseWorkoutName(w.name)).join(' + ');
+    const detail = sess.items.map(w => `${workoutMeta(w.name).emoji} ${Math.round(w.minutes || 0)}m`).join(' · ');
     return `<div class="workout-row">
-      <span class="wk-emoji">${meta.emoji}</span>
+      <span class="wk-emoji">🏅</span>
       <div class="wk-main">
-        <div class="wk-name">${cfEsc(w.name)}</div>
-        <div class="wk-sub">${parts.join(' · ')}</div>
+        <div class="wk-name">${cfEsc(nameList)}</div>
+        <div class="wk-sub">${dateLabel} · ${Math.round(totMin)} min · ${detail}</div>
       </div>
-      <span class="wk-cals">${Math.round(w.calories || 0)} cal</span>
-      <button class="wk-del" onclick="deleteWorkout('${w.id}')" title="Remove">✕</button>
+      <span class="wk-cals">${Math.round(totCal)} cal</span>
+      <button class="wk-del" onclick="deleteWorkoutSession('${sess.key}')" title="Remove">✕</button>
     </div>`;
   }).join('');
 }
@@ -4999,7 +5095,8 @@ function gatherExerciseSummary(days) {
     byAct[k].count++; byAct[k].cal += w.calories || 0; byAct[k].min += w.minutes || 0;
   });
   const top = Object.entries(byAct).sort((a, b) => b[1].cal - a[1].cal);
-  return { count: inP.length, activeDays, totalCal: Math.round(totalCal), totalMin: Math.round(totalMin), top };
+  const count = new Set(inP.map(sessionKey)).size;   // sessions, not individual activities
+  return { count, activeDays, totalCal: Math.round(totalCal), totalMin: Math.round(totalMin), top };
 }
 
 function gatherDietSummary(days) {
