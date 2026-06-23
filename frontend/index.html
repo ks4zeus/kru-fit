@@ -3291,7 +3291,7 @@ function applyAdminVisibility() {
   if (btn) btn.style.display = (currentUser && currentUser.admin) ? '' : 'none';
 }
 
-const ADMIN_TOOLS = [['photo', '📷 Photo'], ['barcode', '📸 Barcode'], ['recipe', '🍲 Recipe'], ['meal', '📋 Meal'], ['quickadd', '⚡ Quick'], ['custom', '✏️ Custom']];
+const ADMIN_TOOLS = [['photo', '📷 Photo'], ['barcode', '📸 Barcode'], ['recipe', '🍲 Recipe'], ['meal', '📋 Meal'], ['quickadd', '⚡ Quick'], ['custom', '✏️ Custom'], ['exercise', '💪 Exercise'], ['coach', '🤖 Coach']];
 
 async function renderAdmin() {
   const content = document.getElementById('adminContent');

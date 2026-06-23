@@ -758,6 +758,14 @@ export default {
          FROM ai_usage GROUP BY user_id, endpoint, model`
       ).all()).results || []) as any[];
 
+      // Exercise logging (workouts) and "Analyze my diet" (coach) usage per user.
+      const exRows = ((await db.prepare(
+        `SELECT user_id, COUNT(*) AS n FROM workouts GROUP BY user_id`
+      ).all()).results || []) as any[];
+      const coachRows = ((await db.prepare(
+        `SELECT user_id, COUNT(*) AS n FROM ai_usage WHERE endpoint = 'coach' GROUP BY user_id`
+      ).all()).results || []) as any[];
+
       const userRows = ((await db.prepare(`SELECT id, name FROM users`).all()).results || []) as any[];
 
       const users: Record<string, any> = {};
@@ -774,6 +782,8 @@ export default {
       userRows.forEach((r) => { const u = ensure(r.id); if (r.name) u.name = r.name; });
       actRows.forEach((r) => { const u = ensure(r.user_id); u.entries = r.entries; u.activeDays = r.active_days; u.lastTs = r.last_ts || 0; });
       toolRows.forEach((r) => { ensure(r.user_id).tools[r.tool] = r.n; });
+      exRows.forEach((r) => { ensure(r.user_id).tools.exercise = r.n; });
+      coachRows.forEach((r) => { ensure(r.user_id).tools.coach = r.n; });
 
       // Cost is per-row by the model that actually ran the call.
       const cost = (model: string, inT: number, outT: number) => {
