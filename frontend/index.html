@@ -1348,6 +1348,8 @@
   .qa-qty:focus { border-color: var(--protein); }
   .qa-add { background: var(--protein); color: #0a1a12; border: none; border-radius: 8px; font-weight: 700; font-size: 18px; line-height: 1; padding: 7px 12px; cursor: pointer; flex-shrink: 0; }
   .qa-empty { text-align: center; color: var(--muted); font-size: 14px; padding: 24px 10px; }
+  .qa-ai { width: 100%; background: var(--surface2); border: 1px dashed var(--border); color: var(--text); border-radius: 10px; padding: 11px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+  .qa-ai:hover { border-color: var(--carbs); }
   /* Save-as-meal item picker */
   .sm-pick-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
   .sm-item { display: flex; align-items: center; gap: 9px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; }
@@ -4279,6 +4281,23 @@ async function deleteCustomFood(id) {
 // ---- Quick Add: search your previously-logged foods, most-frequent first ----
 let quickCatalog = [];
 let quickRendered = [];
+let restaurantFoods = [];      // curated chain-restaurant nutrition seed (MenuStat-style)
+let restaurantLoaded = false;
+
+// Lazy-load the restaurant seed once; refresh Quick Add if it's open mid-search.
+async function loadRestaurantFoods() {
+  if (restaurantLoaded) return restaurantFoods;
+  try {
+    const resp = await fetch('/assets/restaurant-foods.json');
+    if (resp.ok) restaurantFoods = await resp.json();
+  } catch (e) {}
+  restaurantLoaded = true;
+  const qa = document.getElementById('qaSearch');
+  if (qa && document.getElementById('quickAddModal').classList.contains('open') && qa.value.trim()) {
+    renderQuickAddList(qa.value);
+  }
+  return restaurantFoods;
+}
 
 // Build a de-duped catalog of foods from logged history + the custom library,
 // counting how often each has been logged and keeping the most recent macros.
@@ -4321,6 +4340,7 @@ async function openQuickAdd() {
   document.getElementById('qaSearch').value = '';
   document.getElementById('qaFeedback').textContent = '';
   await ensureHistory();
+  loadRestaurantFoods();   // non-blocking; re-renders when ready if mid-search
   quickCatalog = buildQuickCatalog();
   renderQuickAddList('');
   setTimeout(() => document.getElementById('qaSearch').focus(), 100);
@@ -4331,12 +4351,16 @@ function closeQuickAdd() {
 }
 
 function qaRow(f, idx) {
+  const macros = `${Math.round(f.cal)} cal · P${Math.round(f.protein)} C${Math.round(f.carbs)} F${Math.round(f.fat)}`;
+  const sub = f._restaurant
+    ? `${cfEsc(f.brand || '')} · ${macros}`
+    : `${macros}${f.count > 1 ? ' · logged ' + f.count + '×' : ''}`;
   return `
     <div class="qa-item">
-      <span class="qa-emoji">${cfEsc(displayEmoji(f.name, f.emoji))}</span>
+      <span class="qa-emoji">${cfEsc(f._restaurant ? (f.emoji || '🍴') : displayEmoji(f.name, f.emoji))}</span>
       <div class="qa-info">
         <div class="qa-name">${cfEsc(f.name)}</div>
-        <div class="qa-macros">${Math.round(f.cal)} cal · P${Math.round(f.protein)} C${Math.round(f.carbs)} F${Math.round(f.fat)}${f.count > 1 ? ' · logged ' + f.count + '×' : ''}</div>
+        <div class="qa-macros">${sub}</div>
       </div>
       <span class="qa-times">×</span>
       <input class="qa-qty" type="number" value="1" min="0.25" step="0.25" inputmode="decimal" id="qaQty_${idx}">
@@ -4349,22 +4373,25 @@ function renderQuickAddList(query) {
   const listEl = document.getElementById('qaList');
   const emptyEl = document.getElementById('qaEmpty');
 
-  // Search mode: one flat, relevance-sorted list (saved meals first).
+  // Search mode: your meals/foods, then the restaurant seed, then an AI fallback.
   if (query) {
     const tpls = (mealTemplates || []).filter(t => (t.name || '').toLowerCase().includes(query));
     const items = quickCatalog.filter(f => f.name.toLowerCase().includes(query))
       .sort((a, b) => b.count - a.count || b.lastTs - a.lastTs);
-    quickRendered = items;
-    if (items.length === 0 && tpls.length === 0) {
-      listEl.innerHTML = '';
-      emptyEl.style.display = 'block';
-      emptyEl.textContent = 'No matching foods or meals.';
-      return;
-    }
+    const rest = (restaurantFoods || []).filter(r =>
+      r.name.toLowerCase().includes(query) || (r.brand || '').toLowerCase().includes(query)
+    ).slice(0, 8).map(r => ({ ...r, _restaurant: true }));
+    quickRendered = [...items, ...rest];   // restaurant rows continue the index space
     emptyEl.style.display = 'none';
+    const rawQuery = document.getElementById('qaSearch').value.trim();
     let html = '';
     if (tpls.length) html += '<div class="qa-head">📋 Your meals</div>' + tpls.map(mtRow).join('');
-    if (items.length) html += (tpls.length ? '<div class="qa-head">🍎 Foods</div>' : '') + items.map((f, i) => qaRow(f, i)).join('');
+    if (items.length) html += '<div class="qa-head">🍎 Your foods</div>' + items.map((f, i) => qaRow(f, i)).join('');
+    if (rest.length) html += '<div class="qa-head">🍔 Restaurants</div>' + rest.map((f, j) => qaRow(f, items.length + j)).join('');
+    if (!tpls.length && !items.length && !rest.length) {
+      html += `<div class="qa-empty" style="display:block;padding:14px 10px 8px">No saved or restaurant match — estimate it with AI:</div>`;
+    }
+    html += `<button class="qa-ai" onclick="quickAiEstimate()">✨ Estimate “${cfEsc(rawQuery)}” with AI</button>`;
     listEl.innerHTML = html;
     return;
   }
@@ -4441,12 +4468,13 @@ async function quickLog(i) {
   const f = quickRendered[i];
   if (!f) return;
   const qty = parseFloat(document.getElementById('qaQty_' + i).value) || 1;
+  const qtyTag = qty !== 1 ? ` · ${qty}×` : '';
+  const source = f._restaurant ? `${f.brand || 'Restaurant'}${qtyTag}` : (qty === 1 ? 'Quick add' : `Quick add · ${qty}×`);
   const entry = {
     name: f.name, emoji: f.emoji || '🍽️',
     cal: f.cal * qty, protein: f.protein * qty, carbs: f.carbs * qty,
     fiber: (f.fiber || 0) * qty, fat: f.fat * qty,
-    source: qty === 1 ? 'Quick add' : `Quick add · ${qty}×`,
-    ts: Date.now(), date: todayKey()
+    source, ts: Date.now(), date: todayKey()
   };
   const saved = await saveFoodEntry(entry);
   log.push(saved);
@@ -4454,7 +4482,37 @@ async function quickLog(i) {
   renderLog();
   updateTotals();
   const fb = document.getElementById('qaFeedback');
+  fb.style.color = 'var(--protein)';
   fb.textContent = `✓ Added ${f.name}${qty !== 1 ? ' ×' + qty : ''}`;
+}
+
+// Fallback when nothing matches: AI-estimate the typed query and log it.
+async function quickAiEstimate() {
+  const query = document.getElementById('qaSearch').value.trim();
+  if (!query) return;
+  const fb = document.getElementById('qaFeedback');
+  fb.style.color = '#60a5fa';
+  fb.textContent = `✨ Estimating “${query}”…`;
+  const result = await apiRequest('/analyze', { method: 'POST', body: JSON.stringify({ description: query }) });
+  if (!result.ok || !result.body || result.body.error) {
+    fb.style.color = 'var(--danger)';
+    fb.textContent = 'Could not estimate — try the ✏️ Custom option.';
+    return;
+  }
+  const r = result.body;
+  const entry = {
+    name: r.name || query, emoji: r.emoji || foodEmoji(query) || '🍽️',
+    cal: Math.round(r.calories || 0), protein: Math.round(r.protein_g || 0), carbs: Math.round(r.carbs_g || 0),
+    fiber: Math.round(r.fiber_g || 0), fat: Math.round(r.fat_g || 0),
+    source: 'AI estimate', ts: Date.now(), date: todayKey()
+  };
+  const saved = await saveFoodEntry(entry);
+  log.push(saved);
+  saveLog();
+  renderLog();
+  updateTotals();
+  fb.style.color = 'var(--protein)';
+  fb.textContent = `✓ Added ${entry.name} · ${entry.cal} cal (AI estimate)`;
 }
 
 // ---- Save the current day's log (or a subset) as a reusable meal template ----
