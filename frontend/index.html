@@ -2500,6 +2500,7 @@ async function loadTodayLog() {
 
 async function saveFoodEntry(entry) {
   if (!entry.date) entry.date = todayKey();
+  if (!entry.serving) entry.serving = '1 serving';   // every item carries a serving
   const result = await apiRequest('/food', { method: 'POST', body: JSON.stringify(entry) });
   if (result.ok) {
     return result.body;
@@ -2604,15 +2605,21 @@ function onEditServingInput() {
 }
 
 // Ask the AI to estimate the food at the new serving (handles cross-unit changes).
+// Anchored to the entry's KNOWN nutrition so it scales proportionally, not from scratch.
 async function aiRecalcServing() {
   const name = document.getElementById('eeName').value.trim();
   const qty = document.getElementById('eeServingQty').value.trim();
   const unit = document.getElementById('eeServingUnit').value.trim();
-  if (!name) return;
+  if (!name || !editEntryBase || (!qty && !unit)) return;
+  const b = editEntryBase;
+  const baseServing = (b.qty > 0 ? b.qty + ' ' : '') + (b.unit || '1 serving');
   const btn = document.getElementById('eeAiBtn');
   const msg = document.getElementById('eeAiMsg');
   btn.disabled = true; btn.textContent = '✨ Estimating…'; msg.textContent = '';
-  const desc = `${qty} ${unit} of ${name}`.trim();
+  const desc = `Known reference for the food "${name}": ${baseServing} contains `
+    + `${Math.round(b.cal)} kcal, ${Math.round(b.protein)}g protein, ${Math.round(b.carbs)}g carbs, `
+    + `${Math.round(b.fiber)}g fiber, ${Math.round(b.fat)}g fat. Treat that as this exact food's known `
+    + `nutrient density and estimate the nutrition for ${qty} ${unit} of the SAME food, scaling realistically.`;
   const result = await apiRequest('/analyze', { method: 'POST', body: JSON.stringify({ description: desc }) });
   btn.disabled = false; btn.textContent = '✨ Recalc with AI';
   if (!result.ok || !result.body || result.body.error) { msg.textContent = 'Estimate failed — set it manually.'; return; }
@@ -4613,7 +4620,9 @@ async function quickLog(i) {
   const qty = parseFloat(document.getElementById('qaQty_' + i).value) || 1;
   const qtyTag = qty !== 1 ? ` · ${qty}×` : '';
   const source = f._restaurant ? `${f.brand || 'Restaurant'}${qtyTag}` : (qty === 1 ? 'Quick add' : `Quick add · ${qty}×`);
-  const serving = f._restaurant && f.serving ? (qty === 1 ? f.serving : `${qty} × ${f.serving}`) : null;
+  const serving = f._restaurant && f.serving
+    ? (qty === 1 ? f.serving : `${qty} × ${f.serving}`)
+    : (qty === 1 ? '1 serving' : `${qty} servings`);
   const entry = {
     name: f.name, emoji: f.emoji || '🍽️',
     cal: f.cal * qty, protein: f.protein * qty, carbs: f.carbs * qty,
