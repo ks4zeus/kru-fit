@@ -29,6 +29,12 @@ as we go. ⭐ = top picks (high daily value or unlocks bigger things).
       today" button. Trivial given day navigation already exists.
 - [ ] **Barcode AI fallback** — when OpenFoodFacts has no match, offer the AI
       describe-estimate inline instead of a dead end.
+- [x] **Restaurant search + AI fallback** — Quick Add search also matches a
+      curated chain-restaurant seed (MenuStat-style, ~60 items in
+      `assets/restaurant-foods.json`), shown under a 🍔 Restaurants section and
+      logged with the brand as source; an "✨ Estimate with AI" action is always
+      offered as the fallback (existing `/analyze`). No separate button, no new
+      API/key — static asset searched client-side; expandable. (shipped 2026-06-22)
 
 ## 📊 Insights
 - [x] **Admin usage dashboard** — hidden admin-only 📊 tab: per-user tool usage
