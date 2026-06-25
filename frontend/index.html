@@ -2672,6 +2672,19 @@ function updateUserHeader(suffix) {
   setUserEmail(who + (suffix || ''));
 }
 
+// Wipe every per-user cache so a different account signing in on this device
+// never sees the previous user's data (logs, goals, weight, etc.). Device-level
+// prefs (theme, weight/distance units) are intentionally kept.
+const CACHE_OWNER_KEY = 'fuellog_cache_owner';
+function clearUserScopedData() {
+  const keep = new Set([STORAGE_KEYS.theme, STORAGE_KEYS.weightUnit, STORAGE_KEYS.distUnit, CACHE_OWNER_KEY]);
+  for (let i = window.localStorage.length - 1; i >= 0; i--) {
+    const k = window.localStorage.key(i);
+    if (k && k.startsWith('fuellog_') && !keep.has(k)) window.localStorage.removeItem(k);
+  }
+  historySynced = false;
+}
+
 async function getMe() {
   const result = await apiRequest('/me');
   if (!result.ok) {
@@ -2690,6 +2703,13 @@ async function getMe() {
     return false;
   }
   currentUser = result.body;
+  // If the cached data belongs to a different account (a different user signed in
+  // on this device) — or this is the first load after the fix, when the owner key
+  // is absent — clear the previous user's cached data before loading.
+  if (window.localStorage.getItem(CACHE_OWNER_KEY) !== currentUser.email) {
+    clearUserScopedData();
+    window.localStorage.setItem(CACHE_OWNER_KEY, currentUser.email);
+  }
   saveLocal(STORAGE_KEYS.user, currentUser);
   updateUserHeader();
   if (!currentUser.name) showWelcome();   // first-time: ask what to call them
