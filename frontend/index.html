@@ -1365,6 +1365,7 @@
   .qa-macros { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 1px; }
   .qa-times { font-size: 12px; color: var(--muted); flex-shrink: 0; }
   .qa-qty { width: 50px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 7px 5px; color: var(--text); font-family: var(--mono); font-size: 14px; text-align: center; outline: none; flex-shrink: 0; }
+  .qa-unit { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 7px 4px; color: var(--text); font-size: 12px; outline: none; flex-shrink: 0; max-width: 64px; }
   .qa-qty:focus { border-color: var(--protein); }
   .qa-add { background: var(--protein); color: #0a1a12; border: none; border-radius: 8px; font-weight: 700; font-size: 18px; line-height: 1; padding: 7px 12px; cursor: pointer; flex-shrink: 0; }
   .qa-empty { text-align: center; color: var(--muted); font-size: 14px; padding: 24px 10px; }
@@ -1934,9 +1935,14 @@
         <label>Fat (g)</label>
         <input type="number" id="cfFat" placeholder="0" inputmode="decimal">
       </div>
-      <div class="form-field">
+      <div class="form-field" id="cfServingRow">
         <label>Serving size</label>
-        <input type="text" id="cfServing" placeholder="e.g. 1 cup">
+        <div style="display:flex;gap:8px">
+          <input type="number" id="cfServingQty" inputmode="decimal" step="0.25" min="0" placeholder="1" value="1" oninput="onCfServingInput()" style="flex:0 0 80px">
+          <select id="cfServingUnit" onchange="onCfServingInput()" style="flex:1"></select>
+        </div>
+        <div class="serving-hint" id="cfServingHint"></div>
+        <input type="hidden" id="cfServingGrams">
       </div>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:12px">💾 Saved foods appear in your custom library for quick re-add.</div>
@@ -2482,6 +2488,26 @@ let bcCupExact = false;        // true when cupGrams came from the product label
 let barcodeTarget = 'log';     // 'log' = add scan to today's log; 'recipe' = add to the recipe builder
 let recipeItems = [];          // structured/scanned ingredients in the recipe builder
 let recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 }; // TOTAL macros of the freeform (AI) portion
+let recipeServingGrams = null;   // per-serving grams of the recipe (sum of ingredient grams ÷ servings)
+
+// Live "≈ N g" for the custom-food serving: mass units convert exactly; volume/
+// count have no fixed grams until logged/edited, so the anchor stays empty.
+function onCfServingInput() {
+  const qty = parseFloat(document.getElementById('cfServingQty').value);
+  const unit = document.getElementById('cfServingUnit').value;
+  const g = servingToGrams(qty, unit, null);
+  document.getElementById('cfServingGrams').value = (g > 0) ? Math.round(g) : '';
+  document.getElementById('cfServingHint').textContent = (g > 0) ? `≈ ${Math.round(g)} g` : '';
+}
+// Reset the custom-food serving picker (also (re)builds its unit dropdown).
+function resetCfServing(qty, unit, grams) {
+  const sel = document.getElementById('cfServingUnit');
+  if (sel) sel.innerHTML = servingUnitOptions(unit || 'each');
+  document.getElementById('cfServingQty').value = qty || 1;
+  document.getElementById('cfServingGrams').value = grams > 0 ? Math.round(grams) : '';
+  document.getElementById('cfServingHint').textContent = grams > 0 ? `≈ ${Math.round(grams)} g` : '';
+  if (!(grams > 0)) onCfServingInput();   // derive grams for mass units
+}
 let weightUnit = 'lbs';
 let weightPeriod = 30;
 let histPeriod = 7;
@@ -2893,6 +2919,14 @@ const UNIT_CANON = {
 };
 function canonUnit(u) { return UNIT_CANON[(u || '').trim().toLowerCase()] || 'each'; }
 function fmtQty(n) { return parseFloat((Number(n) || 0).toFixed(2)); }
+// Shared <option> list for every serving-unit dropdown (one source of truth).
+function servingUnitOptions(selected) {
+  return SERVING_UNITS.map(u => `<option value="${u}"${u === selected ? ' selected' : ''}>${u}</option>`).join('');
+}
+// Parse the unit out of a serving string ("2 cups" -> "cup"), normalized.
+function servingUnitOf(s) {
+  return canonUnit((s || '').replace(/^(\d+(?:\.\d+)?)?\s*[½¼¾⅓⅔⅛]?\s*/, '').trim());
+}
 
 // Grams in (qty, unit) for THIS food, using the entry's reference serving as the
 // density/weight anchor. Mass units are universal; volume/count need the anchor.
@@ -3217,6 +3251,19 @@ async function saveCustomFood(logNow) {
     return;
   }
   const isRecipe = document.getElementById('cfIsRecipe').checked;
+  // Serving + gram anchor. Recipe: "1 serving" with grams from the ingredient sum.
+  // Single food: quantity + standard unit, grams from the unit lookup (mass only).
+  let servingStr, servingGrams;
+  if (isRecipe) {
+    servingStr = '1 serving';
+    servingGrams = recipeServingGrams > 0 ? Math.round(recipeServingGrams) : null;
+  } else {
+    const svQty = parseFloat(document.getElementById('cfServingQty').value) || 1;
+    const svUnit = document.getElementById('cfServingUnit').value || 'each';
+    const svGrams = parseFloat(document.getElementById('cfServingGrams').value);
+    servingStr = `${fmtQty(svQty)} ${svUnit}`;
+    servingGrams = svGrams > 0 ? svGrams : (servingToGrams(svQty, svUnit, null) || null);
+  }
   const food = {
     name,
     emoji: document.getElementById('cfEmoji').value.trim() || foodEmoji(name) || (isRecipe ? '🍲' : '🍽️'),
@@ -3225,7 +3272,8 @@ async function saveCustomFood(logNow) {
     carbs: parseFloat(document.getElementById('cfCarbs').value) || 0,
     fiber: parseFloat(document.getElementById('cfFiber').value) || 0,
     fat: parseFloat(document.getElementById('cfFat').value) || 0,
-    serving: document.getElementById('cfServing').value.trim() || (isRecipe ? '1 serving' : '1 serving'),
+    serving: servingStr,
+    serving_grams: servingGrams,
     ingredients: isRecipe ? document.getElementById('cfDesc').value.trim() : '',
     recipe_items: isRecipe && recipeItems.length ? JSON.stringify(recipeItems) : null,
     servings: isRecipe ? Math.max(0.5, parseFloat(document.getElementById('cfServingsYield').value) || 1) : 1
@@ -3244,7 +3292,8 @@ async function saveCustomFood(logNow) {
     const entry = {
       name: food.name, emoji: food.emoji, cal: food.cal, protein: food.protein,
       carbs: food.carbs, fiber: food.fiber, fat: food.fat,
-      source: isRecipe ? 'Recipe · 1 serving' : `Custom · ${food.serving}`, serving: isRecipe ? '1 serving' : food.serving, ts: Date.now(), date: todayKey()
+      source: isRecipe ? 'Recipe · 1 serving' : `Custom · ${food.serving}`, serving: isRecipe ? '1 serving' : food.serving,
+      serving_grams: food.serving_grams ?? null, ts: Date.now(), date: todayKey()
     };
     const saved = await saveFoodEntry(entry);
     log.push(saved);
@@ -3258,8 +3307,10 @@ async function saveCustomFood(logNow) {
   editingCustomFoodId = null;
   recipeItems = [];
   recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 };
+  recipeServingGrams = null;
   renderCustomFoodLibrary();
-  ['cfName','cfEmoji','cfCal','cfProtein','cfCarbs','cfFiber','cfFat','cfServing','cfDesc'].forEach(id => document.getElementById(id).value = '');
+  ['cfName','cfEmoji','cfCal','cfProtein','cfCarbs','cfFiber','cfFat','cfDesc'].forEach(id => document.getElementById(id).value = '');
+  resetCfServing();
   document.getElementById('cfIsRecipe').checked = false;
   document.getElementById('cfServingsYield').value = '1';
   toggleRecipeMode();
@@ -3755,7 +3806,7 @@ async function addBarcodeEntry() {
       emoji: foodEmoji(bcProductName) || '🏷️',
       base: { ...bcBaseNutrition },
       amount,
-      unit: unitSel.value,
+      unit: canonUnit(unitSel.value),
       servingGrams: bcServingGrams || 0,
       cupGrams: bcCupGrams,
       cupExact: bcCupExact
@@ -4595,7 +4646,9 @@ function openCustomFoodModal() {
   editingCustomFoodId = null;
   recipeItems = [];
   recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 };
-  ['cfName', 'cfEmoji', 'cfCal', 'cfProtein', 'cfCarbs', 'cfFiber', 'cfFat', 'cfServing', 'cfDesc'].forEach(id => document.getElementById(id).value = '');
+  recipeServingGrams = null;
+  ['cfName', 'cfEmoji', 'cfCal', 'cfProtein', 'cfCarbs', 'cfFiber', 'cfFat', 'cfDesc'].forEach(id => document.getElementById(id).value = '');
+  resetCfServing();
   document.getElementById('cfIsRecipe').checked = false;
   document.getElementById('cfServingsYield').value = '1';
   toggleRecipeMode();
@@ -4613,6 +4666,8 @@ function toggleRecipeMode() {
   const on = document.getElementById('cfIsRecipe').checked;
   document.getElementById('cfYieldWrap').style.display = on ? '' : 'none';
   document.getElementById('cfRecipeSection').style.display = on ? '' : 'none';
+  // Recipe serving is "1 serving" (grams from the ingredient sum) — hide the picker.
+  document.getElementById('cfServingRow').style.display = on ? 'none' : '';
   document.getElementById('cfDescLabel').textContent = on
     ? '✨ Anything not scanned (type or 🎤 speak) — AI adds it to the total'
     : '✨ Describe it (type or 🎤 speak) & let AI fill the macros';
@@ -4625,14 +4680,18 @@ function toggleRecipeMode() {
 // ---- Structured/scanned recipe ingredients ----
 // A scanned ingredient stores its per-100g base + an adjustable amount/unit so the
 // recipe total re-sums whenever the serving size changes.
+// Grams for a recipe ingredient, using the shared unit table. Volume uses the
+// ingredient's own density (grams per cup from its label); 'each' uses one
+// package serving's weight. Same constants as everywhere else (UNIT_CONV).
 function itemGrams(it) {
   const a = parseFloat(it.amount) || 0;
-  switch (it.unit) {
-    case 'oz': return a * 28.3495;
-    case 'cup': return a * (it.cupGrams || 240);
-    case 'serving': return a * (it.servingGrams || 0);
-    default: return a; // grams
-  }
+  const info = unitInfo(canonUnit(it.unit));
+  if (!info) return a;
+  const [dim, factor] = info;
+  if (dim === 'mass') return a * factor;                       // g, oz, lb
+  if (dim === 'vol') return a * factor * ((it.cupGrams || 240) / 240); // ml/cup/tbsp/tsp/fl oz via density
+  if (dim === 'count') return a * (it.servingGrams || it.cupGrams || 0); // each = one serving's grams
+  return a;
 }
 function itemMacros(it) {
   const f = itemGrams(it) / 100, b = it.base || {};
@@ -4646,9 +4705,7 @@ function sumScanned() {
   }, { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 });
 }
 function recipeUnitOptions(it) {
-  const units = [['g', 'grams'], ['oz', 'oz'], ['cup', 'cups']];
-  if (it.servingGrams) units.unshift(['serving', 'serving']);
-  return units.map(([v, l]) => `<option value="${v}"${it.unit === v ? ' selected' : ''}>${l}</option>`).join('');
+  return servingUnitOptions(canonUnit(it.unit));   // shared standard unit set
 }
 function renderRecipeItems() {
   const wrap = document.getElementById('cfRecipeItems');
@@ -4674,7 +4731,7 @@ function setRecipeItemAmount(i, v) {
 }
 function setRecipeItemUnit(i, v) {
   if (!recipeItems[i]) return;
-  recipeItems[i].unit = v;
+  recipeItems[i].unit = canonUnit(v);
   renderRecipeItems();
   recomputeRecipe();
 }
@@ -4698,6 +4755,11 @@ function recomputeRecipe() {
     carbs: scanned.carbs + (a.carbs || 0), fiber: scanned.fiber + (a.fiber || 0), fat: scanned.fat + (a.fat || 0)
   };
   const servings = Math.max(0.5, parseFloat(document.getElementById('cfServingsYield').value) || 1);
+  // Per-serving grams = Σ ingredient grams ÷ servings. Only anchored when the
+  // recipe is fully scanned (a freeform AI portion has no grams to sum).
+  const scannedGrams = recipeItems.reduce((t, it) => t + itemGrams(it), 0);
+  const hasFreeform = (a.cal || 0) > 0 || (a.protein || 0) > 0 || (a.carbs || 0) > 0 || (a.fat || 0) > 0;
+  recipeServingGrams = (!hasFreeform && scannedGrams > 0) ? scannedGrams / servings : null;
   document.getElementById('cfCal').value = Math.round(total.cal / servings);
   document.getElementById('cfProtein').value = Math.round(total.protein / servings);
   document.getElementById('cfCarbs').value = Math.round(total.carbs / servings);
@@ -4772,7 +4834,7 @@ function prefillCustom(id) {
   document.getElementById('cfCarbs').value = f.carbs || '';
   document.getElementById('cfFiber').value = f.fiber || '';
   document.getElementById('cfFat').value = f.fat || '';
-  document.getElementById('cfServing').value = f.serving || '';
+  resetCfServing(parseServingQty(f.serving) || 1, servingUnitOf(f.serving), f.serving_grams);
   const isRecipe = isRecipeFood(f);
   document.getElementById('cfIsRecipe').checked = isRecipe;
   const servings = Math.max(0.5, parseFloat(f.servings) || 1);
@@ -4805,6 +4867,7 @@ async function logCustomFood(id) {
     fiber: (f.fiber || 0) * qty, fat: (f.fat || 0) * qty,
     source: isRecipe ? `Recipe · ${qty} serving${qty !== 1 ? 's' : ''}` : `Custom · ${qty !== 1 ? qty + '× ' : ''}${f.serving || '1 serving'}`,
     serving: isRecipe ? `${qty} serving${qty !== 1 ? 's' : ''}` : `${qty !== 1 ? qty + '× ' : ''}${f.serving || '1 serving'}`,
+    serving_grams: (f.serving_grams != null) ? Math.round(Number(f.serving_grams) * qty) : null,
     ts: Date.now(), date: todayKey()
   };
   const saved = await saveFoodEntry(entry);
@@ -4856,7 +4919,8 @@ function buildQuickCatalog() {
       map[key] = {
         name: e.name, emoji: e.emoji || '🍽️',
         cal: Number(e.cal || 0), protein: Number(e.protein || 0), carbs: Number(e.carbs || 0),
-        fiber: Number(e.fiber || 0), fat: Number(e.fat || 0), count: 0, lastTs: 0
+        fiber: Number(e.fiber || 0), fat: Number(e.fat || 0), count: 0, lastTs: 0,
+        serving: e.serving || null, servingGrams: (e.serving_grams != null ? Number(e.serving_grams) : null)
       };
     }
     const m = map[key];
@@ -4868,6 +4932,8 @@ function buildQuickCatalog() {
         m.emoji = e.emoji || m.emoji;
         m.cal = Number(e.cal || 0); m.protein = Number(e.protein || 0);
         m.carbs = Number(e.carbs || 0); m.fiber = Number(e.fiber || 0); m.fat = Number(e.fat || 0);
+        m.serving = e.serving || m.serving;
+        m.servingGrams = (e.serving_grams != null ? Number(e.serving_grams) : m.servingGrams);
       }
     }
   };
@@ -4909,6 +4975,7 @@ function qaRow(f, idx) {
       </div>
       <span class="qa-times">×</span>
       <input class="qa-qty" type="number" value="1" min="0.25" step="0.25" inputmode="decimal" id="qaQty_${idx}">
+      ${(f.servingGrams == null && !f._restaurant) ? `<select class="qa-unit" id="qaUnit_${idx}">${servingUnitOptions(servingUnitOf(f.serving))}</select>` : ''}
       <button class="qa-add" onclick="quickLog(${idx})" title="Add to today">＋</button>
     </div>`;
 }
@@ -5012,17 +5079,24 @@ async function deleteMealTemplate(id) {
 async function quickLog(i) {
   const f = quickRendered[i];
   if (!f) return;
-  const qty = parseFloat(document.getElementById('qaQty_' + i).value) || 1;
+  const qty = parseFloat(document.getElementById('qaQty_' + i).value) || 1;   // servings multiplier
   const qtyTag = qty !== 1 ? ` · ${qty}×` : '';
   const source = f._restaurant ? `${f.brand || 'Restaurant'}${qtyTag}` : (qty === 1 ? 'Quick add' : `Quick add · ${qty}×`);
-  const serving = f._restaurant && f.serving
-    ? (qty === 1 ? f.serving : `${qty} × ${f.serving}`)
-    : (qty === 1 ? '1 serving' : `${qty} servings`);
+
+  // Standard serving + gram anchor. Anchored foods scale their grams by qty;
+  // un-anchored foods use the row's unit picker (grams derived for mass units).
+  const repQty = (() => { const q = parseServingQty(f.serving); return (isNaN(q) || q <= 0) ? 1 : q; })();
+  const anchored = f.servingGrams != null;
+  const picker = document.getElementById('qaUnit_' + i);
+  const unit = anchored ? servingUnitOf(f.serving) : (picker ? picker.value : servingUnitOf(f.serving));
+  const serving = `${fmtQty(repQty * qty)} ${unit}`;
+  const grams = anchored ? Math.round(Number(f.servingGrams) * qty) : (servingToGrams(repQty * qty, unit, null) || null);
+
   const entry = {
     name: f.name, emoji: f.emoji || '🍽️',
     cal: f.cal * qty, protein: f.protein * qty, carbs: f.carbs * qty,
     fiber: (f.fiber || 0) * qty, fat: f.fat * qty,
-    source, serving, ts: Date.now(), date: todayKey()
+    source, serving, serving_grams: grams, ts: Date.now(), date: todayKey()
   };
   const saved = await saveFoodEntry(entry);
   log.push(saved);
@@ -5052,7 +5126,10 @@ async function quickAiEstimate() {
     name: r.name || query, emoji: r.emoji || foodEmoji(query) || '🍽️',
     cal: Math.round(r.calories || 0), protein: Math.round(r.protein_g || 0), carbs: Math.round(r.carbs_g || 0),
     fiber: Math.round(r.fiber_g || 0), fat: Math.round(r.fat_g || 0),
-    source: 'AI estimate', serving: r.serving_note || null, ts: Date.now(), date: todayKey()
+    source: 'AI estimate',
+    serving: `${fmtQty(r.serving_qty > 0 ? r.serving_qty : 1)} ${canonUnit(r.serving_unit)}`,
+    serving_grams: (r.serving_grams > 0) ? Math.round(r.serving_grams) : null,
+    ts: Date.now(), date: todayKey()
   };
   const saved = await saveFoodEntry(entry);
   log.push(saved);

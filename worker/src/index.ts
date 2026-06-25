@@ -723,8 +723,8 @@ export default {
 
         const inserted = await db
           .prepare(
-            `INSERT INTO custom_foods (user_id, name, emoji, cal, protein, carbs, fat, fiber, serving, ingredients, recipe_items, servings)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO custom_foods (user_id, name, emoji, cal, protein, carbs, fat, fiber, serving, serving_grams, ingredients, recipe_items, servings)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             userEmail,
@@ -736,6 +736,7 @@ export default {
             body.fat ?? 0,
             body.fiber ?? 0,
             body.serving || null,
+            body.serving_grams ?? null,
             body.ingredients || null,
             body.recipe_items || null,
             body.servings ?? 1
@@ -756,7 +757,7 @@ export default {
         }
         await db
           .prepare(
-            `UPDATE custom_foods SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, serving = ?, ingredients = ?, recipe_items = ?, servings = ?
+            `UPDATE custom_foods SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, serving = ?, serving_grams = ?, ingredients = ?, recipe_items = ?, servings = ?
              WHERE id = ? AND user_id = ?`
           )
           .bind(
@@ -768,6 +769,7 @@ export default {
             body.fat ?? 0,
             body.fiber ?? 0,
             body.serving || null,
+            body.serving_grams ?? null,
             body.ingredients || null,
             body.recipe_items || null,
             body.servings ?? 1,
