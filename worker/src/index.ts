@@ -135,6 +135,60 @@ function isAdmin(email: string, env: Env): boolean {
   return adminEmails(env).includes((email || "").toLowerCase());
 }
 
+// Build the /api/me payload: identity + role, plus (for a client) their trainer/org
+// or (for a trainer) their org with a live client count. Extends the original
+// { email, name, admin } shape additively — `role`, `trainer`, `org` are new.
+async function mePayload(db: D1Database, env: Env, userEmail: string) {
+  const row = await db
+    .prepare("SELECT name, role FROM users WHERE id = ?")
+    .bind(userEmail)
+    .first<{ name: string | null; role: string | null }>();
+  const name = row?.name ? String(row.name).trim() : null;
+  const role = row?.role || "solo";
+
+  let trainer: { name: string; org_id: string; org_name: string } | null = null;
+  let org: { id: string; name: string; client_count: number } | null = null;
+
+  if (role === "client") {
+    const m = await db
+      .prepare(
+        `SELECT o.id AS org_id, o.name AS org_name, o.owner_id AS trainer_id
+         FROM memberships m JOIN organizations o ON o.id = m.org_id
+         WHERE m.user_id = ? AND m.role = 'client' AND m.status = 'active'
+         LIMIT 1`
+      )
+      .bind(userEmail)
+      .first<{ org_id: string; org_name: string; trainer_id: string }>();
+    if (m) {
+      const t = await db
+        .prepare("SELECT name FROM users WHERE id = ?")
+        .bind(m.trainer_id)
+        .first<{ name: string | null }>();
+      trainer = {
+        name: (t?.name && t.name.trim()) || m.org_name,
+        org_id: m.org_id,
+        org_name: m.org_name,
+      };
+    }
+  } else if (role === "trainer") {
+    const o = await db
+      .prepare("SELECT id, name FROM organizations WHERE owner_id = ?")
+      .bind(userEmail)
+      .first<{ id: string; name: string }>();
+    if (o) {
+      const c = await db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM memberships WHERE org_id = ? AND role = 'client' AND status = 'active'"
+        )
+        .bind(o.id)
+        .first<{ n: number }>();
+      org = { id: o.id, name: o.name, client_count: c?.n || 0 };
+    }
+  }
+
+  return { email: userEmail, name: name || null, role, admin: isAdmin(userEmail, env), trainer, org };
+}
+
 // Anthropic per-model pricing, USD per 1M tokens (input, output).
 const AI_PRICING: Record<string, { in: number; out: number }> = {
   "claude-sonnet-4-6": { in: 3.0, out: 15.0 },
@@ -203,33 +257,70 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
+    const url = new URL(request.url);
+    const segments = getPathSegments(url);
+    const db = env.DB;
+
+    // ---- Public route: invite preview (no Worker auth) ----
+    // A client can see who invited them before identity matters. Cloudflare Access
+    // still fronts the site; this route just doesn't depend on the caller.
+    if (
+      segments[0] === "api" && segments[1] === "invite" &&
+      segments.length === 3 && request.method === "GET"
+    ) {
+      const token = segments[2];
+      const invite = await db
+        .prepare(
+          `SELECT o.name AS org_name, o.owner_id AS trainer_id, i.expires_at
+           FROM invites i JOIN organizations o ON o.id = i.org_id
+           WHERE i.id = ? AND i.status = 'pending' AND i.expires_at > datetime('now')`
+        )
+        .bind(token)
+        .first<{ org_name: string; trainer_id: string; expires_at: string }>();
+      if (!invite) return jsonResponse({ valid: false });
+      const t = await db
+        .prepare("SELECT name FROM users WHERE id = ?")
+        .bind(invite.trainer_id)
+        .first<{ name: string | null }>();
+      return jsonResponse({
+        valid: true,
+        org_name: invite.org_name,
+        trainer_name: (t?.name && t.name.trim()) || invite.org_name,
+        expires_at: invite.expires_at,
+      });
+    }
+
     const userEmail = await authenticate(request, env);
     if (!userEmail) {
       return jsonResponse({ error: "Unauthorized" }, 401);
     }
 
-    const url = new URL(request.url);
-    const segments = getPathSegments(url);
-    const db = env.DB;
-
     if (segments.length === 2 && segments[0] === "api" && segments[1] === "me") {
       if (request.method === "GET") {
-        // Return the stored display name (null if never set). Ensure a row
-        // exists, but DON'T overwrite a name the user chose.
-        const row = await db.prepare("SELECT name FROM users WHERE id = ?").bind(userEmail).first<{ name: string | null }>();
-        if (!row) {
-          await db.prepare("INSERT INTO users (id) VALUES (?) ON CONFLICT(id) DO NOTHING").bind(userEmail).run();
+        // First login: auto-create as a solo user. Cloudflare Access (One-time PIN)
+        // has already verified email ownership; D1 is the authorization layer.
+        const exists = await db.prepare("SELECT 1 FROM users WHERE id = ?").bind(userEmail).first();
+        if (!exists) {
+          await db
+            .prepare("INSERT INTO users (id, role) VALUES (?, 'solo') ON CONFLICT(id) DO NOTHING")
+            .bind(userEmail)
+            .run();
         }
-        const name = row?.name ? String(row.name).trim() : null;
-        return jsonResponse({ email: userEmail, name: name || null, admin: isAdmin(userEmail, env) });
+        return jsonResponse(await mePayload(db, env, userEmail));
       }
       if (request.method === "POST") {
         const body = await parseJson(request);
         const name = (body?.name ?? "").toString().trim().slice(0, 60);
-        await db.prepare(
-          `INSERT INTO users (id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name`
-        ).bind(userEmail, name || null).run();
-        return jsonResponse({ email: userEmail, name: name || null, admin: isAdmin(userEmail, env) });
+        // Upsert the name; a brand-new user gets role='solo' from the column default,
+        // and an existing user keeps their role (we only touch the name).
+        await db
+          .prepare(
+            `INSERT INTO users (id, name) VALUES (?, ?)
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name`
+          )
+          .bind(userEmail, name || null)
+          .run();
+        return jsonResponse(await mePayload(db, env, userEmail));
       }
     }
 
@@ -884,6 +975,165 @@ export default {
           .run();
         return jsonResponse({ user_id: userEmail, cal: body.cal ?? 1800, protein: body.protein ?? 180, carbs: body.carbs ?? 150, fat: body.fat ?? 60, fiber: body.fiber ?? 30, water_oz: body.water_oz ?? 64, objective: body.objective || "maintain", diet: body.diet || "none", restrictions: body.restrictions || "", goal_weight: body.goal_weight ?? null });
       }
+    }
+
+    // ---- Trainer onboarding ----
+    if (segments[1] === "trainer" && segments[2] === "setup" && request.method === "POST") {
+      const body = await parseJson(request);
+      const orgName = (body?.org_name ?? "").toString().trim().slice(0, 80);
+      if (!orgName) return jsonResponse({ error: "Organization name required" }, 400);
+
+      const existing = await db
+        .prepare("SELECT id FROM organizations WHERE owner_id = ?")
+        .bind(userEmail)
+        .first();
+      if (existing) return jsonResponse({ error: "You already have an organization" }, 409);
+
+      const orgId = crypto.randomUUID();
+      await db
+        .prepare("INSERT INTO organizations (id, name, owner_id) VALUES (?, ?, ?)")
+        .bind(orgId, orgName, userEmail)
+        .run();
+      await db
+        .prepare("INSERT INTO users (id, role) VALUES (?, 'trainer') ON CONFLICT(id) DO UPDATE SET role = 'trainer'")
+        .bind(userEmail)
+        .run();
+
+      return jsonResponse({ org_id: orgId, org_name: orgName });
+    }
+
+    // ---- Trainer: create a client invite ----
+    if (segments[1] === "trainer" && segments[2] === "invite" && request.method === "POST") {
+      const org = await db
+        .prepare("SELECT id FROM organizations WHERE owner_id = ?")
+        .bind(userEmail)
+        .first<{ id: string }>();
+      if (!org) return jsonResponse({ error: "Not a trainer" }, 403);
+
+      const body = await parseJson(request);
+      const email = (body?.email ?? "").toString().trim().toLowerCase();
+      if (!email || !email.includes("@")) {
+        return jsonResponse({ error: "Valid email required" }, 400);
+      }
+
+      const token = crypto.randomUUID();
+      await db
+        .prepare(
+          `INSERT INTO invites (id, org_id, trainer_id, email, status, expires_at)
+           VALUES (?, ?, ?, ?, 'pending', datetime('now', '+7 days'))`
+        )
+        .bind(token, org.id, userEmail, email)
+        .run();
+
+      return jsonResponse({
+        invite_id: token,
+        invite_url: `https://krufit.uk/join?token=${token}`,
+      });
+    }
+
+    // ---- Client: accept an invite ----
+    if (
+      segments[1] === "invite" && segments.length === 4 &&
+      segments[3] === "accept" && request.method === "POST"
+    ) {
+      const token = segments[2];
+      const invite = await db
+        .prepare(
+          `SELECT org_id, email FROM invites
+           WHERE id = ? AND status = 'pending' AND expires_at > datetime('now')`
+        )
+        .bind(token)
+        .first<{ org_id: string; email: string }>();
+      if (!invite) return jsonResponse({ error: "Invite invalid or expired" }, 404);
+
+      // Hard binding: only the invited email may accept. A forwarded link cannot
+      // link the wrong account to this trainer.
+      if (userEmail.toLowerCase() !== invite.email.toLowerCase()) {
+        return jsonResponse({ error: "This invite was sent to a different email." }, 403);
+      }
+
+      await db
+        .prepare(
+          `INSERT INTO memberships (user_id, org_id, role, status, invited_at, accepted_at)
+           VALUES (?, ?, 'client', 'active', datetime('now'), datetime('now'))
+           ON CONFLICT(user_id, org_id) DO UPDATE SET
+             role = 'client', status = 'active', accepted_at = datetime('now')`
+        )
+        .bind(userEmail, invite.org_id)
+        .run();
+      await db
+        .prepare("INSERT INTO users (id, role) VALUES (?, 'client') ON CONFLICT(id) DO UPDATE SET role = 'client'")
+        .bind(userEmail)
+        .run();
+      await db
+        .prepare("UPDATE invites SET status = 'accepted' WHERE id = ?")
+        .bind(token)
+        .run();
+
+      return jsonResponse(await mePayload(db, env, userEmail));
+    }
+
+    // ---- Trainer: client roster (single GROUP BY join, today's totals per client) ----
+    if (
+      segments[1] === "trainer" && segments[2] === "clients" &&
+      segments.length === 3 && request.method === "GET"
+    ) {
+      const org = await db
+        .prepare("SELECT id FROM organizations WHERE owner_id = ?")
+        .bind(userEmail)
+        .first<{ id: string }>();
+      if (!org) return jsonResponse({ error: "Not a trainer" }, 403);
+
+      // Server UTC date. (Per-client timezone isn't tracked; this is the v1 approx.)
+      const today = new Date().toISOString().slice(0, 10);
+      const rows = ((await db
+        .prepare(
+          `SELECT
+             m.user_id AS user_id,
+             m.status  AS status,
+             u.name    AS name,
+             COALESCE(SUM(f.cal), 0)     AS cal,
+             COALESCE(SUM(f.protein), 0) AS protein,
+             COALESCE(SUM(f.carbs), 0)   AS carbs,
+             COALESCE(SUM(f.fat), 0)     AS fat,
+             COUNT(f.id)                 AS entry_count,
+             MAX(f.ts)                   AS last_logged_at,
+             g.cal     AS goal_cal,
+             g.protein AS goal_protein,
+             g.carbs   AS goal_carbs,
+             g.fat     AS goal_fat
+           FROM memberships m
+           LEFT JOIN users u    ON u.id = m.user_id
+           LEFT JOIN goals g    ON g.user_id = m.user_id
+           LEFT JOIN food_log f ON f.user_id = m.user_id AND f.date = ?
+           WHERE m.org_id = ? AND m.role = 'client' AND m.status = 'active'
+           GROUP BY m.user_id, m.status, u.name, g.cal, g.protein, g.carbs, g.fat
+           ORDER BY entry_count DESC, u.name ASC`
+        )
+        .bind(today, org.id)
+        .all()).results || []) as any[];
+
+      const clients = rows.map((r) => ({
+        user_id: r.user_id,
+        name: r.name || String(r.user_id).split("@")[0],
+        status: r.status,
+        today: {
+          cal: r.cal || 0,
+          protein: r.protein || 0,
+          carbs: r.carbs || 0,
+          fat: r.fat || 0,
+          entry_count: r.entry_count || 0,
+          last_logged_at: r.last_logged_at || null,
+        },
+        goals: {
+          cal: r.goal_cal ?? 1800,
+          protein: r.goal_protein ?? 180,
+          carbs: r.goal_carbs ?? 150,
+          fat: r.goal_fat ?? 60,
+        },
+      }));
+
+      return jsonResponse(clients);
     }
 
     return jsonResponse({ error: "Not found" }, 404);
