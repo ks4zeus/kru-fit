@@ -135,6 +135,15 @@
   .admin-user-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
   .admin-user-name { font-weight: 700; font-size: 14px; }
   .admin-user-sub { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .admin-role-badge { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 99px; text-transform: uppercase; letter-spacing: 0.3px; vertical-align: middle; }
+  .role-solo { background: var(--surface2); color: var(--muted); }
+  .role-client { background: rgba(96,165,250,0.15); color: var(--carbs); }
+  .role-trainer { background: rgba(244,208,111,0.15); color: #F4D06F; }
+  .role-admin { background: rgba(167,139,250,0.15); color: #a78bfa; }
+  .admin-elig-row { margin-bottom: 8px; }
+  .admin-elig-btn { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; }
+  .admin-elig-btn.on { border-color: rgba(244,208,111,0.4); color: #F4D06F; }
+  .admin-elig-on { font-size: 11px; color: #F4D06F; font-weight: 600; }
   .admin-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
   .admin-chip { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: var(--surface2); border: 1px solid var(--border); font-family: var(--mono); }
   .admin-chip.zero { opacity: .38; }
@@ -3739,11 +3748,17 @@ async function renderAdmin() {
       return `<span class="admin-chip${n === 0 ? ' zero' : ''}">${label} ${n}</span>`;
     }).join('');
     const ai = u.ai || {};
+    const role = u.role || 'solo';
+    const roleBadge = `<span class="admin-role-badge role-${cfEsc(role)}">${cfEsc(role)}</span>`;
+    const eligCtl = role === 'trainer'
+      ? '<span class="admin-elig-on">✓ trainer</span>'
+      : `<button class="admin-elig-btn${u.trainerEligible ? ' on' : ''}" onclick="toggleTrainerEligible('${cfEsc(u.email)}', ${u.trainerEligible ? 0 : 1})">${u.trainerEligible ? '✓ trainer-eligible — revoke' : 'Make trainer-eligible'}</button>`;
     return `<div class="admin-user">
       <div class="admin-user-head">
-        <span class="admin-user-name">${cfEsc(u.name || u.email)}</span>
+        <span class="admin-user-name">${cfEsc(u.name || u.email)} ${roleBadge}</span>
         <span class="admin-user-sub">${u.entries || 0} entries · ${u.activeDays || 0} days · ${ago(u.lastTs)}</span>
       </div>
+      <div class="admin-elig-row">${eligCtl}</div>
       <div class="admin-tools">${chips}</div>
       <div class="admin-ai">🤖 ${ai.calls || 0} AI calls · ${tok(ai.inputTokens)} in / ${tok(ai.outputTokens)} out · <b>${money(ai.cost)}</b></div>
     </div>`;
@@ -3753,6 +3768,16 @@ async function renderAdmin() {
   const priceStr = priceList.map(p => `${cfEsc(p.model)} $${p.inputPerM}/$${p.outputPerM}`).join(' · ');
   html += `<div class="admin-note">AI cost estimated per model — ${priceStr} per 1M tokens (in/out). Token tracking began when this feature shipped.</div>`;
   content.innerHTML = html;
+}
+
+// Admin: grant/revoke a user's ability to create a coaching profile.
+async function toggleTrainerEligible(userId, makeEligible) {
+  const res = await apiRequest('/admin/trainer-eligible', {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId, eligible: makeEligible })
+  });
+  if (res.ok) renderAdmin();
+  else alert((res.body && res.body.error) || 'Could not update trainer eligibility.');
 }
 
 // Hydrate the per-day local cache from the server so History, Insights, and the
@@ -5937,10 +5962,15 @@ const CD_QUICK_ITEMS = [
 ];
 
 // Show the Clients tab only for trainers (server still enforces every route).
+// The "set up coaching profile" section in Settings is shown only to trainers
+// (status) or admin-granted trainer-eligible users — not to everyone.
 function applyTrainerVisibility() {
   const isTrainer = !!(currentUser && currentUser.role === 'trainer');
+  const eligible = !!(currentUser && currentUser.trainer_eligible);
   const btn = document.getElementById('tabTrainer');
   if (btn) btn.style.display = isTrainer ? '' : 'none';
+  const box = document.getElementById('trainerProfileBox');
+  if (box) box.style.display = (isTrainer || eligible) ? '' : 'none';
   const becomeBtn = document.getElementById('becomeTrainerBtn');
   const note = document.getElementById('trainerModeNote');
   if (becomeBtn) becomeBtn.style.display = isTrainer ? 'none' : '';

@@ -1,7 +1,8 @@
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
   name TEXT,
-  role TEXT DEFAULT 'solo',   -- 'solo' | 'client' | 'trainer' (authorization lives in D1)
+  role TEXT DEFAULT 'solo',          -- 'solo' | 'client' | 'trainer' (authorization lives in D1)
+  trainer_eligible INTEGER DEFAULT 0, -- admin-granted: may create a coaching profile
   created_at TEXT DEFAULT (datetime('now'))
 );
 

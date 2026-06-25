@@ -140,11 +140,14 @@ function isAdmin(email: string, env: Env): boolean {
 // { email, name, admin } shape additively — `role`, `trainer`, `org` are new.
 async function mePayload(db: D1Database, env: Env, userEmail: string) {
   const row = await db
-    .prepare("SELECT name, role FROM users WHERE id = ?")
+    .prepare("SELECT name, role, trainer_eligible FROM users WHERE id = ?")
     .bind(userEmail)
-    .first<{ name: string | null; role: string | null }>();
+    .first<{ name: string | null; role: string | null; trainer_eligible: number | null }>();
   const name = row?.name ? String(row.name).trim() : null;
   const role = row?.role || "solo";
+  const admin = isAdmin(userEmail, env);
+  // Admins are implicitly eligible; otherwise it's an admin-granted per-user flag.
+  const trainerEligible = admin || !!row?.trainer_eligible;
 
   let trainer: { name: string; org_id: string; org_name: string } | null = null;
   let org: { id: string; name: string; client_count: number } | null = null;
@@ -186,7 +189,7 @@ async function mePayload(db: D1Database, env: Env, userEmail: string) {
     }
   }
 
-  return { email: userEmail, name: name || null, role, admin: isAdmin(userEmail, env), trainer, org };
+  return { email: userEmail, name: name || null, role, admin, trainer_eligible: trainerEligible, trainer, org };
 }
 
 // The org id this trainer owns, or null. (Trainer ⇒ owns an org; see /trainer/setup.)
@@ -887,20 +890,20 @@ export default {
         `SELECT user_id, COUNT(*) AS n FROM ai_usage WHERE endpoint = 'coach' GROUP BY user_id`
       ).all()).results || []) as any[];
 
-      const userRows = ((await db.prepare(`SELECT id, name FROM users`).all()).results || []) as any[];
+      const userRows = ((await db.prepare(`SELECT id, name, role, trainer_eligible FROM users`).all()).results || []) as any[];
 
       const users: Record<string, any> = {};
       const ensure = (id: string) => {
         if (!users[id]) {
           users[id] = {
-            email: id, name: (id.split("@")[0] || id),
+            email: id, name: (id.split("@")[0] || id), role: "solo", trainerEligible: false,
             entries: 0, activeDays: 0, lastTs: 0,
             tools: {}, ai: { calls: 0, inputTokens: 0, outputTokens: 0, cost: 0, byEndpoint: {} },
           };
         }
         return users[id];
       };
-      userRows.forEach((r) => { const u = ensure(r.id); if (r.name) u.name = r.name; });
+      userRows.forEach((r) => { const u = ensure(r.id); if (r.name) u.name = r.name; u.role = r.role || "solo"; u.trainerEligible = !!r.trainer_eligible; });
       actRows.forEach((r) => { const u = ensure(r.user_id); u.entries = r.entries; u.activeDays = r.active_days; u.lastTs = r.last_ts || 0; });
       toolRows.forEach((r) => { ensure(r.user_id).tools[r.tool] = r.n; });
       exRows.forEach((r) => { ensure(r.user_id).tools.exercise = r.n; });
@@ -930,6 +933,22 @@ export default {
         totals,
         pricing: Object.entries(AI_PRICING).map(([model, p]) => ({ model, inputPerM: p.in, outputPerM: p.out })),
       });
+    }
+
+    // ---- Admin: grant/revoke trainer eligibility for a user ----
+    if (segments[1] === "admin" && segments[2] === "trainer-eligible" && request.method === "POST") {
+      if (!isAdmin(userEmail, env)) return jsonResponse({ error: "Forbidden" }, 403);
+      const body = await parseJson(request);
+      const targetId = (body?.user_id ?? "").toString().trim();
+      const eligible = body?.eligible ? 1 : 0;
+      if (!targetId) return jsonResponse({ error: "user_id required" }, 400);
+      await db
+        .prepare(
+          "INSERT INTO users (id, trainer_eligible) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET trainer_eligible = excluded.trainer_eligible"
+        )
+        .bind(targetId, eligible)
+        .run();
+      return jsonResponse({ ok: true, user_id: targetId, eligible: !!eligible });
     }
 
     if (segments[1] === "goals") {
@@ -1024,6 +1043,17 @@ export default {
 
     // ---- Trainer onboarding ----
     if (segments[1] === "trainer" && segments[2] === "setup" && request.method === "POST") {
+      // Only admins or admin-granted trainer-eligible users may create an org.
+      if (!isAdmin(userEmail, env)) {
+        const elig = await db
+          .prepare("SELECT trainer_eligible FROM users WHERE id = ?")
+          .bind(userEmail)
+          .first<{ trainer_eligible: number | null }>();
+        if (!elig?.trainer_eligible) {
+          return jsonResponse({ error: "Not authorized to create a coaching profile" }, 403);
+        }
+      }
+
       const body = await parseJson(request);
       const orgName = (body?.org_name ?? "").toString().trim().slice(0, 80);
       if (!orgName) return jsonResponse({ error: "Organization name required" }, 400);
