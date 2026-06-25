@@ -5920,7 +5920,7 @@ async function renderTrainerTab() {
   const metricsEl = document.getElementById('trainerMetrics');
   metricsEl.innerHTML = '<div class="coach-loading" style="grid-column:1/-1">Loading…</div>';
 
-  const res = await apiRequest('/trainer/clients');
+  const res = await apiRequest('/trainer/clients?date=' + todayKey());
   if (!res.ok) {
     metricsEl.innerHTML = '';
     document.getElementById('clientRoster').innerHTML =

@@ -1105,8 +1105,9 @@ export default {
         .first<{ id: string }>();
       if (!org) return jsonResponse({ error: "Not a trainer" }, 403);
 
-      // Server UTC date. (Per-client timezone isn't tracked; this is the v1 approx.)
-      const today = new Date().toISOString().slice(0, 10);
+      // "Today" = the trainer's local date (passed by the client) so the roster and
+      // the client-detail modal agree; falls back to server UTC if not supplied.
+      const today = (url.searchParams.get("date") || new Date().toISOString().slice(0, 10)).slice(0, 10);
       const rows = ((await db
         .prepare(
           `SELECT
