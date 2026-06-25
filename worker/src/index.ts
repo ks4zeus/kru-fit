@@ -998,6 +998,30 @@ export default {
       }
     }
 
+    // ---- Client: read own coach notes for a day (read-only) ----
+    if (segments[1] === "coach-notes" && segments.length === 2 && request.method === "GET") {
+      const date = (url.searchParams.get("date") || new Date().toISOString().slice(0, 10)).slice(0, 10);
+      const rows = ((await db
+        .prepare(
+          `SELECT cn.note, cn.date, cn.created_at, o.name AS org_name, u.name AS trainer_name
+           FROM coach_notes cn
+           JOIN organizations o ON o.id = cn.org_id
+           LEFT JOIN users u ON u.id = cn.trainer_id
+           WHERE cn.client_id = ? AND cn.date = ?
+           ORDER BY cn.updated_at DESC`
+        )
+        .bind(userEmail, date)
+        .all()).results || []) as any[];
+      const notes = rows.map((r) => ({
+        note: r.note,
+        date: r.date,
+        trainer_name: (r.trainer_name && String(r.trainer_name).trim()) || r.org_name,
+        org_name: r.org_name,
+        created_at: r.created_at,
+      }));
+      return jsonResponse(notes);
+    }
+
     // ---- Trainer onboarding ----
     if (segments[1] === "trainer" && segments[2] === "setup" && request.method === "POST") {
       const body = await parseJson(request);

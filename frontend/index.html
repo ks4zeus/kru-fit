@@ -1448,6 +1448,12 @@
   .trainer-banner strong { color: #F4D06F; }
   .trainer-banner .tb-sub { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
 
+  /* Client: coach note card (Today tab, read-only) */
+  .coach-note-card { margin: 12px 0 0; background: rgba(244,208,111,0.06); border: 1px solid rgba(244,208,111,0.25); border-radius: 12px; padding: 12px 14px; }
+  .coach-note-card .cnc-head { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .coach-note-card .cnc-head strong { color: #F4D06F; }
+  .coach-note-card .cnc-text { font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+
   /* Client detail */
   .cd-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; gap: 12px; }
   .cd-name { font-size: 18px; font-weight: 700; }
@@ -1640,6 +1646,7 @@
       <p>No food logged yet.<br>Tap Photo, Barcode, or Custom to add.</p>
     </div>
   </div>
+  <div id="coachNoteToday"></div>
 </div>
 <div class="tab-content" id="tabContentHistory">
   <div class="history-wrap">
@@ -2569,6 +2576,25 @@ async function loadViewDate() {
   if (!isToday) await ensureHistory();
   renderLog();
   updateTotals();
+  loadCoachNoteToday();
+}
+
+// Read-only coach note for the viewed day, shown after the food log for connected
+// clients only. Renders nothing when there's no note.
+async function loadCoachNoteToday() {
+  const el = document.getElementById('coachNoteToday');
+  if (!el) return;
+  if (!(currentUser && currentUser.trainer)) { el.innerHTML = ''; return; }
+  const day = viewDate;
+  const res = await apiRequest('/coach-notes?date=' + day);
+  if (day !== viewDate) return; // a newer day-change won the race
+  const notes = (res.ok && res.body) || [];
+  if (!notes.length) { el.innerHTML = ''; return; }
+  el.innerHTML = notes.map(n => `
+    <div class="coach-note-card">
+      <div class="cnc-head">💬 Note from <strong>${escapeHtml(n.trainer_name || 'your coach')}</strong></div>
+      <div class="cnc-text">${escapeHtml(n.note)}</div>
+    </div>`).join('');
 }
 
 // Copy a past entry into today's log.
