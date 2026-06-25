@@ -1041,6 +1041,73 @@ export default {
       return jsonResponse(notes);
     }
 
+    // ---- Client/solo: own grocery list ----
+    if (segments[1] === "grocery") {
+      // Full list, split into trainer suggestions, the user's own items, and done.
+      if (request.method === "GET" && segments.length === 2) {
+        const rows = ((await db
+          .prepare("SELECT id, item, note, added_by_role, checked, checked_at FROM grocery_list WHERE client_id = ? ORDER BY created_at ASC")
+          .bind(userEmail)
+          .all()).results || []) as any[];
+        return jsonResponse({
+          trainer_items: rows.filter((g) => !g.checked && g.added_by_role === "trainer"),
+          client_items: rows.filter((g) => !g.checked && g.added_by_role === "client"),
+          checked_items: rows.filter((g) => g.checked),
+        });
+      }
+
+      // Add an item of your own.
+      if (request.method === "POST" && segments.length === 2) {
+        const body = await parseJson(request);
+        const item = (body?.item ?? "").toString().trim().slice(0, 120);
+        const note = body?.note ? body.note.toString().trim().slice(0, 200) : null;
+        if (!item) return jsonResponse({ error: "item required" }, 400);
+        // Attach the user's org if they have a trainer (informational; null for solo).
+        const m = await db
+          .prepare("SELECT org_id FROM memberships WHERE user_id = ? AND role = 'client' AND status = 'active' LIMIT 1")
+          .bind(userEmail)
+          .first<{ org_id: string }>();
+        await db
+          .prepare("INSERT INTO grocery_list (org_id, client_id, added_by, added_by_role, item, note) VALUES (?, ?, ?, 'client', ?, ?)")
+          .bind(m?.org_id ?? null, userEmail, userEmail, item, note)
+          .run();
+        return jsonResponse({ ok: true });
+      }
+
+      // Clear your own checked items (trainer suggestions are never deleted here).
+      if (request.method === "DELETE" && segments.length === 3 && segments[2] === "checked") {
+        await db
+          .prepare("DELETE FROM grocery_list WHERE client_id = ? AND checked = 1 AND added_by_role = 'client'")
+          .bind(userEmail)
+          .run();
+        return jsonResponse({ ok: true });
+      }
+
+      // Check / uncheck any item on your list (including trainer suggestions).
+      if (request.method === "PUT" && segments.length === 4 && segments[3] === "check") {
+        const id = Number(segments[2]);
+        if (!Number.isFinite(id)) return jsonResponse({ error: "Invalid id" }, 400);
+        const body = await parseJson(request);
+        const checked = body?.checked ? 1 : 0;
+        await db
+          .prepare("UPDATE grocery_list SET checked = ?, checked_at = CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END WHERE id = ? AND client_id = ?")
+          .bind(checked, checked, id, userEmail)
+          .run();
+        return jsonResponse({ ok: true });
+      }
+
+      // Delete one of your OWN items (a client can't delete a trainer's suggestion).
+      if (request.method === "DELETE" && segments.length === 3) {
+        const id = Number(segments[2]);
+        if (!Number.isFinite(id)) return jsonResponse({ error: "Invalid id" }, 400);
+        await db
+          .prepare("DELETE FROM grocery_list WHERE id = ? AND client_id = ? AND added_by_role = 'client'")
+          .bind(id, userEmail)
+          .run();
+        return jsonResponse({ ok: true });
+      }
+    }
+
     // ---- Trainer onboarding ----
     if (segments[1] === "trainer" && segments[2] === "setup" && request.method === "POST") {
       // Only admins or admin-granted trainer-eligible users may create an org.

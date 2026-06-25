@@ -1487,6 +1487,12 @@
   .gi-name { font-size: 14px; font-weight: 600; }
   .gi-note { font-size: 11px; color: var(--muted); font-style: italic; }
   .gi-del { background: none; border: none; color: var(--muted); font-size: 14px; cursor: pointer; flex-shrink: 0; }
+  /* Client grocery tab */
+  .grocery-wrap { padding: 16px 20px; }
+  .grocery-sec-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin: 16px 0 6px; }
+  .gi-check { width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; border: 2px solid var(--border); background: transparent; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; }
+  .gi-check.on { background: var(--protein); border-color: var(--protein); color: #0a1a12; }
+  .gi-coach-tag { font-size: 10px; color: #F4D06F; font-weight: 700; flex-shrink: 0; }
 
   /* Pending invites */
   .invite-row { display: flex; align-items: center; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 9px; padding: 8px 12px; margin-top: 8px; font-size: 13px; }
@@ -1524,6 +1530,7 @@
   <button class="tab-btn" id="tabWeight" onclick="switchTab('weight')"><span class="tab-ico">⚖️</span><span class="tab-lbl">Weight</span></button>
   <button class="tab-btn" id="tabExercise" onclick="switchTab('exercise')"><span class="tab-ico">💪</span><span class="tab-lbl">Exercise</span></button>
   <button class="tab-btn" id="tabAnalysis" onclick="switchTab('analysis')"><span class="tab-ico">🔬</span><span class="tab-lbl">Insights</span></button>
+  <button class="tab-btn" id="tabGrocery" onclick="switchTab('grocery')"><span class="tab-ico">🛒</span><span class="tab-lbl">Grocery</span></button>
   <button class="tab-btn" id="tabTrainer" onclick="switchTab('trainer')" style="display:none"><span class="tab-ico">👥</span><span class="tab-lbl">Clients</span></button>
   <button class="tab-btn" id="tabAdmin" onclick="switchTab('admin')" style="display:none"><span class="tab-ico">📊</span><span class="tab-lbl">Admin</span></button>
 </nav>
@@ -1857,6 +1864,17 @@
       <div class="he-icon">👥</div>
       <p>No clients yet.<br>Invite your first client to get started.</p>
     </div>
+  </div>
+</div>
+<div class="tab-content" id="tabContentGrocery">
+  <div class="grocery-wrap">
+    <div class="section-head" style="padding:0 0 12px"><h2>🛒 Grocery</h2></div>
+    <div class="grocery-add-row">
+      <input type="text" id="groceryItemInput" placeholder="Add an item…" style="flex:2" onkeydown="if(event.key==='Enter')groceryAdd()">
+      <input type="text" id="groceryNoteInput" placeholder="Note…" style="flex:1" onkeydown="if(event.key==='Enter')groceryAdd()">
+      <button onclick="groceryAdd()">+</button>
+    </div>
+    <div id="groceryList"></div>
   </div>
 </div>
 <div class="modal-bg" id="customFoodModal">
@@ -3704,8 +3722,8 @@ function switchTab(tab) {
   activeTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(ct => ct.classList.remove('active'));
-  const btnMap = { today: 'tabToday', history: 'tabHistory', weight: 'tabWeight', exercise: 'tabExercise', analysis: 'tabAnalysis', trainer: 'tabTrainer', admin: 'tabAdmin' };
-  const contentMap = { today: 'tabContentToday', history: 'tabContentHistory', weight: 'tabContentWeight', exercise: 'tabContentExercise', analysis: 'tabContentAnalysis', trainer: 'tabContentTrainer', admin: 'tabContentAdmin' };
+  const btnMap = { today: 'tabToday', history: 'tabHistory', weight: 'tabWeight', exercise: 'tabExercise', analysis: 'tabAnalysis', grocery: 'tabGrocery', trainer: 'tabTrainer', admin: 'tabAdmin' };
+  const contentMap = { today: 'tabContentToday', history: 'tabContentHistory', weight: 'tabContentWeight', exercise: 'tabContentExercise', analysis: 'tabContentAnalysis', grocery: 'tabContentGrocery', trainer: 'tabContentTrainer', admin: 'tabContentAdmin' };
   document.getElementById(btnMap[tab]).classList.add('active');
   document.getElementById(contentMap[tab]).classList.add('active');
   if (tab === 'today') { viewDate = todayKey(); loadViewDate(); }
@@ -3713,6 +3731,7 @@ function switchTab(tab) {
   if (tab === 'weight') renderWeightTab();
   if (tab === 'exercise') renderExercise();
   if (tab === 'analysis') renderAnalysis();
+  if (tab === 'grocery') renderGrocery();
   if (tab === 'trainer') renderTrainerTab();
   if (tab === 'admin') renderAdmin();
 }
@@ -6354,6 +6373,61 @@ async function acceptInvite() {
   const ex = document.getElementById('inviteExpired');
   ex.style.display = 'block';
   ex.innerHTML = `<p>${escapeHtml((res.body && res.body.error) || 'Could not accept this invite.')}</p>`;
+}
+
+// ================= Grocery (client / solo) =================
+async function renderGrocery() {
+  const el = document.getElementById('groceryList');
+  el.innerHTML = '<div class="coach-loading">Loading…</div>';
+  const res = await apiRequest('/grocery');
+  if (!res.ok) { el.innerHTML = '<div class="hist-empty"><p>Could not load your grocery list.</p></div>'; return; }
+  const g = res.body || {};
+  const trainer = g.trainer_items || [];
+  const mine = g.client_items || [];
+  const done = g.checked_items || [];
+
+  const row = (it) => `
+    <div class="grocery-item ${it.added_by_role === 'trainer' ? 'trainer-item' : ''} ${it.checked ? 'checked' : ''}">
+      <button class="gi-check${it.checked ? ' on' : ''}" onclick="groceryCheck(${Number(it.id)}, ${it.checked ? 0 : 1})" title="${it.checked ? 'Uncheck' : 'Check off'}">${it.checked ? '✓' : ''}</button>
+      <div class="gi-content">
+        <span class="gi-name">${escapeHtml(it.item)}</span>
+        ${it.note ? `<span class="gi-note">${it.added_by_role === 'trainer' ? '💬 ' : ''}${escapeHtml(it.note)}</span>` : (it.added_by_role === 'trainer' ? '<span class="gi-note">from your coach</span>' : '')}
+      </div>
+      ${it.added_by_role === 'client' ? `<button class="gi-del" onclick="groceryDelete(${Number(it.id)})" title="Remove">✕</button>` : '<span class="gi-coach-tag">coach</span>'}
+    </div>`;
+
+  let html = '';
+  if (trainer.length) html += `<div class="grocery-sec-label">From your coach</div>` + trainer.map(row).join('');
+  html += `<div class="grocery-sec-label">Your list</div>`;
+  html += mine.length ? mine.map(row).join('') : '<p style="color:var(--muted);font-size:13px;padding:4px 0">Nothing yet — add items above.</p>';
+  if (done.length) {
+    html += `<div class="grocery-sec-label" style="display:flex;justify-content:space-between;align-items:center">Done <button class="clear-btn" onclick="groceryClearChecked()">Clear bought</button></div>`;
+    html += done.map(row).join('');
+  }
+  el.innerHTML = html;
+}
+
+async function groceryAdd() {
+  const itemEl = document.getElementById('groceryItemInput');
+  const noteEl = document.getElementById('groceryNoteInput');
+  const item = (itemEl.value || '').trim();
+  if (!item) return;
+  const note = (noteEl.value || '').trim();
+  await apiRequest('/grocery', { method: 'POST', body: JSON.stringify({ item, note: note || null }) });
+  itemEl.value = ''; noteEl.value = ''; itemEl.focus();
+  renderGrocery();
+}
+async function groceryCheck(id, checked) {
+  await apiRequest(`/grocery/${id}/check`, { method: 'PUT', body: JSON.stringify({ checked }) });
+  renderGrocery();
+}
+async function groceryDelete(id) {
+  await apiRequest(`/grocery/${id}`, { method: 'DELETE' });
+  renderGrocery();
+}
+async function groceryClearChecked() {
+  await apiRequest('/grocery/checked', { method: 'DELETE' });
+  renderGrocery();
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
