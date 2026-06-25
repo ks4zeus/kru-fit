@@ -1443,6 +1443,11 @@
   .cw-trend.up { color: var(--cal); }
   .cw-none { color: var(--muted); font-size: 11px; font-style: italic; }
 
+  /* Client: trainer connection banner (Today tab) */
+  .trainer-banner { margin: 12px 20px 0; background: rgba(244,208,111,0.06); border: 1px solid rgba(244,208,111,0.25); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--text); }
+  .trainer-banner strong { color: #F4D06F; }
+  .trainer-banner .tb-sub { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
+
   /* Client detail */
   .cd-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; gap: 12px; }
   .cd-name { font-size: 18px; font-weight: 700; }
@@ -1518,6 +1523,10 @@
     <button class="day-arrow" id="dayPrev" onclick="changeViewDate(-1)" title="Previous day">◀</button>
     <span class="day-label" id="dayLabel">Today</span>
     <button class="day-arrow" id="dayNext" onclick="changeViewDate(1)" title="Next day">▶</button>
+  </div>
+  <div class="trainer-banner" id="trainerBanner" style="display:none">
+    <div>👤 Connected to <strong id="tbOrg"></strong></div>
+    <div class="tb-sub" id="tbTrainer"></div>
   </div>
   <div class="cal-section">
     <div class="ring-wrap">
@@ -5912,6 +5921,21 @@ function applyTrainerVisibility() {
   if (note) note.textContent = isTrainer
     ? 'Coaching profile active — manage clients from the Clients tab.'
     : 'Manage clients and see their logs from a Clients tab.';
+  applyTrainerBanner();
+}
+
+// Persistent banner in the Today tab so connected clients always know who can
+// see their logs. Shown only when me.trainer is set.
+function applyTrainerBanner() {
+  const el = document.getElementById('trainerBanner');
+  if (!el) return;
+  const t = currentUser && currentUser.trainer;
+  if (!t) { el.style.display = 'none'; return; }
+  document.getElementById('tbOrg').textContent = t.org_name || 'your trainer';
+  const sub = document.getElementById('tbTrainer');
+  sub.textContent = t.name ? ('Coach: ' + t.name) : '';
+  sub.style.display = t.name ? '' : 'none';
+  el.style.display = '';
 }
 
 async function renderTrainerTab() {
