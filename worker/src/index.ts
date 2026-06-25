@@ -181,7 +181,14 @@ const NUTRITION_SYSTEM_PROMPT = `You are a nutrition analysis assistant. Given a
 }
 Be realistic with estimates. If multiple items are present, estimate the total. If you cannot identify the food, set name to "Unknown food" with zeroes and confidence "low".`;
 
-const COACH_SYSTEM_PROMPT = `You are a practical, encouraging nutrition and fitness coach. You receive a JSON summary of someone's recent eating: their daily averages, their goals, and their most-eaten foods. The summary may include the person's "name" — if it's present, address them by it warmly (e.g., open the headline with it); if it's absent, don't invent one. The summary may also include an optional "exercise" block (workouts, active days, calories burned, top activities) — when it is present, factor their activity into your assessment (acknowledge consistency, consider overall energy balance, and reference it where relevant in wins/issues); when it is absent, do not mention exercise at all. Identify the most important takeaways and respond ONLY with valid JSON (no markdown), in this exact shape:
+const COACH_SYSTEM_PROMPT = `You are a practical, encouraging nutrition and fitness coach. You receive a JSON summary of someone's recent eating: their daily averages, their goals, and their most-eaten foods. The summary may include the person's "name" — if it's present, address them by it warmly (e.g., open the headline with it); if it's absent, don't invent one. The summary may also include an optional "exercise" block (workouts, active days, calories burned, top activities) — when it is present, factor their activity into your assessment (acknowledge consistency, consider overall energy balance, and reference it where relevant in wins/issues); when it is absent, do not mention exercise at all.
+
+The summary includes the person's "objective" — one of "lose" (lose weight), "maintain", or "gain" (gain muscle). Contextualize ALL advice to it:
+- "lose": a calorie deficit is the GOAL, not a problem. Do NOT flag low calories or being under the calorie goal as an issue UNLESS average daily calories fall below 1200 OR protein averages below 70% of its goal. Frame an appropriate deficit as positive progress; if calories drop below 1200 or protein compliance is under 70%, raise that as the priority issue.
+- "maintain": aim for balance near the goals; flag large sustained surpluses or deficits.
+- "gain": a modest calorie surplus and high protein are desired. Do NOT flag being over the calorie goal as a problem; instead flag insufficient protein, or calories/protein too low to support muscle gain.
+
+Identify the most important takeaways and respond ONLY with valid JSON (no markdown), in this exact shape:
 {
   "headline": "one upbeat sentence summarizing how they're doing",
   "wins": ["short positive observations grounded in the numbers"],
@@ -830,6 +837,7 @@ export default {
           fat: 60,
           fiber: 30,
           water_oz: 64,
+          objective: "maintain",
           diet: "none",
           restrictions: "",
           goal_weight: null,
@@ -845,8 +853,8 @@ export default {
 
         await db
           .prepare(
-            `INSERT INTO goals (user_id, cal, protein, carbs, fat, fiber, water_oz, diet, restrictions, goal_weight, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            `INSERT INTO goals (user_id, cal, protein, carbs, fat, fiber, water_oz, objective, diet, restrictions, goal_weight, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
              ON CONFLICT(user_id) DO UPDATE SET
                cal = excluded.cal,
                protein = excluded.protein,
@@ -854,6 +862,7 @@ export default {
                fat = excluded.fat,
                fiber = excluded.fiber,
                water_oz = excluded.water_oz,
+               objective = excluded.objective,
                diet = excluded.diet,
                restrictions = excluded.restrictions,
                goal_weight = excluded.goal_weight,
@@ -867,12 +876,13 @@ export default {
             body.fat ?? 60,
             body.fiber ?? 30,
             body.water_oz ?? 64,
+            body.objective || "maintain",
             body.diet || "none",
             body.restrictions || "",
             body.goal_weight ?? null
           )
           .run();
-        return jsonResponse({ user_id: userEmail, cal: body.cal ?? 1800, protein: body.protein ?? 180, carbs: body.carbs ?? 150, fat: body.fat ?? 60, fiber: body.fiber ?? 30, water_oz: body.water_oz ?? 64, diet: body.diet || "none", restrictions: body.restrictions || "", goal_weight: body.goal_weight ?? null });
+        return jsonResponse({ user_id: userEmail, cal: body.cal ?? 1800, protein: body.protein ?? 180, carbs: body.carbs ?? 150, fat: body.fat ?? 60, fiber: body.fiber ?? 30, water_oz: body.water_oz ?? 64, objective: body.objective || "maintain", diet: body.diet || "none", restrictions: body.restrictions || "", goal_weight: body.goal_weight ?? null });
       }
     }
 

@@ -96,6 +96,7 @@ CREATE TABLE goals (
   fat INTEGER DEFAULT 60,
   fiber INTEGER DEFAULT 30,
   water_oz INTEGER DEFAULT 64,
+  objective TEXT DEFAULT 'maintain',  -- 'lose' | 'maintain' | 'gain' (fitness goal)
   diet TEXT DEFAULT 'none',
   restrictions TEXT DEFAULT '',
   goal_weight REAL,           -- target weight in lbs (canonical); null = unset
