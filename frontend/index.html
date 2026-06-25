@@ -5991,16 +5991,18 @@ function renderClientRoster() {
   }).join('');
 }
 
-// The weight indicator trainers look at first — placeholder until the roster
-// endpoint surfaces { current, unit, trend }.
+// The weight indicator trainers look at first: latest weigh-in + trend.
+// weight = { val, unit, trend } where trend = current - previous (null if only one).
 function renderClientWeight(c) {
   const w = c.weight;
-  if (!w || w.current == null) {
+  if (!w || w.val == null) {
     return `<div class="client-weight"><span class="cw-label">Weight</span><span class="cw-none">No recent weigh-in</span></div>`;
   }
-  const trend = w.trend === 'down' ? '<span class="cw-trend down">▼</span>'
-              : w.trend === 'up' ? '<span class="cw-trend up">▲</span>' : '';
-  return `<div class="client-weight"><span class="cw-label">Weight</span><span class="cw-val">${escapeHtml(String(w.current))} ${escapeHtml(w.unit || '')}</span>${trend}</div>`;
+  let arrow = '';
+  if (w.trend != null && w.trend < 0) arrow = `<span class="cw-trend down">▼ ${Math.abs(w.trend)}</span>`;
+  else if (w.trend != null && w.trend > 0) arrow = `<span class="cw-trend up">▲ ${Math.abs(w.trend)}</span>`;
+  const val = Math.round(Number(w.val) * 10) / 10;
+  return `<div class="client-weight"><span class="cw-label">Weight</span><span class="cw-val">${escapeHtml(String(val))} ${escapeHtml(w.unit || '')}</span>${arrow}</div>`;
 }
 
 function filterRoster() { renderClientRoster(); }

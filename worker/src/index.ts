@@ -1123,7 +1123,10 @@ export default {
              g.cal     AS goal_cal,
              g.protein AS goal_protein,
              g.carbs   AS goal_carbs,
-             g.fat     AS goal_fat
+             g.fat     AS goal_fat,
+             (SELECT val  FROM weight_log w WHERE w.user_id = m.user_id ORDER BY w.date DESC, w.id DESC LIMIT 1)          AS w_val,
+             (SELECT unit FROM weight_log w WHERE w.user_id = m.user_id ORDER BY w.date DESC, w.id DESC LIMIT 1)          AS w_unit,
+             (SELECT val  FROM weight_log w WHERE w.user_id = m.user_id ORDER BY w.date DESC, w.id DESC LIMIT 1 OFFSET 1) AS w_prev
            FROM memberships m
            LEFT JOIN users u    ON u.id = m.user_id
            LEFT JOIN goals g    ON g.user_id = m.user_id
@@ -1153,8 +1156,12 @@ export default {
           carbs: r.goal_carbs ?? 150,
           fat: r.goal_fat ?? 60,
         },
-        // Placeholder until the roster query also surfaces latest weight + trend.
-        weight: null,
+        // Latest weigh-in + trend vs the previous entry (trend null if only one).
+        weight: r.w_val == null ? null : {
+          val: r.w_val,
+          unit: r.w_unit || "lbs",
+          trend: r.w_prev == null ? null : Math.round((r.w_val - r.w_prev) * 10) / 10,
+        },
       }));
 
       return jsonResponse(clients);
