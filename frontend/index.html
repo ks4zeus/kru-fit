@@ -3771,7 +3771,10 @@ async function renderAdmin() {
 }
 
 // Admin: grant/revoke a user's ability to create a coaching profile.
+// Confirm first so an accidental tap doesn't change someone's access.
 async function toggleTrainerEligible(userId, makeEligible) {
+  const verb = makeEligible ? 'Grant trainer access to' : 'Revoke trainer access from';
+  if (!confirm(`${verb} ${userId}?`)) return;
   const res = await apiRequest('/admin/trainer-eligible', {
     method: 'POST',
     body: JSON.stringify({ user_id: userId, eligible: makeEligible })
