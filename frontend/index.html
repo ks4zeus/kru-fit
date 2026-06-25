@@ -6388,7 +6388,7 @@ async function renderGrocery() {
 
   const row = (it) => `
     <div class="grocery-item ${it.added_by_role === 'trainer' ? 'trainer-item' : ''} ${it.checked ? 'checked' : ''}">
-      <button class="gi-check${it.checked ? ' on' : ''}" onclick="groceryCheck(${Number(it.id)}, ${it.checked ? 0 : 1})" title="${it.checked ? 'Uncheck' : 'Check off'}">${it.checked ? '✓' : ''}</button>
+      <button class="gi-check${it.checked ? ' on' : ''}" onclick="groceryCheck(${Number(it.id)}, ${it.checked ? 0 : 1})" title="${it.added_by_role === 'trainer' ? 'Got it — remove from list' : (it.checked ? 'Uncheck' : 'Check off')}">${it.checked ? '✓' : ''}</button>
       <div class="gi-content">
         <span class="gi-name">${escapeHtml(it.item)}</span>
         ${it.note ? `<span class="gi-note">${it.added_by_role === 'trainer' ? '💬 ' : ''}${escapeHtml(it.note)}</span>` : (it.added_by_role === 'trainer' ? '<span class="gi-note">from your coach</span>' : '')}

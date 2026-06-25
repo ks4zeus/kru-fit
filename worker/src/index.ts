@@ -1083,12 +1083,22 @@ export default {
         return jsonResponse({ ok: true });
       }
 
-      // Check / uncheck any item on your list (including trainer suggestions).
+      // Check / uncheck an item on your list. Checking off a coach suggestion
+      // REMOVES it (suggestions change week to week); your own items toggle done.
       if (request.method === "PUT" && segments.length === 4 && segments[3] === "check") {
         const id = Number(segments[2]);
         if (!Number.isFinite(id)) return jsonResponse({ error: "Invalid id" }, 400);
         const body = await parseJson(request);
         const checked = body?.checked ? 1 : 0;
+        const row = await db
+          .prepare("SELECT added_by_role FROM grocery_list WHERE id = ? AND client_id = ?")
+          .bind(id, userEmail)
+          .first<{ added_by_role: string }>();
+        if (!row) return jsonResponse({ ok: true });
+        if (checked && row.added_by_role === "trainer") {
+          await db.prepare("DELETE FROM grocery_list WHERE id = ? AND client_id = ?").bind(id, userEmail).run();
+          return jsonResponse({ ok: true, removed: true });
+        }
         await db
           .prepare("UPDATE grocery_list SET checked = ?, checked_at = CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END WHERE id = ? AND client_id = ?")
           .bind(checked, checked, id, userEmail)
