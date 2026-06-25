@@ -1408,6 +1408,82 @@
   }
   .form-field input:focus { border-color: var(--protein); }
   .form-field input::placeholder { color: var(--muted); }
+
+  /* ---- Trainer dashboard (gold #F4D06F accent) ---- */
+  .trainer-wrap { padding: 16px 20px; }
+  .trainer-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; gap: 12px; }
+  .trainer-org-name { font-size: 18px; font-weight: 700; color: #F4D06F; }
+  .trainer-org-sub { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
+  .trainer-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+  .tm-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; text-align: center; }
+  .tm-val { font-size: 22px; font-weight: 700; font-family: var(--mono); line-height: 1; }
+  .tm-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 4px; }
+
+  .client-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 10px; cursor: pointer; transition: border-color 0.2s; }
+  .client-card:active { border-color: #F4D06F; }
+  .client-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .client-avatar { width: 38px; height: 38px; border-radius: 50%; background: rgba(244,208,111,0.1); color: #F4D06F; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; flex-shrink: 0; }
+  .client-card-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .client-card-sub { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 1px; }
+  .client-status-pill { margin-left: auto; font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 99px; white-space: nowrap; flex-shrink: 0; }
+  .pill-ok   { background: rgba(74,222,128,0.12); color: var(--protein); }
+  .pill-warn { background: rgba(245,166,35,0.12);  color: var(--cal); }
+  .pill-bad  { background: rgba(239,68,68,0.12);   color: var(--danger); }
+  .client-macros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .cm-item { text-align: center; }
+  .cm-val { font-size: 13px; font-weight: 700; font-family: var(--mono); }
+  .cm-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+  .cm-bar { height: 3px; background: var(--surface2); border-radius: 99px; overflow: hidden; margin-top: 3px; }
+  .cm-fill { height: 100%; border-radius: 99px; }
+  .client-weight { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .cw-label { color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; font-size: 9px; font-weight: 700; }
+  .cw-val { font-family: var(--mono); font-weight: 700; font-size: 13px; }
+  .cw-trend { font-family: var(--mono); font-size: 12px; font-weight: 700; }
+  .cw-trend.down { color: var(--protein); }
+  .cw-trend.up { color: var(--cal); }
+  .cw-none { color: var(--muted); font-size: 11px; font-style: italic; }
+
+  /* Client detail */
+  .cd-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; gap: 12px; }
+  .cd-name { font-size: 18px; font-weight: 700; }
+  .cd-sub  { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  .cd-date-nav { display: flex; align-items: center; justify-content: space-between; background: var(--surface2); border-radius: 10px; padding: 8px 14px; margin-bottom: 14px; font-size: 14px; font-weight: 600; }
+  .cd-date-nav button { background: none; border: none; color: var(--text); font-size: 20px; cursor: pointer; padding: 0 8px; }
+  .cd-date-nav button:disabled { opacity: 0.3; cursor: default; }
+  .cd-macro-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+  .cd-note-wrap textarea { width: 100%; box-sizing: border-box; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; color: var(--text); font-family: var(--font); font-size: 14px; resize: vertical; outline: none; }
+  .cd-note-wrap textarea:focus { border-color: #F4D06F; }
+
+  /* Grocery panel */
+  .grocery-add-row { display: flex; gap: 8px; }
+  .grocery-add-row input { background: var(--surface2); border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; color: var(--text); font-size: 13px; outline: none; min-width: 0; }
+  .grocery-add-row input:focus { border-color: #F4D06F; }
+  .grocery-add-row button { background: #F4D06F; color: #1a1d27; border: none; border-radius: 9px; width: 40px; flex-shrink: 0; font-size: 18px; font-weight: 700; cursor: pointer; }
+  .grocery-item { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+  .grocery-item.trainer-item { border-color: rgba(244,208,111,0.3); }
+  .grocery-item.checked { opacity: 0.5; }
+  .grocery-item.checked .gi-name { text-decoration: line-through; }
+  .gi-content { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+  .gi-name { font-size: 14px; font-weight: 600; }
+  .gi-note { font-size: 11px; color: var(--muted); font-style: italic; }
+  .gi-del { background: none; border: none; color: var(--muted); font-size: 14px; cursor: pointer; flex-shrink: 0; }
+
+  /* Pending invites */
+  .invite-row { display: flex; align-items: center; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 9px; padding: 8px 12px; margin-top: 8px; font-size: 13px; }
+  .invite-row .ir-email { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .invite-row .ir-exp { font-size: 11px; color: var(--muted); font-family: var(--mono); flex-shrink: 0; }
+  .invite-row button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; flex-shrink: 0; }
+
+  /* Invite accept screen */
+  .invite-screen { position: fixed; inset: 0; background: var(--bg); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+  .invite-screen.open { display: flex; }
+  .invite-card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 32px 24px; max-width: 380px; width: 100%; text-align: center; }
+  .invite-logo { font-size: 22px; font-weight: 700; margin-bottom: 20px; color: #F4D06F; }
+  .invite-card h2 { font-size: 22px; font-weight: 700; margin-bottom: 12px; }
+  .invite-card p { font-size: 14px; color: var(--muted); margin-bottom: 12px; }
+  .invite-card strong { color: #F4D06F; }
+  .invite-sub { font-size: 13px; }
+  .invite-note { font-size: 11px; margin-top: 12px; opacity: 0.7; }
 </style>
 </head>
 <body>
@@ -1428,6 +1504,7 @@
   <button class="tab-btn" id="tabWeight" onclick="switchTab('weight')"><span class="tab-ico">⚖️</span><span class="tab-lbl">Weight</span></button>
   <button class="tab-btn" id="tabExercise" onclick="switchTab('exercise')"><span class="tab-ico">💪</span><span class="tab-lbl">Exercise</span></button>
   <button class="tab-btn" id="tabAnalysis" onclick="switchTab('analysis')"><span class="tab-ico">🔬</span><span class="tab-lbl">Insights</span></button>
+  <button class="tab-btn" id="tabTrainer" onclick="switchTab('trainer')" style="display:none"><span class="tab-ico">👥</span><span class="tab-lbl">Clients</span></button>
   <button class="tab-btn" id="tabAdmin" onclick="switchTab('admin')" style="display:none"><span class="tab-ico">📊</span><span class="tab-lbl">Admin</span></button>
 </nav>
 <div class="tab-content active" id="tabContentToday">
@@ -1728,6 +1805,32 @@
     <div id="adminContent"></div>
     <div id="adminEmpty" class="hist-empty" style="display:none">
       <div class="he-icon">📊</div><p>No usage data yet.</p>
+    </div>
+  </div>
+</div>
+<div class="tab-content" id="tabContentTrainer">
+  <div class="trainer-wrap">
+    <div class="trainer-header">
+      <div style="min-width:0">
+        <div class="trainer-org-name" id="trainerOrgName"></div>
+        <div class="trainer-org-sub" id="trainerOrgSub"></div>
+      </div>
+      <button class="btn-primary" onclick="openInviteModal()" style="width:auto;padding:10px 18px;font-size:13px;flex-shrink:0">+ Invite client</button>
+    </div>
+    <div class="trainer-metrics" id="trainerMetrics"></div>
+    <div class="section-head" style="padding:0 0 10px">
+      <h2>Clients</h2>
+      <select id="rosterFilter" onchange="filterRoster()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 10px;font-size:12px">
+        <option value="all">All clients</option>
+        <option value="attention">Needs attention</option>
+        <option value="active">Logged today</option>
+        <option value="inactive">Not logged today</option>
+      </select>
+    </div>
+    <div id="clientRoster"></div>
+    <div id="trainerEmpty" class="hist-empty" style="display:none">
+      <div class="he-icon">👥</div>
+      <p>No clients yet.<br>Invite your first client to get started.</p>
     </div>
   </div>
 </div>
@@ -2136,12 +2239,122 @@
         <input type="number" id="goalFiber" value="30">
       </div>
     </div>
+    <div class="profile-box" id="trainerProfileBox">
+      <div class="calc-sub">Coaching</div>
+      <div class="setting-row">
+        <label>Trainer mode</label>
+        <button class="btn-primary" id="becomeTrainerBtn" onclick="openTrainerSetup()" style="width:auto;padding:8px 16px;font-size:12px">Set up coaching profile</button>
+      </div>
+      <div class="prof-note" id="trainerModeNote">Manage clients and see their logs from a Clients tab.</div>
+    </div>
     <button class="btn-primary" onclick="saveSettings()">Save Profile</button>
     <button class="btn-cancel" onclick="closeSettings()">Cancel</button>
   </div>
 </div>
+
+<div class="modal-bg" id="trainerSetupModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Set up your coaching profile</div>
+    <div class="error-msg" id="trainerSetupError"></div>
+    <div class="form-field" style="margin-bottom:14px">
+      <label>Your business / coaching name</label>
+      <input type="text" id="trainerOrgInput" placeholder="e.g. John Smith Fitness" maxlength="80">
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:14px">This is what your clients will see when they receive your invite.</p>
+    <button class="btn-primary" onclick="setupTrainer()">Create coaching profile</button>
+    <button class="btn-cancel" onclick="closeTrainerModal('trainerSetupModal')">Cancel</button>
+  </div>
+</div>
+
+<div class="modal-bg" id="inviteModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">+ Invite Client</div>
+    <div class="error-msg" id="inviteError"></div>
+    <div class="form-field" style="margin-bottom:14px">
+      <label>Client's email address</label>
+      <input type="email" id="inviteEmailInput" placeholder="client@email.com">
+    </div>
+    <button class="btn-primary" onclick="sendInvite()">Generate invite link</button>
+    <div id="inviteResult" style="display:none;margin-top:14px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Share this link with your client:</div>
+      <div style="display:flex;gap:8px">
+        <input id="inviteLink" readonly style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none">
+        <button id="copyBtn" class="btn-primary" onclick="copyInviteLink()" style="width:auto;padding:10px 16px;flex-shrink:0">Copy</button>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px">Link expires in 7 days. Your client verifies their email via Cloudflare Access.</p>
+    </div>
+    <div style="margin-top:18px">
+      <div class="calc-sub" style="color:var(--muted)">Pending invites</div>
+      <div id="pendingInvites"></div>
+    </div>
+    <button class="btn-cancel" onclick="closeTrainerModal('inviteModal')">Close</button>
+  </div>
+</div>
+
+<div class="modal-bg" id="clientDetailModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="cd-header">
+      <div style="min-width:0">
+        <div class="cd-name" id="cdName"></div>
+        <div class="cd-sub" id="cdSub"></div>
+      </div>
+      <button class="btn-cancel" onclick="closeClientDetail()" style="width:auto;padding:8px 16px;margin:0;flex-shrink:0">Close</button>
+    </div>
+    <div class="cd-date-nav">
+      <button onclick="cdChangeDate(-1)">‹</button>
+      <span id="cdDateLabel"></span>
+      <button onclick="cdChangeDate(1)" id="cdNextBtn">›</button>
+    </div>
+    <div class="cd-macro-summary" id="cdMacroSummary"></div>
+    <div class="section-head" style="padding:10px 0 8px"><h2>Food log</h2></div>
+    <div id="cdFoodLog"></div>
+    <div class="section-head" style="padding:10px 0 8px"><h2>Coach note</h2></div>
+    <div class="cd-note-wrap">
+      <textarea id="cdNoteInput" placeholder="Leave a note for this day…" rows="3"></textarea>
+      <button class="btn-primary" onclick="saveCoachNote()" style="margin-top:8px">Save note</button>
+    </div>
+    <div class="section-head" style="padding:10px 0 8px"><h2>Weight</h2></div>
+    <div class="chart-card" style="margin:0 0 12px"><canvas id="cdWeightChart" height="140"></canvas></div>
+    <div class="section-head" style="padding:10px 0 8px"><h2>🛒 Grocery list</h2></div>
+    <div id="cdGroceryPanel"></div>
+  </div>
+</div>
+
+<div class="invite-screen" id="inviteScreen">
+  <div class="invite-card">
+    <div class="invite-logo">⚡ Kru Fit</div>
+    <div id="inviteLoading">Checking invite…</div>
+    <div id="inviteValid" style="display:none">
+      <h2>You've been invited</h2>
+      <p><strong id="inviteOrgName"></strong> wants to connect with you on Kru Fit.</p>
+      <p class="invite-sub">Your trainer can see your food logs and weight history.</p>
+      <button class="btn-primary" id="inviteAcceptBtn" onclick="acceptInvite()">Accept invitation</button>
+      <p class="invite-note">Already logging? Your existing data stays yours — connecting just lets your trainer see it.</p>
+    </div>
+    <div id="inviteExpired" style="display:none">
+      <p>This invite has expired or already been used. Ask your trainer to send a new one.</p>
+    </div>
+  </div>
+</div>
 <script>
 const API_BASE = '/api';
+
+// Escape user/client-supplied strings before injecting into innerHTML. Client
+// data (names, food names, notes, grocery items) is untrusted — a client could
+// log a food named "<img onerror=…>" that would otherwise run in the trainer's
+// session. Always wrap such values with escapeHtml() in template literals.
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 const defaultGoals = { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, water_oz: 64, objective: 'maintain', diet: 'none', restrictions: '', goal_weight: null };
 const STORAGE_KEYS = {
   user: 'fuellog_user',
@@ -3427,8 +3640,8 @@ function switchTab(tab) {
   activeTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(ct => ct.classList.remove('active'));
-  const btnMap = { today: 'tabToday', history: 'tabHistory', weight: 'tabWeight', exercise: 'tabExercise', analysis: 'tabAnalysis', admin: 'tabAdmin' };
-  const contentMap = { today: 'tabContentToday', history: 'tabContentHistory', weight: 'tabContentWeight', exercise: 'tabContentExercise', analysis: 'tabContentAnalysis', admin: 'tabContentAdmin' };
+  const btnMap = { today: 'tabToday', history: 'tabHistory', weight: 'tabWeight', exercise: 'tabExercise', analysis: 'tabAnalysis', trainer: 'tabTrainer', admin: 'tabAdmin' };
+  const contentMap = { today: 'tabContentToday', history: 'tabContentHistory', weight: 'tabContentWeight', exercise: 'tabContentExercise', analysis: 'tabContentAnalysis', trainer: 'tabContentTrainer', admin: 'tabContentAdmin' };
   document.getElementById(btnMap[tab]).classList.add('active');
   document.getElementById(contentMap[tab]).classList.add('active');
   if (tab === 'today') { viewDate = todayKey(); loadViewDate(); }
@@ -3436,6 +3649,7 @@ function switchTab(tab) {
   if (tab === 'weight') renderWeightTab();
   if (tab === 'exercise') renderExercise();
   if (tab === 'analysis') renderAnalysis();
+  if (tab === 'trainer') renderTrainerTab();
   if (tab === 'admin') renderAdmin();
 }
 
@@ -5670,11 +5884,383 @@ window.addEventListener('appinstalled', () => {
   if (btn) btn.style.display = 'none';
 });
 
+// ================= Trainer dashboard =================
+let trainerClients = [];
+let selectedClientId = null;
+let cdCurrentDate = todayKey();
+let pendingInviteToken = null;
+
+const CD_QUICK_ITEMS = [
+  { item: 'Greek yogurt',   note: 'high protein snack' },
+  { item: 'Chicken breast', note: 'lean protein' },
+  { item: 'Cottage cheese', note: 'good before bed' },
+  { item: 'Eggs',           note: '' },
+  { item: 'Edamame',        note: 'plant protein' },
+  { item: 'Tuna',           note: 'quick protein' },
+  { item: 'Sweet potato',   note: 'complex carbs' },
+  { item: 'Oats',           note: 'slow release' },
+];
+
+// Show the Clients tab only for trainers (server still enforces every route).
+function applyTrainerVisibility() {
+  const isTrainer = !!(currentUser && currentUser.role === 'trainer');
+  const btn = document.getElementById('tabTrainer');
+  if (btn) btn.style.display = isTrainer ? '' : 'none';
+  const becomeBtn = document.getElementById('becomeTrainerBtn');
+  const note = document.getElementById('trainerModeNote');
+  if (becomeBtn) becomeBtn.style.display = isTrainer ? 'none' : '';
+  if (note) note.textContent = isTrainer
+    ? 'Coaching profile active — manage clients from the Clients tab.'
+    : 'Manage clients and see their logs from a Clients tab.';
+}
+
+async function renderTrainerTab() {
+  const org = (currentUser && currentUser.org) || { name: 'My clients', client_count: 0 };
+  document.getElementById('trainerOrgName').textContent = org.name || 'My clients';
+  const metricsEl = document.getElementById('trainerMetrics');
+  metricsEl.innerHTML = '<div class="coach-loading" style="grid-column:1/-1">Loading…</div>';
+
+  const res = await apiRequest('/trainer/clients');
+  if (!res.ok) {
+    metricsEl.innerHTML = '';
+    document.getElementById('clientRoster').innerHTML =
+      `<div class="hist-empty"><p>${res.status === 403 ? 'Trainers only.' : 'Could not load clients — are you online?'}</p></div>`;
+    return;
+  }
+  trainerClients = res.body || [];
+  document.getElementById('trainerOrgSub').textContent =
+    `${trainerClients.length} client${trainerClients.length !== 1 ? 's' : ''}`;
+
+  const logged = trainerClients.filter(c => c.today && c.today.entry_count > 0).length;
+  const attention = trainerClients.filter(c => getClientStatus(c) === 'bad').length;
+  // 7d compliance is a placeholder until the roster query surfaces it.
+  metricsEl.innerHTML =
+    `<div class="tm-card"><div class="tm-val" style="color:var(--protein)">${logged}</div><div class="tm-label">Logged today</div></div>`
+    + `<div class="tm-card"><div class="tm-val" style="color:var(--cal)">—</div><div class="tm-label">7d compliance</div></div>`
+    + `<div class="tm-card"><div class="tm-val" style="color:var(--danger)">${attention}</div><div class="tm-label">Need attention</div></div>`;
+
+  renderClientRoster();
+}
+
+function getClientStatus(client) {
+  if (!client.today || client.today.entry_count === 0) return 'bad';
+  const goals = client.goals || { protein: 150 };
+  const proteinPct = client.today.protein / (goals.protein || 150);
+  if (proteinPct < 0.7) return 'warn';
+  return 'ok';
+}
+
+function renderClientRoster() {
+  const filter = document.getElementById('rosterFilter').value;
+  let list = trainerClients.map((c, i) => ({ c, i }));
+  if (filter === 'attention') list = list.filter(x => getClientStatus(x.c) === 'bad');
+  if (filter === 'active')    list = list.filter(x => x.c.today && x.c.today.entry_count > 0);
+  if (filter === 'inactive')  list = list.filter(x => !x.c.today || x.c.today.entry_count === 0);
+
+  document.getElementById('trainerEmpty').style.display = list.length === 0 ? 'block' : 'none';
+
+  const statusMap = { ok: ['pill-ok', 'On track'], warn: ['pill-warn', 'Low protein'], bad: ['pill-bad', 'Check in'] };
+  const pct = (v, g) => Math.min(100, g ? (v / g * 100) : 0).toFixed(0);
+
+  document.getElementById('clientRoster').innerHTML = list.map(({ c, i }) => {
+    const status = getClientStatus(c);
+    const [pillClass, pillLabel] = statusMap[status];
+    const goals = c.goals || { cal: 1800, protein: 180, carbs: 150, fat: 60 };
+    const today = c.today || { cal: 0, protein: 0, carbs: 0, fat: 0, entry_count: 0 };
+    const name = c.name || c.user_id;
+    const last = today.last_logged_at
+      ? new Date(today.last_logged_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+      : 'No entries today';
+    return `
+    <div class="client-card" onclick="openClientByIndex(${i})">
+      <div class="client-card-top">
+        <div class="client-avatar">${escapeHtml(name.charAt(0).toUpperCase())}</div>
+        <div style="min-width:0">
+          <div class="client-card-name">${escapeHtml(name)}</div>
+          <div class="client-card-sub">${today.entry_count} ${today.entry_count === 1 ? 'entry' : 'entries'} · ${escapeHtml(last)}</div>
+        </div>
+        <div class="client-status-pill ${pillClass}">${pillLabel}</div>
+      </div>
+      <div class="client-macros">
+        <div class="cm-item"><div class="cm-val" style="color:var(--cal)">${Math.round(today.cal)}</div><div class="cm-label">kcal</div><div class="cm-bar"><div class="cm-fill" style="width:${pct(today.cal, goals.cal)}%;background:var(--cal)"></div></div></div>
+        <div class="cm-item"><div class="cm-val" style="color:var(--protein)">${Math.round(today.protein)}g</div><div class="cm-label">protein</div><div class="cm-bar"><div class="cm-fill" style="width:${pct(today.protein, goals.protein)}%;background:var(--protein)"></div></div></div>
+        <div class="cm-item"><div class="cm-val" style="color:var(--carbs)">${Math.round(today.carbs)}g</div><div class="cm-label">carbs</div><div class="cm-bar"><div class="cm-fill" style="width:${pct(today.carbs, goals.carbs)}%;background:var(--carbs)"></div></div></div>
+      </div>
+      ${renderClientWeight(c)}
+    </div>`;
+  }).join('');
+}
+
+// The weight indicator trainers look at first — placeholder until the roster
+// endpoint surfaces { current, unit, trend }.
+function renderClientWeight(c) {
+  const w = c.weight;
+  if (!w || w.current == null) {
+    return `<div class="client-weight"><span class="cw-label">Weight</span><span class="cw-none">No recent weigh-in</span></div>`;
+  }
+  const trend = w.trend === 'down' ? '<span class="cw-trend down">▼</span>'
+              : w.trend === 'up' ? '<span class="cw-trend up">▲</span>' : '';
+  return `<div class="client-weight"><span class="cw-label">Weight</span><span class="cw-val">${escapeHtml(String(w.current))} ${escapeHtml(w.unit || '')}</span>${trend}</div>`;
+}
+
+function filterRoster() { renderClientRoster(); }
+
+// ---- Client detail modal ----
+function openClientByIndex(i) {
+  const c = trainerClients[i];
+  if (c) openClientDetail(c.user_id);
+}
+async function openClientDetail(clientId) {
+  selectedClientId = clientId;
+  cdCurrentDate = todayKey();
+  document.getElementById('clientDetailModal').classList.add('open');
+  await loadClientDetail();
+}
+function closeClientDetail() {
+  document.getElementById('clientDetailModal').classList.remove('open');
+  selectedClientId = null;
+}
+
+async function loadClientDetail() {
+  const res = await apiRequest(`/trainer/clients/${encodeURIComponent(selectedClientId)}?date=${cdCurrentDate}`);
+  if (!res.ok) {
+    document.getElementById('cdFoodLog').innerHTML = '<p style="color:var(--muted);font-size:13px">Could not load this client.</p>';
+    return;
+  }
+  const data = res.body;
+
+  document.getElementById('cdName').textContent = data.user.name || data.user.id;
+  document.getElementById('cdSub').textContent = data.user.id;
+
+  const isToday = cdCurrentDate === todayKey();
+  document.getElementById('cdDateLabel').textContent = isToday
+    ? 'Today'
+    : new Date(cdCurrentDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  document.getElementById('cdNextBtn').disabled = isToday;
+
+  const t = data.today.totals, g = data.goals;
+  document.getElementById('cdMacroSummary').innerHTML = `
+    <div class="hist-stat"><div class="hs-val" style="color:var(--cal)">${Math.round(t.cal)}</div><div class="hs-label">Cal</div><div class="hs-sub">/ ${g.cal}</div></div>
+    <div class="hist-stat"><div class="hs-val" style="color:var(--protein)">${Math.round(t.protein)}g</div><div class="hs-label">Protein</div><div class="hs-sub">/ ${g.protein}g</div></div>
+    <div class="hist-stat"><div class="hs-val" style="color:var(--carbs)">${Math.round(t.carbs)}g</div><div class="hs-label">Carbs</div><div class="hs-sub">/ ${g.carbs}g</div></div>
+    <div class="hist-stat"><div class="hs-val" style="color:var(--fat)">${Math.round(t.fat)}g</div><div class="hs-label">Fat</div><div class="hs-sub">/ ${g.fat}g</div></div>`;
+
+  document.getElementById('cdFoodLog').innerHTML = data.today.entries.length === 0
+    ? '<p style="color:var(--muted);font-size:13px;padding:8px 0">No entries for this day.</p>'
+    : data.today.entries.map(e => `
+        <div class="log-entry" style="cursor:default;margin-bottom:8px">
+          <div class="entry-thumb">${escapeHtml(displayEmoji(e.name, e.emoji))}</div>
+          <div class="entry-info">
+            <div class="entry-name">${escapeHtml(e.name)}</div>
+            <div class="entry-time">${e.ts ? new Date(e.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''}</div>
+            <div class="entry-macros">
+              <span class="entry-macro" style="color:var(--protein)">P ${Math.round(e.protein)}g</span>
+              <span class="entry-macro" style="color:var(--carbs)">C ${Math.round(e.carbs)}g</span>
+              <span class="entry-macro" style="color:var(--fat)">F ${Math.round(e.fat)}g</span>
+            </div>
+          </div>
+          <div class="entry-cal">${Math.round(e.cal)}<span class="cal-unit">kcal</span></div>
+        </div>`).join('');
+
+  const note = (data.coach_notes || []).find(n => n.date === cdCurrentDate);
+  document.getElementById('cdNoteInput').value = note ? note.note : '';
+
+  const w = data.weight_30d || [];
+  const cv = document.getElementById('cdWeightChart');
+  if (w.length > 0) {
+    const labels = w.map(x => new Date(x.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    const vals = w.map(x => parseFloat(toDisplayWeight(x.val, x.unit).toFixed(1)));
+    drawWeightChart('cdWeightChart', labels, vals, weightUnit);
+  } else if (cv && cv.getContext) {
+    cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
+  }
+
+  renderCdGrocery(data.grocery || {});
+}
+
+function cdChangeDate(delta) {
+  const d = new Date(cdCurrentDate + 'T12:00:00');
+  d.setDate(d.getDate() + delta);
+  const key = dateKey(d);
+  if (key > todayKey()) return;
+  cdCurrentDate = key;
+  loadClientDetail();
+}
+
+async function saveCoachNote() {
+  const ta = document.getElementById('cdNoteInput');
+  const res = await apiRequest('/trainer/notes', {
+    method: 'POST',
+    body: JSON.stringify({ client_id: selectedClientId, date: cdCurrentDate, note: ta.value.trim() })
+  });
+  if (res.ok) { ta.style.borderColor = 'var(--protein)'; setTimeout(() => ta.style.borderColor = '', 1500); }
+}
+
+// ---- Grocery panel in client detail ----
+function renderCdGrocery(grocery) {
+  const all = [
+    ...(grocery.trainer_items || []),
+    ...(grocery.client_items || []),
+    ...(grocery.checked_items || []),
+  ];
+  const quick = CD_QUICK_ITEMS.map((qi, i) =>
+    `<button onclick="cdQuickAdd(${i})" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;padding:6px 10px;cursor:pointer">${escapeHtml(qi.item)}</button>`).join('');
+
+  const row = (item) => `
+    <div class="grocery-item ${item.checked ? 'checked' : ''} ${item.added_by_role === 'trainer' ? 'trainer-item' : ''}">
+      <div class="gi-content">
+        <span class="gi-name">${escapeHtml(item.item)}</span>
+        ${item.note ? `<span class="gi-note">"${escapeHtml(item.note)}"</span>` : ''}
+      </div>
+      <span style="font-size:10px;color:var(--muted);flex-shrink:0">${item.checked ? '✓ done' : (item.added_by_role === 'trainer' ? 'you' : 'client')}</span>
+      ${(item.added_by_role === 'trainer' && !item.checked) ? `<button class="gi-del" onclick="trainerDeleteGrocery(${Number(item.id)})">✕</button>` : ''}
+    </div>`;
+
+  document.getElementById('cdGroceryPanel').innerHTML = `
+    <div style="margin-bottom:10px">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;font-weight:700">Quick add</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${quick}</div>
+    </div>
+    <div class="grocery-add-row" style="margin-bottom:12px">
+      <input type="text" id="cdGroceryInput" placeholder="Custom item…" style="flex:2">
+      <input type="text" id="cdGroceryNote" placeholder="Note…" style="flex:1">
+      <button onclick="trainerCustomAdd()">+</button>
+    </div>
+    ${all.length === 0 ? '<p style="color:var(--muted);font-size:13px">No items yet.</p>' : all.map(row).join('')}`;
+}
+
+async function cdQuickAdd(i) {
+  const qi = CD_QUICK_ITEMS[i];
+  if (qi) await trainerAddGrocery(qi.item, qi.note);
+}
+async function trainerCustomAdd() {
+  const item = (document.getElementById('cdGroceryInput')?.value || '').trim();
+  const note = (document.getElementById('cdGroceryNote')?.value || '').trim();
+  if (!item) return;
+  await trainerAddGrocery(item, note);
+}
+async function trainerAddGrocery(item, note) {
+  await apiRequest('/trainer/grocery', {
+    method: 'POST',
+    body: JSON.stringify({ client_id: selectedClientId, item, note: note || null })
+  });
+  await loadClientDetail();
+}
+async function trainerDeleteGrocery(id) {
+  await apiRequest(`/trainer/grocery/${id}`, { method: 'DELETE' });
+  await loadClientDetail();
+}
+
+// ---- Invite modal ----
+function openInviteModal() {
+  document.getElementById('inviteEmailInput').value = '';
+  document.getElementById('inviteResult').style.display = 'none';
+  const err = document.getElementById('inviteError');
+  err.classList.remove('show'); err.textContent = '';
+  document.getElementById('inviteModal').classList.add('open');
+  loadPendingInvites();
+}
+function closeTrainerModal(id) { document.getElementById(id).classList.remove('open'); }
+
+async function sendInvite() {
+  const email = document.getElementById('inviteEmailInput').value.trim();
+  const err = document.getElementById('inviteError');
+  if (!email || !email.includes('@')) { err.textContent = 'Enter a valid email.'; err.classList.add('show'); return; }
+  const res = await apiRequest('/trainer/invite', { method: 'POST', body: JSON.stringify({ email }) });
+  if (!res.ok) { err.textContent = (res.body && res.body.error) || 'Failed to create invite.'; err.classList.add('show'); return; }
+  err.classList.remove('show');
+  document.getElementById('inviteLink').value = res.body.invite_url;
+  document.getElementById('inviteResult').style.display = 'block';
+  loadPendingInvites();
+}
+
+function copyInviteLink() {
+  const link = document.getElementById('inviteLink').value;
+  if (navigator.clipboard) navigator.clipboard.writeText(link);
+  const btn = document.getElementById('copyBtn');
+  btn.textContent = '✓ Copied';
+  setTimeout(() => btn.textContent = 'Copy', 2000);
+}
+
+async function loadPendingInvites() {
+  const wrap = document.getElementById('pendingInvites');
+  const res = await apiRequest('/trainer/invites');
+  const invites = (res.ok && res.body) || [];
+  if (!invites.length) { wrap.innerHTML = '<p style="font-size:12px;color:var(--muted);margin-top:6px">No pending invites.</p>'; return; }
+  wrap.innerHTML = invites.map(inv => {
+    const exp = inv.expires_at ? new Date(inv.expires_at.replace(' ', 'T') + 'Z') : null;
+    const expLabel = exp ? exp.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+    return `<div class="invite-row"><span class="ir-email">${escapeHtml(inv.email)}</span><span class="ir-exp">exp ${expLabel}</span><button onclick="cancelInvite('${escapeHtml(inv.id)}')" title="Cancel invite">✕</button></div>`;
+  }).join('');
+}
+async function cancelInvite(id) {
+  await apiRequest(`/trainer/invites/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  loadPendingInvites();
+}
+
+// ---- Trainer setup ----
+function openTrainerSetup() {
+  document.getElementById('trainerOrgInput').value = '';
+  const err = document.getElementById('trainerSetupError');
+  err.classList.remove('show'); err.textContent = '';
+  document.getElementById('trainerSetupModal').classList.add('open');
+}
+async function setupTrainer() {
+  const name = document.getElementById('trainerOrgInput').value.trim();
+  const err = document.getElementById('trainerSetupError');
+  if (!name) { err.textContent = 'Enter a name.'; err.classList.add('show'); return; }
+  const res = await apiRequest('/trainer/setup', { method: 'POST', body: JSON.stringify({ org_name: name }) });
+  if (!res.ok) { err.textContent = (res.body && res.body.error) || 'Could not set up coaching profile.'; err.classList.add('show'); return; }
+  closeTrainerModal('trainerSetupModal');
+  document.getElementById('settingsModal').classList.remove('open');
+  await getMe();              // refresh role + org so the tab/header populate
+  applyTrainerVisibility();
+  switchTab('trainer');
+}
+
+// ---- Invite accept screen (shown when ?token= is in the URL) ----
+async function showInviteAcceptScreen(token) {
+  pendingInviteToken = token;
+  const screen = document.getElementById('inviteScreen');
+  screen.classList.add('open');
+  document.getElementById('inviteLoading').style.display = 'block';
+  document.getElementById('inviteValid').style.display = 'none';
+  document.getElementById('inviteExpired').style.display = 'none';
+
+  const res = await apiRequest(`/invite/${encodeURIComponent(token)}`);
+  document.getElementById('inviteLoading').style.display = 'none';
+  if (res.ok && res.body && res.body.valid) {
+    document.getElementById('inviteOrgName').textContent = res.body.org_name || res.body.trainer_name || 'Your trainer';
+    document.getElementById('inviteValid').style.display = 'block';
+  } else {
+    document.getElementById('inviteExpired').style.display = 'block';
+  }
+}
+async function acceptInvite() {
+  const btn = document.getElementById('inviteAcceptBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Joining…'; }
+  const res = await apiRequest(`/invite/${encodeURIComponent(pendingInviteToken)}/accept`, { method: 'POST' });
+  if (res.ok) {
+    location.replace('/');   // reload fresh as a connected client (drops ?token=)
+    return;
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Accept invitation'; }
+  document.getElementById('inviteValid').style.display = 'none';
+  const ex = document.getElementById('inviteExpired');
+  ex.style.display = 'block';
+  ex.innerHTML = `<p>${escapeHtml((res.body && res.body.error) || 'Could not accept this invite.')}</p>`;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+  // Invite deep-link: show the join screen instead of the app.
+  const inviteToken = new URLSearchParams(location.search).get('token');
+  if (inviteToken) { showInviteAcceptScreen(inviteToken); return; }
+
   setDateDisplay();
   applyTheme();
   await getMe();
   applyAdminVisibility();
+  applyTrainerVisibility();
   await loadGoals();
   await loadTodayLog();
   await loadWater();

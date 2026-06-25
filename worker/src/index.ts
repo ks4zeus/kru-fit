@@ -189,6 +189,27 @@ async function mePayload(db: D1Database, env: Env, userEmail: string) {
   return { email: userEmail, name: name || null, role, admin: isAdmin(userEmail, env), trainer, org };
 }
 
+// The org id this trainer owns, or null. (Trainer ⇒ owns an org; see /trainer/setup.)
+async function ownedOrgId(db: D1Database, userEmail: string): Promise<string | null> {
+  const o = await db
+    .prepare("SELECT id FROM organizations WHERE owner_id = ?")
+    .bind(userEmail)
+    .first<{ id: string }>();
+  return o?.id ?? null;
+}
+
+// True if clientId is an active client of orgId — the per-request IDOR guard for
+// every trainer route that takes a client_id.
+async function clientInOrg(db: D1Database, orgId: string, clientId: string): Promise<boolean> {
+  const m = await db
+    .prepare(
+      "SELECT 1 FROM memberships WHERE org_id = ? AND user_id = ? AND role = 'client' AND status = 'active'"
+    )
+    .bind(orgId, clientId)
+    .first();
+  return !!m;
+}
+
 // Anthropic per-model pricing, USD per 1M tokens (input, output).
 const AI_PRICING: Record<string, { in: number; out: number }> = {
   "claude-sonnet-4-6": { in: 3.0, out: 15.0 },
@@ -1131,9 +1152,181 @@ export default {
           carbs: r.goal_carbs ?? 150,
           fat: r.goal_fat ?? 60,
         },
+        // Placeholder until the roster query also surfaces latest weight + trend.
+        weight: null,
       }));
 
       return jsonResponse(clients);
+    }
+
+    // ---- Trainer: full client detail for one day (?date=YYYY-MM-DD) ----
+    if (
+      segments[1] === "trainer" && segments[2] === "clients" &&
+      segments.length === 4 && request.method === "GET"
+    ) {
+      const orgId = await ownedOrgId(db, userEmail);
+      if (!orgId) return jsonResponse({ error: "Not a trainer" }, 403);
+      const clientId = decodeURIComponent(segments[3]);
+      if (!(await clientInOrg(db, orgId, clientId))) {
+        return jsonResponse({ error: "Client not in your roster" }, 403);
+      }
+
+      const date = (url.searchParams.get("date") || new Date().toISOString().slice(0, 10)).slice(0, 10);
+
+      const user = await db
+        .prepare("SELECT id, name FROM users WHERE id = ?")
+        .bind(clientId)
+        .first<{ id: string; name: string | null }>();
+
+      const goalsRow = await db
+        .prepare("SELECT cal, protein, carbs, fat, fiber, water_oz FROM goals WHERE user_id = ?")
+        .bind(clientId)
+        .first<any>();
+      const goals = goalsRow || { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, water_oz: 64 };
+
+      const entries = ((await db
+        .prepare(
+          "SELECT id, name, emoji, cal, protein, carbs, fat, fiber, serving, source, ts FROM food_log WHERE user_id = ? AND date = ? ORDER BY ts ASC, id ASC"
+        )
+        .bind(clientId, date)
+        .all()).results || []) as any[];
+      const totals = entries.reduce(
+        (t, e) => ({
+          cal: t.cal + (e.cal || 0),
+          protein: t.protein + (e.protein || 0),
+          carbs: t.carbs + (e.carbs || 0),
+          fat: t.fat + (e.fat || 0),
+        }),
+        { cal: 0, protein: 0, carbs: 0, fat: 0 }
+      );
+
+      const log7d = ((await db
+        .prepare(
+          `SELECT date, SUM(cal) AS cal, SUM(protein) AS protein, SUM(carbs) AS carbs, SUM(fat) AS fat
+           FROM food_log WHERE user_id = ? AND date >= date(?, '-6 days') AND date <= ?
+           GROUP BY date ORDER BY date ASC`
+        )
+        .bind(clientId, date, date)
+        .all()).results || []) as any[];
+
+      const weight30d = (((await db
+        .prepare("SELECT date, val, unit FROM weight_log WHERE user_id = ? ORDER BY date DESC LIMIT 30")
+        .bind(clientId)
+        .all()).results || []) as any[]).reverse();
+
+      const coachNotes = ((await db
+        .prepare("SELECT id, date, note, created_at FROM coach_notes WHERE org_id = ? AND client_id = ? ORDER BY date DESC")
+        .bind(orgId, clientId)
+        .all()).results || []) as any[];
+
+      const groceryRows = ((await db
+        .prepare("SELECT id, item, note, added_by_role, checked, checked_at FROM grocery_list WHERE client_id = ? ORDER BY created_at ASC")
+        .bind(clientId)
+        .all()).results || []) as any[];
+      const grocery = {
+        trainer_items: groceryRows.filter((g) => !g.checked && g.added_by_role === "trainer"),
+        client_items: groceryRows.filter((g) => !g.checked && g.added_by_role === "client"),
+        checked_items: groceryRows.filter((g) => g.checked),
+      };
+
+      return jsonResponse({
+        user: { id: user?.id || clientId, name: user?.name || null },
+        goals,
+        today: { entries, totals },
+        log_7d: log7d,
+        weight_30d: weight30d,
+        coach_notes: coachNotes,
+        grocery,
+      });
+    }
+
+    // ---- Trainer: upsert a coach note (empty note clears it) ----
+    if (segments[1] === "trainer" && segments[2] === "notes" && segments.length === 3 && request.method === "POST") {
+      const orgId = await ownedOrgId(db, userEmail);
+      if (!orgId) return jsonResponse({ error: "Not a trainer" }, 403);
+      const body = await parseJson(request);
+      const clientId = (body?.client_id ?? "").toString().trim();
+      const date = (body?.date ?? "").toString().trim().slice(0, 10);
+      const note = (body?.note ?? "").toString().trim().slice(0, 2000);
+      if (!clientId || !date) return jsonResponse({ error: "client_id and date required" }, 400);
+      if (!(await clientInOrg(db, orgId, clientId))) return jsonResponse({ error: "Client not in your roster" }, 403);
+
+      if (!note) {
+        await db
+          .prepare("DELETE FROM coach_notes WHERE org_id = ? AND client_id = ? AND date = ?")
+          .bind(orgId, clientId, date)
+          .run();
+        return jsonResponse({ ok: true, cleared: true });
+      }
+      await db
+        .prepare(
+          `INSERT INTO coach_notes (org_id, client_id, trainer_id, date, note)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(client_id, date, org_id) DO UPDATE SET
+             note = excluded.note, trainer_id = excluded.trainer_id, updated_at = datetime('now')`
+        )
+        .bind(orgId, clientId, userEmail, date, note)
+        .run();
+      return jsonResponse({ ok: true });
+    }
+
+    // ---- Trainer: add a grocery suggestion for a client ----
+    if (segments[1] === "trainer" && segments[2] === "grocery" && segments.length === 3 && request.method === "POST") {
+      const orgId = await ownedOrgId(db, userEmail);
+      if (!orgId) return jsonResponse({ error: "Not a trainer" }, 403);
+      const body = await parseJson(request);
+      const clientId = (body?.client_id ?? "").toString().trim();
+      const item = (body?.item ?? "").toString().trim().slice(0, 120);
+      const note = body?.note ? body.note.toString().trim().slice(0, 200) : null;
+      if (!clientId || !item) return jsonResponse({ error: "client_id and item required" }, 400);
+      if (!(await clientInOrg(db, orgId, clientId))) return jsonResponse({ error: "Client not in your roster" }, 403);
+      await db
+        .prepare(
+          `INSERT INTO grocery_list (org_id, client_id, added_by, added_by_role, item, note)
+           VALUES (?, ?, ?, 'trainer', ?, ?)`
+        )
+        .bind(orgId, clientId, userEmail, item, note)
+        .run();
+      return jsonResponse({ ok: true });
+    }
+
+    // ---- Trainer: remove a grocery item (only their own suggestions) ----
+    if (segments[1] === "trainer" && segments[2] === "grocery" && segments.length === 4 && request.method === "DELETE") {
+      const orgId = await ownedOrgId(db, userEmail);
+      if (!orgId) return jsonResponse({ error: "Not a trainer" }, 403);
+      const id = Number(segments[3]);
+      if (!Number.isFinite(id)) return jsonResponse({ error: "Invalid id" }, 400);
+      await db
+        .prepare("DELETE FROM grocery_list WHERE id = ? AND org_id = ? AND added_by_role = 'trainer'")
+        .bind(id, orgId)
+        .run();
+      return jsonResponse({ ok: true });
+    }
+
+    // ---- Trainer: list pending invites ----
+    if (segments[1] === "trainer" && segments[2] === "invites" && segments.length === 3 && request.method === "GET") {
+      const orgId = await ownedOrgId(db, userEmail);
+      if (!orgId) return jsonResponse({ error: "Not a trainer" }, 403);
+      const rows = ((await db
+        .prepare(
+          `SELECT id, email, status, created_at, expires_at FROM invites
+           WHERE org_id = ? AND status = 'pending' AND expires_at > datetime('now')
+           ORDER BY created_at DESC`
+        )
+        .bind(orgId)
+        .all()).results || []) as any[];
+      return jsonResponse(rows);
+    }
+
+    // ---- Trainer: cancel a pending invite ----
+    if (segments[1] === "trainer" && segments[2] === "invites" && segments.length === 4 && request.method === "DELETE") {
+      const orgId = await ownedOrgId(db, userEmail);
+      if (!orgId) return jsonResponse({ error: "Not a trainer" }, 403);
+      await db
+        .prepare("DELETE FROM invites WHERE id = ? AND org_id = ?")
+        .bind(segments[3], orgId)
+        .run();
+      return jsonResponse({ ok: true });
     }
 
     return jsonResponse({ error: "Not found" }, 404);
