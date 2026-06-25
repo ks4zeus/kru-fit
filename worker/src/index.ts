@@ -254,9 +254,13 @@ const NUTRITION_SYSTEM_PROMPT = `You are a nutrition analysis assistant. Given a
   "carbs_g": number,
   "fiber_g": number,
   "fat_g": number,
+  "serving_qty": number,
+  "serving_unit": "one of: g, oz, lb, ml, cup, tbsp, tsp, fl oz, each",
+  "serving_grams": number,
   "serving_note": "brief note about the serving size assumed",
   "confidence": "high|medium|low"
 }
+Express the serving as serving_qty + serving_unit using ONLY one of these units: g, oz, lb, ml, cup, tbsp, tsp, fl oz, each. Pick the unit a person would most naturally use for this food (use "each" for countable items like an egg or a banana). ALWAYS also provide serving_grams = your best estimate of the total weight of that serving in grams (the macros above are for exactly this serving) — this lets the app convert between units. The macros, serving_qty/serving_unit, and serving_grams must all describe the SAME single serving.
 Be realistic with estimates. If multiple items are present, estimate the total. If you cannot identify the food, set name to "Unknown food" with zeroes and confidence "low".`;
 
 const COACH_SYSTEM_PROMPT = `You are a practical, encouraging nutrition and fitness coach. You receive a JSON summary of someone's recent eating: their daily averages, their goals, and their most-eaten foods. The summary may include the person's "name" — if it's present, address them by it warmly (e.g., open the headline with it); if it's absent, don't invent one. The summary may also include an optional "exercise" block (workouts, active days, calories burned, top activities) — when it is present, factor their activity into your assessment (acknowledge consistency, consider overall energy balance, and reference it where relevant in wins/issues); when it is absent, do not mention exercise at all.
@@ -496,8 +500,8 @@ export default {
 
         const inserted = await db
           .prepare(
-            `INSERT INTO food_log (user_id, date, name, emoji, cal, protein, carbs, fat, fiber, source, serving, ts)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO food_log (user_id, date, name, emoji, cal, protein, carbs, fat, fiber, source, serving, serving_grams, ts)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             userEmail,
@@ -511,6 +515,7 @@ export default {
             body.fiber ?? 0,
             body.source || null,
             body.serving || null,
+            body.serving_grams ?? null,
             body.ts ?? null
           )
           .run();
@@ -529,7 +534,7 @@ export default {
         }
         await db
           .prepare(
-            `UPDATE food_log SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, serving = ?
+            `UPDATE food_log SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, serving = ?, serving_grams = ?
              WHERE id = ? AND user_id = ?`
           )
           .bind(
@@ -541,6 +546,7 @@ export default {
             body.fat ?? 0,
             body.fiber ?? 0,
             body.serving ?? null,
+            body.serving_grams ?? null,
             id,
             userEmail
           )

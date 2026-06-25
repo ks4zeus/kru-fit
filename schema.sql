@@ -18,7 +18,8 @@ CREATE TABLE food_log (
   fat REAL DEFAULT 0,
   fiber REAL DEFAULT 0,
   source TEXT,
-  serving TEXT,              -- editable serving/portion descriptor
+  serving TEXT,              -- editable serving: quantity + standard unit (e.g. "1 cup")
+  serving_grams REAL,        -- gram weight of the serving (conversion anchor; null if unknown)
   ts INTEGER,
   created_at TEXT DEFAULT (datetime('now'))
 );
@@ -53,6 +54,7 @@ CREATE TABLE custom_foods (
   fat REAL DEFAULT 0,
   fiber REAL DEFAULT 0,
   serving TEXT,
+  serving_grams REAL,         -- gram weight of one serving (conversion anchor)
   ingredients TEXT,           -- freeform ingredient text (AI-estimated portion of a recipe)
   recipe_items TEXT,          -- JSON array of scanned/structured ingredients (per-100g base + amount/unit)
   servings REAL DEFAULT 1,    -- yield (number of servings the recipe makes)

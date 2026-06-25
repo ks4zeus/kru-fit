@@ -2107,13 +2107,13 @@
         <label>Serving size</label>
         <div style="display:flex;gap:8px">
           <input type="number" id="eeServingQty" inputmode="decimal" step="0.25" min="0" placeholder="1" oninput="onEditServingInput()" style="flex:0 0 90px">
-          <input type="text" id="eeServingUnit" list="servingUnits" placeholder="cup, oz, g, serving…" style="flex:1" oninput="onEditServingInput()">
+          <select id="eeServingUnit" onchange="onEditServingInput()" style="flex:1">
+            <option value="g">g</option><option value="oz">oz</option><option value="lb">lb</option>
+            <option value="ml">ml</option><option value="cup">cup</option><option value="tbsp">tbsp</option>
+            <option value="tsp">tsp</option><option value="fl oz">fl oz</option><option value="each">each</option>
+          </select>
         </div>
-        <datalist id="servingUnits">
-          <option value="serving"></option><option value="oz"></option><option value="g"></option>
-          <option value="cup"></option><option value="ml"></option><option value="tbsp"></option>
-          <option value="tsp"></option><option value="slice"></option><option value="piece"></option><option value="scoop"></option>
-        </datalist>
+        <div class="serving-hint" id="eeServingHint"></div>
       </div>
       <div class="form-field full" id="eeAiRecalc" style="display:none">
         <button type="button" class="ee-ai-btn" id="eeAiBtn" onclick="aiRecalcServing()">✨ Recalc with AI</button>
@@ -2857,7 +2857,8 @@ function parseServingQty(str) {
   return (m[1] ? parseFloat(m[1]) : 0) + (m[2] ? frac[m[2]] : 0);
 }
 
-let editEntryBase = null;   // macros + serving qty/unit captured when the edit modal opened
+let editEntryBase = null;   // macros + serving qty/unit/grams captured when the edit modal opened
+let editEntryCurrentGrams = null;   // grams of the serving currently shown (persisted on save)
 
 // Convertible units → [dimension, factor to a base unit] (grams for mass, ml for volume).
 // Cross-dimension changes (e.g. oz↔cup) need a food density we don't have, so they don't convert.
@@ -2869,9 +2870,57 @@ const UNIT_CONV = {
   cup: ['vol', 240], cups: ['vol', 240],
   tbsp: ['vol', 14.7868], tablespoon: ['vol', 14.7868], tablespoons: ['vol', 14.7868],
   tsp: ['vol', 4.92892], teaspoon: ['vol', 4.92892], teaspoons: ['vol', 4.92892],
-  'fl oz': ['vol', 29.5735], floz: ['vol', 29.5735], pint: ['vol', 473.176], quart: ['vol', 946.353]
+  'fl oz': ['vol', 29.5735], floz: ['vol', 29.5735], pint: ['vol', 473.176], quart: ['vol', 946.353],
+  each: ['count', 1], ea: ['count', 1]
 };
 function unitInfo(u) { return UNIT_CONV[(u || '').trim().toLowerCase()] || null; }
+
+// The standard units offered in serving pickers (no freeform / descriptive units).
+const SERVING_UNITS = ['g', 'oz', 'lb', 'ml', 'cup', 'tbsp', 'tsp', 'fl oz', 'each'];
+
+// Map any unit string to one of SERVING_UNITS; unknown/descriptive units (bowl,
+// plate, serving, portion…) normalize to 'each'.
+const UNIT_CANON = {
+  g: 'g', gram: 'g', grams: 'g',
+  oz: 'oz', ounce: 'oz', ounces: 'oz',
+  lb: 'lb', lbs: 'lb', pound: 'lb', pounds: 'lb',
+  ml: 'ml', milliliter: 'ml', milliliters: 'ml',
+  cup: 'cup', cups: 'cup',
+  tbsp: 'tbsp', tablespoon: 'tbsp', tablespoons: 'tbsp',
+  tsp: 'tsp', teaspoon: 'tsp', teaspoons: 'tsp',
+  'fl oz': 'fl oz', floz: 'fl oz',
+  each: 'each', ea: 'each'
+};
+function canonUnit(u) { return UNIT_CANON[(u || '').trim().toLowerCase()] || 'each'; }
+function fmtQty(n) { return parseFloat((Number(n) || 0).toFixed(2)); }
+
+// Grams in (qty, unit) for THIS food, using the entry's reference serving as the
+// density/weight anchor. Mass units are universal; volume/count need the anchor.
+// Returns null when it can't be determined.
+function servingToGrams(qty, unit, ref) {
+  if (!(qty > 0)) return null;
+  const info = unitInfo(unit);
+  if (!info) return null;
+  const [dim, factor] = info;
+  if (dim === 'mass') return qty * factor;            // g/oz/lb → grams (fixed)
+  if (!ref || !(ref.grams > 0) || !(ref.qty > 0)) return null;
+  const refInfo = unitInfo(ref.unit);
+  if (!refInfo || refInfo[0] !== dim) return null;    // anchor must be the same dimension
+  const gramsPerBase = ref.grams / (ref.qty * refInfo[1]);
+  return qty * factor * gramsPerBase;
+}
+
+// Scale factor from the reference serving to (newQty, newUnit). Same family →
+// exact ratio (no anchor needed). Cross-family → via grams (needs the anchor).
+function rescaleFactor(ref, newQty, newUnit) {
+  if (!ref || !(newQty > 0) || !(ref.qty > 0)) return null;
+  const ru = unitInfo(ref.unit), nu = unitInfo(newUnit);
+  if (ru && nu && ru[0] === nu[0]) return (newQty * nu[1]) / (ref.qty * ru[1]);
+  if ((ref.unit || '').trim().toLowerCase() === (newUnit || '').trim().toLowerCase()) return newQty / ref.qty;
+  const newG = servingToGrams(newQty, newUnit, ref);
+  if (newG != null && ref.grams > 0) return newG / ref.grams;
+  return null;
+}
 
 // Scale factor between two servings. Same convertible family → real conversion;
 // same unit string → quantity ratio; otherwise null (can't know).
@@ -2883,25 +2932,32 @@ function servingFactor(baseQty, baseUnit, newQty, newUnit) {
   return null;
 }
 
-// When the serving's quantity or unit changes, rescale the macro fields.
-// If we can't convert locally (e.g. oz→cup), offer an AI recalc instead.
+// When the serving's quantity or unit changes, rescale the macros by pure math
+// using the food's gram anchor. Only falls back to AI when there's no anchor and
+// the change crosses unit families (e.g. an old entry logged as a freeform unit).
 function onEditServingInput() {
   if (!editEntryBase) return;
   const newQty = parseFloat(document.getElementById('eeServingQty').value);
   const newUnit = document.getElementById('eeServingUnit').value;
-  const f = servingFactor(editEntryBase.qty, editEntryBase.unit, newQty, newUnit);
+  const f = rescaleFactor(editEntryBase, newQty, newUnit);
   const box = document.getElementById('eeAiRecalc');
+  const hint = document.getElementById('eeServingHint');
   if (f != null) {
     document.getElementById('eeCal').value = Math.round(editEntryBase.cal * f);
     document.getElementById('eeProtein').value = Math.round(editEntryBase.protein * f);
     document.getElementById('eeCarbs').value = Math.round(editEntryBase.carbs * f);
     document.getElementById('eeFiber').value = Math.round(editEntryBase.fiber * f);
     document.getElementById('eeFat').value = Math.round(editEntryBase.fat * f);
+    const g = editEntryBase.grams > 0 ? editEntryBase.grams * f : servingToGrams(newQty, newUnit, editEntryBase);
+    editEntryCurrentGrams = g > 0 ? Math.round(g) : null;
+    if (hint) hint.textContent = editEntryCurrentGrams ? `≈ ${editEntryCurrentGrams} g` : '';
     box.style.display = 'none';
     return;
   }
-  // No local conversion — offer AI if there's a name and a target serving.
-  const hasTarget = (newQty > 0 || newUnit.trim()) && document.getElementById('eeName').value.trim();
+  editEntryCurrentGrams = null;
+  if (hint) hint.textContent = '';
+  // No math path (old entry with no gram anchor + cross-family change) — offer AI.
+  const hasTarget = (newQty > 0 || newUnit) && document.getElementById('eeName').value.trim();
   document.getElementById('eeAiMsg').textContent = '';
   box.style.display = hasTarget ? 'flex' : 'none';
 }
@@ -2931,12 +2987,17 @@ async function aiRecalcServing() {
   document.getElementById('eeCarbs').value = Math.round(r.carbs_g || 0);
   document.getElementById('eeFiber').value = Math.round(r.fiber_g || 0);
   document.getElementById('eeFat').value = Math.round(r.fat_g || 0);
-  // Re-baseline so further same-family tweaks scale from the AI result.
+  // Re-baseline so further tweaks scale from the AI result — and capture the gram
+  // anchor the AI returned so future conversions are pure math.
+  const aiGrams = (r.serving_grams > 0) ? Math.round(r.serving_grams) : servingToGrams(parseFloat(qty) || 1, canonUnit(unit), null);
   editEntryBase = {
-    qty: parseServingQty(`${qty} ${unit}`), unit,
+    qty: parseFloat(qty) || 1, unit: canonUnit(unit), grams: aiGrams || null,
     cal: Math.round(r.calories || 0), protein: Math.round(r.protein_g || 0),
     carbs: Math.round(r.carbs_g || 0), fiber: Math.round(r.fiber_g || 0), fat: Math.round(r.fat_g || 0)
   };
+  editEntryCurrentGrams = aiGrams || null;
+  const hint = document.getElementById('eeServingHint');
+  if (hint) hint.textContent = editEntryCurrentGrams ? `≈ ${editEntryCurrentGrams} g` : '';
   msg.textContent = `✓ ${Math.round(r.calories || 0)} cal`;
   document.getElementById('eeAiRecalc').style.display = 'flex';
 }
@@ -2952,14 +3013,22 @@ function openEditEntry(index) {
   document.getElementById('eeCarbs').value = Math.round(e.carbs || 0);
   document.getElementById('eeFiber').value = Math.round(e.fiber || 0);
   document.getElementById('eeFat').value = Math.round(e.fat || 0);
-  const sQty = parseServingQty(e.serving);
-  const sUnit = (e.serving || '').replace(/^(\d+(?:\.\d+)?)?\s*[½¼¾⅓⅔⅛]?\s*/, '').trim();
-  document.getElementById('eeServingQty').value = isNaN(sQty) ? '' : sQty;
+  const rawQty = parseServingQty(e.serving);
+  const sQty = isNaN(rawQty) || rawQty <= 0 ? 1 : rawQty;
+  const rawUnit = (e.serving || '').replace(/^(\d+(?:\.\d+)?)?\s*[½¼¾⅓⅔⅛]?\s*/, '').trim();
+  const sUnit = canonUnit(rawUnit);   // normalize freeform units (bowl/plate/serving) to 'each'
+  document.getElementById('eeServingQty').value = sQty;
   document.getElementById('eeServingUnit').value = sUnit;
+  // Gram anchor: stored value, else derive from a mass unit.
+  let refGrams = (e.serving_grams > 0) ? e.serving_grams : null;
+  if (refGrams == null) { const ci = unitInfo(sUnit); if (ci && ci[0] === 'mass') refGrams = sQty * ci[1]; }
   editEntryBase = {
-    qty: sQty, unit: sUnit,
+    qty: sQty, unit: sUnit, grams: refGrams,
     cal: e.cal || 0, protein: e.protein || 0, carbs: e.carbs || 0, fiber: e.fiber || 0, fat: e.fat || 0
   };
+  editEntryCurrentGrams = refGrams;
+  const eeHint = document.getElementById('eeServingHint');
+  if (eeHint) eeHint.textContent = refGrams ? `≈ ${Math.round(refGrams)} g` : '';
   document.getElementById('eeAiRecalc').style.display = 'none';
   document.getElementById('eeAiMsg').textContent = '';
   document.getElementById('eeError').classList.remove('show');
@@ -2992,13 +3061,14 @@ async function saveEntryEdit() {
   const sQty = document.getElementById('eeServingQty').value.trim();
   const sUnit = document.getElementById('eeServingUnit').value.trim();
   e.serving = `${sQty}${sQty && sUnit ? ' ' : ''}${sUnit}`.trim() || null;
+  e.serving_grams = editEntryCurrentGrams || null;
   saveLog();
   renderLog();
   updateTotals();
   if (e.id && currentUser) {
     await apiRequest(`/food/${e.id}`, {
       method: 'PUT',
-      body: JSON.stringify({ name: e.name, emoji: e.emoji, cal: e.cal, protein: e.protein, carbs: e.carbs, fat: e.fat, fiber: e.fiber, serving: e.serving })
+      body: JSON.stringify({ name: e.name, emoji: e.emoji, cal: e.cal, protein: e.protein, carbs: e.carbs, fat: e.fat, fiber: e.fiber, serving: e.serving, serving_grams: e.serving_grams })
     });
   }
   closeEditEntry();
@@ -3385,7 +3455,8 @@ async function addPhotoEntry() {
     fiber: (photoResult.fiber_g || 0) * p,
     fat: (photoResult.fat_g || 0) * p,
     source: p === 1 ? 'AI photo analysis' : `AI photo · ${fmtPortion(p)} portion`,
-    serving: p === 1 ? (photoResult.serving_note || '1 portion') : `${fmtPortion(p)} portion`,
+    serving: `${fmtQty((photoResult.serving_qty > 0 ? photoResult.serving_qty : 1) * p)} ${canonUnit(photoResult.serving_unit)}`,
+    serving_grams: (photoResult.serving_grams > 0) ? Math.round(photoResult.serving_grams * p) : null,
     ts: Date.now(),
     date: todayKey()
   };
@@ -3705,6 +3776,7 @@ async function addBarcodeEntry() {
     fat: bcBaseNutrition.fat * f,
     source: `Barcode · ${amount} ${unitLabel} (${Math.round(grams)} g)`,
     serving: `${amount} ${unitLabel} (${Math.round(grams)} g)`,
+    serving_grams: grams > 0 ? Math.round(grams) : null,
     ts: Date.now(),
     date: todayKey()
   };
