@@ -262,6 +262,7 @@ const NUTRITION_SYSTEM_PROMPT = `You are a nutrition analysis assistant. Given a
   "confidence": "high|medium|low"
 }
 Express the serving as serving_qty + serving_unit using ONLY one of these units: g, oz, lb, ml, cup, tbsp, tsp, fl oz, each. Pick the unit a person would most naturally use for this food (use "each" for countable items like an egg or a banana). ALWAYS also provide serving_grams = your best estimate of the total weight of that serving in grams (the macros above are for exactly this serving) — this lets the app convert between units. The macros, serving_qty/serving_unit, and serving_grams must all describe the SAME single serving.
+"sugar_g" is ADDED sugars ONLY — sugars added during processing or preparation (table sugar, brown sugar, syrups, honey, agave, concentrated or added fruit juice). EXCLUDE naturally-occurring sugars from whole fruit, vegetables, and plain unsweetened milk or yogurt. Examples: a plain apple, plain milk, or plain yogurt → sugar_g ≈ 0; soda, candy, or a cookie → sugar_g is essentially all of its sugar; sweetened or fruit-flavored yogurt → count only the added portion.
 Be realistic with estimates. If multiple items are present, estimate the total. If you cannot identify the food, set name to "Unknown food" with zeroes and confidence "low".`;
 
 // Appended to the nutrition prompt for single custom-food estimation so the model

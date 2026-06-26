@@ -1595,7 +1595,7 @@
           <span class="macro-val" id="fiberVal">0 / 30g</span>
         </div>
         <div class="macro-row">
-          <span class="macro-name">Sugar</span>
+          <span class="macro-name">Added</span>
           <div class="bar-track"><div class="bar-fill" id="sugarBar" style="width:0%;background:var(--sugar)"></div></div>
           <span class="macro-val" id="sugarVal">0 / 50g</span>
         </div>
@@ -1620,7 +1620,7 @@
     </div>
     <div class="macro-card">
       <div class="mc-val" id="mcSugar" style="color:var(--sugar)">0g</div>
-      <div class="mc-label">Sugar</div>
+      <div class="mc-label">Added</div>
       <div class="mc-goal" id="mcSugarGoal">/ 50g</div>
     </div>
   </div>
@@ -1951,7 +1951,7 @@
         <input type="number" id="cfFiber" placeholder="0" inputmode="decimal">
       </div>
       <div class="form-field">
-        <label>Sugar (g)</label>
+        <label>Added sugar (g)</label>
         <input type="number" id="cfSugar" placeholder="0" inputmode="decimal">
       </div>
       <div class="form-field">
@@ -2129,7 +2129,7 @@
         <input type="number" id="eeFiber" inputmode="decimal">
       </div>
       <div class="form-field">
-        <label>Sugar (g)</label>
+        <label>Added sugar (g)</label>
         <input type="number" id="eeSugar" inputmode="decimal">
       </div>
       <div class="form-field">
@@ -2315,7 +2315,7 @@
         <input type="number" id="goalFiber" value="30">
       </div>
       <div class="setting-row">
-        <label><span class="dot" style="background:var(--sugar)"></span>Sugar (g)</label>
+        <label><span class="dot" style="background:var(--sugar)"></span>Added sugar (g)</label>
         <input type="number" id="goalSugar" value="50">
       </div>
     </div>
@@ -3750,7 +3750,8 @@ async function lookupBarcode(code) {
       protein: num(n['proteins_100g']),
       carbs: num(n['carbohydrates_100g']),
       fiber: num(n['fiber_100g']),
-      sugar: num(n['sugars_100g']),
+      // Added sugars only (sparse in OFF — mostly US products); 0 when not provided.
+      sugar: num(n['added-sugars_100g']) || num(n['added_sugars_100g']),
       fat: num(n['fat_100g'])
     };
 
@@ -3771,7 +3772,7 @@ async function lookupBarcode(code) {
         protein: num(n['proteins_serving']) * f,
         carbs: num(n['carbohydrates_serving']) * f,
         fiber: num(n['fiber_serving']) * f,
-        sugar: num(n['sugars_serving']) * f,
+        sugar: (num(n['added-sugars_serving']) || num(n['added_sugars_serving'])) * f,
         fat: num(n['fat_serving']) * f
       };
     }
@@ -5868,7 +5869,7 @@ async function renderAnalysis() {
     section('🥗 Lowest Calorie', byLowCal, f=>f.cal, '#34d399', '') +
     section('🧈 Highest Fat', byFat, f=>f.fat, 'var(--fat)', 'g') +
     (byFiber.length ? section('🌾 Highest Fiber', byFiber, f=>f.fiber, '#fb923c', 'g') : '') +
-    (bySugar.length ? section('🍬 Highest Sugar', bySugar, f=>f.sugar, 'var(--sugar)', 'g') : '') +
+    (bySugar.length ? section('🍬 Highest Added Sugar', bySugar, f=>f.sugar, 'var(--sugar)', 'g') : '') +
     `<div class="analysis-section"><h3>🔁 Most Logged</h3>${byCount.slice(0,5).map(f => `
       <div class="analysis-bar-row">
         <span class="ab-name">${f.emoji} ${f.name}</span>
@@ -6388,7 +6389,7 @@ async function loadClientDetail() {
     <div class="hist-stat"><div class="hs-val" style="color:var(--protein)">${Math.round(t.protein)}g</div><div class="hs-label">Protein</div><div class="hs-sub">/ ${g.protein}g</div></div>
     <div class="hist-stat"><div class="hs-val" style="color:var(--carbs)">${Math.round(t.carbs)}g</div><div class="hs-label">Carbs</div><div class="hs-sub">/ ${g.carbs}g</div></div>
     <div class="hist-stat"><div class="hs-val" style="color:var(--fat)">${Math.round(t.fat)}g</div><div class="hs-label">Fat</div><div class="hs-sub">/ ${g.fat}g</div></div>
-    <div class="hist-stat"><div class="hs-val" style="color:var(--sugar)">${Math.round(t.sugar || 0)}g</div><div class="hs-label">Sugar</div><div class="hs-sub">/ ${g.sugar || 50}g</div></div>`;
+    <div class="hist-stat"><div class="hs-val" style="color:var(--sugar)">${Math.round(t.sugar || 0)}g</div><div class="hs-label">Added</div><div class="hs-sub">/ ${g.sugar || 50}g</div></div>`;
 
   document.getElementById('cdFoodLog').innerHTML = data.today.entries.length === 0
     ? '<p style="color:var(--muted);font-size:13px;padding:8px 0">No entries for this day.</p>'
