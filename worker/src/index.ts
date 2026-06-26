@@ -264,6 +264,11 @@ const NUTRITION_SYSTEM_PROMPT = `You are a nutrition analysis assistant. Given a
 Express the serving as serving_qty + serving_unit using ONLY one of these units: g, oz, lb, ml, cup, tbsp, tsp, fl oz, each. Pick the unit a person would most naturally use for this food (use "each" for countable items like an egg or a banana). ALWAYS also provide serving_grams = your best estimate of the total weight of that serving in grams (the macros above are for exactly this serving) — this lets the app convert between units. The macros, serving_qty/serving_unit, and serving_grams must all describe the SAME single serving.
 Be realistic with estimates. If multiple items are present, estimate the total. If you cannot identify the food, set name to "Unknown food" with zeroes and confidence "low".`;
 
+// Appended to the nutrition prompt for single custom-food estimation so the model
+// assumes a sensible standard portion (and reports it) rather than a vague amount.
+const SERVING_DEFAULTS_GUIDANCE = `
+Estimate nutrition for ONE standard single serving as typically consumed. For condiments, sauces, and fermented foods (sauerkraut, kimchi, hot sauce, ketchup, mustard, relish) use 2 tablespoons or ¼ cup as the default serving. For whole foods (apple, banana, egg) use one piece. For grains and legumes use ½ cup cooked. For meat and fish use 100g. Always state the serving size assumed in serving_unit and serving_qty fields.`;
+
 const COACH_SYSTEM_PROMPT = `You are a practical, encouraging nutrition and fitness coach. You receive a JSON summary of someone's recent eating: their daily averages, their goals, and their most-eaten foods. The summary may include the person's "name" — if it's present, address them by it warmly (e.g., open the headline with it); if it's absent, don't invent one. The summary may also include an optional "exercise" block (workouts, active days, calories burned, top activities) — when it is present, factor their activity into your assessment (acknowledge consistency, consider overall energy balance, and reference it where relevant in wins/issues); when it is absent, do not mention exercise at all.
 
 The summary includes the person's "objective" — one of "lose" (lose weight), "maintain", or "gain" (gain muscle). Contextualize ALL advice to it:
@@ -394,7 +399,7 @@ export default {
         body: JSON.stringify({
           model,
           max_tokens: 1000,
-          system: NUTRITION_SYSTEM_PROMPT,
+          system: NUTRITION_SYSTEM_PROMPT + (body?.serving_defaults ? SERVING_DEFAULTS_GUIDANCE : ""),
           messages: [{ role: "user", content }],
         }),
       });

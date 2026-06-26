@@ -756,6 +756,9 @@
     margin-bottom: 10px;
     min-height: 14px;
   }
+  .cf-estimated { margin: 0 0 12px; background: rgba(96,165,250,0.1); border: 1px solid rgba(96,165,250,0.35); border-radius: 10px; padding: 10px 12px; font-size: 13px; color: var(--text); }
+  .cf-estimated strong { color: #60a5fa; }
+  .cf-estimated .cf-estimated-note { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
   .portion-presets { display: flex; gap: 6px; margin-bottom: 8px; }
   .portion-presets button {
     flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
@@ -1918,6 +1921,10 @@
       </div>
       <div class="we-feedback" id="cfAiFeedback" style="color:#60a5fa"></div>
     </div>
+    <div class="cf-estimated" id="cfEstimatedFor" style="display:none">
+      <span>📐 Estimated for: <strong class="cef-val"></strong></span>
+      <span class="cf-estimated-note">These macros are for this portion — adjust the serving size below if it's wrong.</span>
+    </div>
     <div class="form-grid">
       <div class="form-field full">
         <label>Food Name</label>
@@ -2531,6 +2538,18 @@ function resetCfServing(qty, unit, grams) {
   document.getElementById('cfServingGrams').value = grams > 0 ? Math.round(grams) : '';
   document.getElementById('cfServingHint').textContent = grams > 0 ? `≈ ${Math.round(grams)} g` : '';
   if (!(grams > 0)) onCfServingInput();   // derive grams for mass units
+}
+
+// Highlighted "Estimated for: [qty] [unit]" box shown after an AI estimate.
+function showCfEstimatedFor(qty, unit) {
+  const box = document.getElementById('cfEstimatedFor');
+  if (!box) return;
+  box.querySelector('.cef-val').textContent = `${fmtQty(qty)} ${unit}`;
+  box.style.display = '';
+}
+function hideCfEstimatedFor() {
+  const box = document.getElementById('cfEstimatedFor');
+  if (box) box.style.display = 'none';
 }
 let weightUnit = 'lbs';
 let weightPeriod = 30;
@@ -4707,6 +4726,7 @@ function toggleRecipeMode() {
   document.getElementById('cfRecipeSection').style.display = on ? '' : 'none';
   // Recipe serving is "1 serving" (grams from the ingredient sum) — hide the picker.
   document.getElementById('cfServingRow').style.display = on ? 'none' : '';
+  hideCfEstimatedFor();   // reset the estimate banner on open / mode switch / reset
   document.getElementById('cfDescLabel').textContent = on
     ? '✨ Anything not scanned (type or 🎤 speak) — AI adds it to the total'
     : '✨ Describe it (type or 🎤 speak) & let AI fill the macros';
@@ -5333,7 +5353,7 @@ async function estimateMacros() {
       : desc;
     const result = await apiRequest('/analyze', {
       method: 'POST',
-      body: JSON.stringify({ description: payload })
+      body: JSON.stringify({ description: payload, serving_defaults: !isRecipe })
     });
     if (!result.ok || !result.body || result.body.error) {
       throw new Error(result.body?.error || 'Estimate failed');
@@ -5355,7 +5375,11 @@ async function estimateMacros() {
       setIf('cfFiber', r.fiber_g);
       setIf('cfSugar', r.sugar_g);
       setIf('cfFat', r.fat_g);
-      if (!document.getElementById('cfServing').value.trim() && r.serving_note) document.getElementById('cfServing').value = r.serving_note;
+      // Populate the serving picker from the AI's assumed serving and show it prominently.
+      const sQty = (r.serving_qty > 0) ? r.serving_qty : 1;
+      const sUnit = canonUnit(r.serving_unit);
+      resetCfServing(sQty, sUnit, r.serving_grams);
+      showCfEstimatedFor(sQty, sUnit);
       feedback.textContent = `✓ Filled in${r.confidence ? ' · confidence: ' + r.confidence : ''}. Review and adjust as needed.`;
     }
   } catch (err) {
