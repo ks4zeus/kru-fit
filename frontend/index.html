@@ -28,6 +28,7 @@
     --carbs: #60a5fa;
     --fat: #f472b6;
     --fiber: #fb923c;
+    --sugar: #f43f5e;
     --danger: #ef4444;
     --radius: 14px;
     --font: 'Inter', sans-serif;
@@ -48,6 +49,7 @@
     --carbs: #2563eb;
     --fat: #db2777;
     --fiber: #ea7317;
+    --sugar: #e11d48;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -267,7 +269,7 @@
 
   .macro-cards {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 8px;
     padding: 0 20px 16px;
   }
@@ -1471,7 +1473,7 @@
   .cd-date-nav { display: flex; align-items: center; justify-content: space-between; background: var(--surface2); border-radius: 10px; padding: 8px 14px; margin-bottom: 14px; font-size: 14px; font-weight: 600; }
   .cd-date-nav button { background: none; border: none; color: var(--text); font-size: 20px; cursor: pointer; padding: 0 8px; }
   .cd-date-nav button:disabled { opacity: 0.3; cursor: default; }
-  .cd-macro-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+  .cd-macro-summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 14px; }
   .cd-note-wrap textarea { width: 100%; box-sizing: border-box; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; color: var(--text); font-family: var(--font); font-size: 14px; resize: vertical; outline: none; }
   .cd-note-wrap textarea:focus { border-color: #F4D06F; }
 
@@ -1589,6 +1591,11 @@
           <div class="bar-track"><div class="bar-fill" id="fiberBar" style="width:0%;background:var(--fiber)"></div></div>
           <span class="macro-val" id="fiberVal">0 / 30g</span>
         </div>
+        <div class="macro-row">
+          <span class="macro-name">Sugar</span>
+          <div class="bar-track"><div class="bar-fill" id="sugarBar" style="width:0%;background:var(--sugar)"></div></div>
+          <span class="macro-val" id="sugarVal">0 / 50g</span>
+        </div>
       </div>
     </div>
   </div>
@@ -1607,6 +1614,11 @@
       <div class="mc-val" id="mcFat" style="color:var(--fat)">0g</div>
       <div class="mc-label">Fat</div>
       <div class="mc-goal" id="mcFatGoal">/ 60g</div>
+    </div>
+    <div class="macro-card">
+      <div class="mc-val" id="mcSugar" style="color:var(--sugar)">0g</div>
+      <div class="mc-label">Sugar</div>
+      <div class="mc-goal" id="mcSugarGoal">/ 50g</div>
     </div>
   </div>
   <div class="quick-add-bar today-only" onclick="openQuickAdd()">
@@ -1932,6 +1944,10 @@
         <input type="number" id="cfFiber" placeholder="0" inputmode="decimal">
       </div>
       <div class="form-field">
+        <label>Sugar (g)</label>
+        <input type="number" id="cfSugar" placeholder="0" inputmode="decimal">
+      </div>
+      <div class="form-field">
         <label>Fat (g)</label>
         <input type="number" id="cfFat" placeholder="0" inputmode="decimal">
       </div>
@@ -2104,6 +2120,10 @@
       <div class="form-field">
         <label>Fiber (g)</label>
         <input type="number" id="eeFiber" inputmode="decimal">
+      </div>
+      <div class="form-field">
+        <label>Sugar (g)</label>
+        <input type="number" id="eeSugar" inputmode="decimal">
       </div>
       <div class="form-field">
         <label>Fat (g)</label>
@@ -2287,6 +2307,10 @@
         <label><span class="dot" style="background:var(--fiber)"></span>Fiber (g)</label>
         <input type="number" id="goalFiber" value="30">
       </div>
+      <div class="setting-row">
+        <label><span class="dot" style="background:var(--sugar)"></span>Sugar (g)</label>
+        <input type="number" id="goalSugar" value="50">
+      </div>
     </div>
     <div class="profile-box" id="trainerProfileBox">
       <div class="calc-sub">Coaching</div>
@@ -2404,7 +2428,7 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
-const defaultGoals = { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, water_oz: 64, objective: 'maintain', diet: 'none', restrictions: '', goal_weight: null };
+const defaultGoals = { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, sugar: 50, water_oz: 64, objective: 'maintain', diet: 'none', restrictions: '', goal_weight: null };
 const STORAGE_KEYS = {
   user: 'fuellog_user',
   goals: 'fuellog_goals',
@@ -2487,7 +2511,7 @@ let bcCupGrams = 240;          // grams per cup (derived from product, else appr
 let bcCupExact = false;        // true when cupGrams came from the product label
 let barcodeTarget = 'log';     // 'log' = add scan to today's log; 'recipe' = add to the recipe builder
 let recipeItems = [];          // structured/scanned ingredients in the recipe builder
-let recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 }; // TOTAL macros of the freeform (AI) portion
+let recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, sugar: 0, fat: 0 }; // TOTAL macros of the freeform (AI) portion
 let recipeServingGrams = null;   // per-serving grams of the recipe (sum of ingredient grams ÷ servings)
 
 // Live "≈ N g" for the custom-food serving: mass units convert exactly; volume/
@@ -2705,6 +2729,7 @@ function applyGoalsUI() {
   document.getElementById('goalCarbs').value = goals.carbs;
   document.getElementById('goalFat').value = goals.fat;
   document.getElementById('goalFiber').value = goals.fiber;
+  document.getElementById('goalSugar').value = goals.sugar != null ? goals.sugar : defaultGoals.sugar;
   updateTotals();
   updateWaterUI(waterEntry.oz);
 }
@@ -2981,6 +3006,7 @@ function onEditServingInput() {
     document.getElementById('eeProtein').value = Math.round(editEntryBase.protein * f);
     document.getElementById('eeCarbs').value = Math.round(editEntryBase.carbs * f);
     document.getElementById('eeFiber').value = Math.round(editEntryBase.fiber * f);
+    document.getElementById('eeSugar').value = Math.round((editEntryBase.sugar || 0) * f);
     document.getElementById('eeFat').value = Math.round(editEntryBase.fat * f);
     const g = editEntryBase.grams > 0 ? editEntryBase.grams * f : servingToGrams(newQty, newUnit, editEntryBase);
     editEntryCurrentGrams = g > 0 ? Math.round(g) : null;
@@ -3010,7 +3036,7 @@ async function aiRecalcServing() {
   btn.disabled = true; btn.textContent = '✨ Estimating…'; msg.textContent = '';
   const desc = `Known reference for the food "${name}": ${baseServing} contains `
     + `${Math.round(b.cal)} kcal, ${Math.round(b.protein)}g protein, ${Math.round(b.carbs)}g carbs, `
-    + `${Math.round(b.fiber)}g fiber, ${Math.round(b.fat)}g fat. Treat that as this exact food's known `
+    + `${Math.round(b.fiber)}g fiber, ${Math.round(b.sugar || 0)}g sugar, ${Math.round(b.fat)}g fat. Treat that as this exact food's known `
     + `nutrient density and estimate the nutrition for ${qty} ${unit} of the SAME food, scaling realistically.`;
   const result = await apiRequest('/analyze', { method: 'POST', body: JSON.stringify({ description: desc }) });
   btn.disabled = false; btn.textContent = '✨ Recalc with AI';
@@ -3020,6 +3046,7 @@ async function aiRecalcServing() {
   document.getElementById('eeProtein').value = Math.round(r.protein_g || 0);
   document.getElementById('eeCarbs').value = Math.round(r.carbs_g || 0);
   document.getElementById('eeFiber').value = Math.round(r.fiber_g || 0);
+  document.getElementById('eeSugar').value = Math.round(r.sugar_g || 0);
   document.getElementById('eeFat').value = Math.round(r.fat_g || 0);
   // Re-baseline so further tweaks scale from the AI result — and capture the gram
   // anchor the AI returned so future conversions are pure math.
@@ -3027,7 +3054,7 @@ async function aiRecalcServing() {
   editEntryBase = {
     qty: parseFloat(qty) || 1, unit: canonUnit(unit), grams: aiGrams || null,
     cal: Math.round(r.calories || 0), protein: Math.round(r.protein_g || 0),
-    carbs: Math.round(r.carbs_g || 0), fiber: Math.round(r.fiber_g || 0), fat: Math.round(r.fat_g || 0)
+    carbs: Math.round(r.carbs_g || 0), fiber: Math.round(r.fiber_g || 0), sugar: Math.round(r.sugar_g || 0), fat: Math.round(r.fat_g || 0)
   };
   editEntryCurrentGrams = aiGrams || null;
   const hint = document.getElementById('eeServingHint');
@@ -3046,6 +3073,7 @@ function openEditEntry(index) {
   document.getElementById('eeProtein').value = Math.round(e.protein || 0);
   document.getElementById('eeCarbs').value = Math.round(e.carbs || 0);
   document.getElementById('eeFiber').value = Math.round(e.fiber || 0);
+  document.getElementById('eeSugar').value = Math.round(e.sugar || 0);
   document.getElementById('eeFat').value = Math.round(e.fat || 0);
   const rawQty = parseServingQty(e.serving);
   const sQty = isNaN(rawQty) || rawQty <= 0 ? 1 : rawQty;
@@ -3058,7 +3086,7 @@ function openEditEntry(index) {
   if (refGrams == null) { const ci = unitInfo(sUnit); if (ci && ci[0] === 'mass') refGrams = sQty * ci[1]; }
   editEntryBase = {
     qty: sQty, unit: sUnit, grams: refGrams,
-    cal: e.cal || 0, protein: e.protein || 0, carbs: e.carbs || 0, fiber: e.fiber || 0, fat: e.fat || 0
+    cal: e.cal || 0, protein: e.protein || 0, carbs: e.carbs || 0, fiber: e.fiber || 0, sugar: e.sugar || 0, fat: e.fat || 0
   };
   editEntryCurrentGrams = refGrams;
   const eeHint = document.getElementById('eeServingHint');
@@ -3091,6 +3119,7 @@ async function saveEntryEdit() {
   e.protein = parseFloat(document.getElementById('eeProtein').value) || 0;
   e.carbs = parseFloat(document.getElementById('eeCarbs').value) || 0;
   e.fiber = parseFloat(document.getElementById('eeFiber').value) || 0;
+  e.sugar = parseFloat(document.getElementById('eeSugar').value) || 0;
   e.fat = parseFloat(document.getElementById('eeFat').value) || 0;
   const sQty = document.getElementById('eeServingQty').value.trim();
   const sUnit = document.getElementById('eeServingUnit').value.trim();
@@ -3102,7 +3131,7 @@ async function saveEntryEdit() {
   if (e.id && currentUser) {
     await apiRequest(`/food/${e.id}`, {
       method: 'PUT',
-      body: JSON.stringify({ name: e.name, emoji: e.emoji, cal: e.cal, protein: e.protein, carbs: e.carbs, fat: e.fat, fiber: e.fiber, serving: e.serving, serving_grams: e.serving_grams })
+      body: JSON.stringify({ name: e.name, emoji: e.emoji, cal: e.cal, protein: e.protein, carbs: e.carbs, fat: e.fat, fiber: e.fiber, sugar: e.sugar, serving: e.serving, serving_grams: e.serving_grams })
     });
   }
   closeEditEntry();
@@ -3271,6 +3300,7 @@ async function saveCustomFood(logNow) {
     protein: parseFloat(document.getElementById('cfProtein').value) || 0,
     carbs: parseFloat(document.getElementById('cfCarbs').value) || 0,
     fiber: parseFloat(document.getElementById('cfFiber').value) || 0,
+    sugar: parseFloat(document.getElementById('cfSugar').value) || 0,
     fat: parseFloat(document.getElementById('cfFat').value) || 0,
     serving: servingStr,
     serving_grams: servingGrams,
@@ -3291,7 +3321,7 @@ async function saveCustomFood(logNow) {
   if (logNow) {
     const entry = {
       name: food.name, emoji: food.emoji, cal: food.cal, protein: food.protein,
-      carbs: food.carbs, fiber: food.fiber, fat: food.fat,
+      carbs: food.carbs, fiber: food.fiber, sugar: food.sugar, fat: food.fat,
       source: isRecipe ? 'Recipe · 1 serving' : `Custom · ${food.serving}`, serving: isRecipe ? '1 serving' : food.serving,
       serving_grams: food.serving_grams ?? null, ts: Date.now(), date: todayKey()
     };
@@ -3306,10 +3336,10 @@ async function saveCustomFood(logNow) {
   // Saved to library only: keep the modal open, refresh the list, reset the form.
   editingCustomFoodId = null;
   recipeItems = [];
-  recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 };
+  recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, sugar: 0, fat: 0 };
   recipeServingGrams = null;
   renderCustomFoodLibrary();
-  ['cfName','cfEmoji','cfCal','cfProtein','cfCarbs','cfFiber','cfFat','cfDesc'].forEach(id => document.getElementById(id).value = '');
+  ['cfName','cfEmoji','cfCal','cfProtein','cfCarbs','cfFiber','cfSugar','cfFat','cfDesc'].forEach(id => document.getElementById(id).value = '');
   resetCfServing();
   document.getElementById('cfIsRecipe').checked = false;
   document.getElementById('cfServingsYield').value = '1';
@@ -3327,8 +3357,9 @@ function updateTotals() {
     acc.carbs += Number(e.carbs || 0);
     acc.fat += Number(e.fat || 0);
     acc.fiber += Number(e.fiber || 0);
+    acc.sugar += Number(e.sugar || 0);
     return acc;
-  }, { cal:0, protein:0, carbs:0, fat:0, fiber:0 });
+  }, { cal:0, protein:0, carbs:0, fat:0, fiber:0, sugar:0 });
 
   document.getElementById('calConsumed').textContent = Math.round(totals.cal);
   document.getElementById('calRemaining').textContent = Math.max(0, Math.round(goals.cal - totals.cal));
@@ -3340,16 +3371,20 @@ function updateTotals() {
   document.getElementById('carbsBar').style.width = clamp(totals.carbs, goals.carbs);
   document.getElementById('fatBar').style.width = clamp(totals.fat, goals.fat);
   document.getElementById('fiberBar').style.width = clamp(totals.fiber, goals.fiber || defaultGoals.fiber);
+  document.getElementById('sugarBar').style.width = clamp(totals.sugar, goals.sugar || defaultGoals.sugar);
   document.getElementById('proteinVal').textContent = `${Math.round(totals.protein)} / ${goals.protein}g`;
   document.getElementById('carbsVal').textContent = `${Math.round(totals.carbs)} / ${goals.carbs}g`;
   document.getElementById('fatVal').textContent = `${Math.round(totals.fat)} / ${goals.fat}g`;
   document.getElementById('fiberVal').textContent = `${Math.round(totals.fiber)} / ${goals.fiber || defaultGoals.fiber}g`;
+  document.getElementById('sugarVal').textContent = `${Math.round(totals.sugar)} / ${goals.sugar || defaultGoals.sugar}g`;
   document.getElementById('mcProtein').textContent = Math.round(totals.protein) + 'g';
   document.getElementById('mcCarbs').textContent = Math.round(totals.carbs) + 'g';
   document.getElementById('mcFat').textContent = Math.round(totals.fat) + 'g';
+  document.getElementById('mcSugar').textContent = Math.round(totals.sugar) + 'g';
   document.getElementById('mcProteinGoal').textContent = `/ ${goals.protein}g`;
   document.getElementById('mcCarbsGoal').textContent = `/ ${goals.carbs}g`;
   document.getElementById('mcFatGoal').textContent = `/ ${goals.fat}g`;
+  document.getElementById('mcSugarGoal').textContent = `/ ${goals.sugar || defaultGoals.sugar}g`;
 }
 
 function renderLog() {
@@ -3504,6 +3539,7 @@ async function addPhotoEntry() {
     protein: (photoResult.protein_g || 0) * p,
     carbs: (photoResult.carbs_g || 0) * p,
     fiber: (photoResult.fiber_g || 0) * p,
+    sugar: (photoResult.sugar_g || 0) * p,
     fat: (photoResult.fat_g || 0) * p,
     source: p === 1 ? 'AI photo analysis' : `AI photo · ${fmtPortion(p)} portion`,
     serving: `${fmtQty((photoResult.serving_qty > 0 ? photoResult.serving_qty : 1) * p)} ${canonUnit(photoResult.serving_unit)}`,
@@ -3695,6 +3731,7 @@ async function lookupBarcode(code) {
       protein: num(n['proteins_100g']),
       carbs: num(n['carbohydrates_100g']),
       fiber: num(n['fiber_100g']),
+      sugar: num(n['sugars_100g']),
       fat: num(n['fat_100g'])
     };
 
@@ -3715,6 +3752,7 @@ async function lookupBarcode(code) {
         protein: num(n['proteins_serving']) * f,
         carbs: num(n['carbohydrates_serving']) * f,
         fiber: num(n['fiber_serving']) * f,
+        sugar: num(n['sugars_serving']) * f,
         fat: num(n['fat_serving']) * f
       };
     }
@@ -3824,6 +3862,7 @@ async function addBarcodeEntry() {
     protein: bcBaseNutrition.protein * f,
     carbs: bcBaseNutrition.carbs * f,
     fiber: (bcBaseNutrition.fiber || 0) * f,
+    sugar: (bcBaseNutrition.sugar || 0) * f,
     fat: bcBaseNutrition.fat * f,
     source: `Barcode · ${amount} ${unitLabel} (${Math.round(grams)} g)`,
     serving: `${amount} ${unitLabel} (${Math.round(grams)} g)`,
@@ -4645,9 +4684,9 @@ let editingCustomFoodId = null;   // set when editing an existing item, so save 
 function openCustomFoodModal() {
   editingCustomFoodId = null;
   recipeItems = [];
-  recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 };
+  recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, sugar: 0, fat: 0 };
   recipeServingGrams = null;
-  ['cfName', 'cfEmoji', 'cfCal', 'cfProtein', 'cfCarbs', 'cfFiber', 'cfFat', 'cfDesc'].forEach(id => document.getElementById(id).value = '');
+  ['cfName', 'cfEmoji', 'cfCal', 'cfProtein', 'cfCarbs', 'cfFiber', 'cfSugar', 'cfFat', 'cfDesc'].forEach(id => document.getElementById(id).value = '');
   resetCfServing();
   document.getElementById('cfIsRecipe').checked = false;
   document.getElementById('cfServingsYield').value = '1';
@@ -4695,14 +4734,14 @@ function itemGrams(it) {
 }
 function itemMacros(it) {
   const f = itemGrams(it) / 100, b = it.base || {};
-  return { cal: (b.cal || 0) * f, protein: (b.protein || 0) * f, carbs: (b.carbs || 0) * f, fiber: (b.fiber || 0) * f, fat: (b.fat || 0) * f };
+  return { cal: (b.cal || 0) * f, protein: (b.protein || 0) * f, carbs: (b.carbs || 0) * f, fiber: (b.fiber || 0) * f, sugar: (b.sugar || 0) * f, fat: (b.fat || 0) * f };
 }
 function sumScanned() {
   return recipeItems.reduce((t, it) => {
     const m = itemMacros(it);
-    t.cal += m.cal; t.protein += m.protein; t.carbs += m.carbs; t.fiber += m.fiber; t.fat += m.fat;
+    t.cal += m.cal; t.protein += m.protein; t.carbs += m.carbs; t.fiber += m.fiber; t.sugar += m.sugar; t.fat += m.fat;
     return t;
-  }, { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 });
+  }, { cal: 0, protein: 0, carbs: 0, fiber: 0, sugar: 0, fat: 0 });
 }
 function recipeUnitOptions(it) {
   return servingUnitOptions(canonUnit(it.unit));   // shared standard unit set
@@ -4752,7 +4791,7 @@ function recomputeRecipe() {
   const scanned = sumScanned();
   const total = {
     cal: scanned.cal + (a.cal || 0), protein: scanned.protein + (a.protein || 0),
-    carbs: scanned.carbs + (a.carbs || 0), fiber: scanned.fiber + (a.fiber || 0), fat: scanned.fat + (a.fat || 0)
+    carbs: scanned.carbs + (a.carbs || 0), fiber: scanned.fiber + (a.fiber || 0), sugar: scanned.sugar + (a.sugar || 0), fat: scanned.fat + (a.fat || 0)
   };
   const servings = Math.max(0.5, parseFloat(document.getElementById('cfServingsYield').value) || 1);
   // Per-serving grams = Σ ingredient grams ÷ servings. Only anchored when the
@@ -4764,6 +4803,7 @@ function recomputeRecipe() {
   document.getElementById('cfProtein').value = Math.round(total.protein / servings);
   document.getElementById('cfCarbs').value = Math.round(total.carbs / servings);
   document.getElementById('cfFiber').value = Math.round(total.fiber / servings);
+  document.getElementById('cfSugar').value = Math.round(total.sugar / servings);
   document.getElementById('cfFat').value = Math.round(total.fat / servings);
   if (recipeItems.length) {
     sub.style.display = '';
@@ -4833,6 +4873,7 @@ function prefillCustom(id) {
   document.getElementById('cfProtein').value = f.protein || '';
   document.getElementById('cfCarbs').value = f.carbs || '';
   document.getElementById('cfFiber').value = f.fiber || '';
+  document.getElementById('cfSugar').value = f.sugar || '';
   document.getElementById('cfFat').value = f.fat || '';
   resetCfServing(parseServingQty(f.serving) || 1, servingUnitOf(f.serving), f.serving_grams);
   const isRecipe = isRecipeFood(f);
@@ -4845,9 +4886,9 @@ function prefillCustom(id) {
   if (isRecipe) {
     const scanned = sumScanned();
     const macro = k => Math.max(0, (parseFloat(f[k]) || 0) * servings - scanned[k]);
-    recipeAiTotal = { cal: macro('cal'), protein: macro('protein'), carbs: macro('carbs'), fiber: macro('fiber'), fat: macro('fat') };
+    recipeAiTotal = { cal: macro('cal'), protein: macro('protein'), carbs: macro('carbs'), fiber: macro('fiber'), sugar: macro('sugar'), fat: macro('fat') };
   } else {
-    recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 };
+    recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, sugar: 0, fat: 0 };
   }
   toggleRecipeMode();
   document.getElementById('cfDesc').value = isRecipe ? (f.ingredients || '') : '';
@@ -4864,7 +4905,7 @@ async function logCustomFood(id) {
   const entry = {
     name: f.name, emoji: f.emoji || '🍽️',
     cal: (f.cal || 0) * qty, protein: (f.protein || 0) * qty, carbs: (f.carbs || 0) * qty,
-    fiber: (f.fiber || 0) * qty, fat: (f.fat || 0) * qty,
+    fiber: (f.fiber || 0) * qty, sugar: (f.sugar || 0) * qty, fat: (f.fat || 0) * qty,
     source: isRecipe ? `Recipe · ${qty} serving${qty !== 1 ? 's' : ''}` : `Custom · ${qty !== 1 ? qty + '× ' : ''}${f.serving || '1 serving'}`,
     serving: isRecipe ? `${qty} serving${qty !== 1 ? 's' : ''}` : `${qty !== 1 ? qty + '× ' : ''}${f.serving || '1 serving'}`,
     serving_grams: (f.serving_grams != null) ? Math.round(Number(f.serving_grams) * qty) : null,
@@ -4919,7 +4960,7 @@ function buildQuickCatalog() {
       map[key] = {
         name: e.name, emoji: e.emoji || '🍽️',
         cal: Number(e.cal || 0), protein: Number(e.protein || 0), carbs: Number(e.carbs || 0),
-        fiber: Number(e.fiber || 0), fat: Number(e.fat || 0), count: 0, lastTs: 0,
+        fiber: Number(e.fiber || 0), sugar: Number(e.sugar || 0), fat: Number(e.fat || 0), count: 0, lastTs: 0,
         serving: e.serving || null, servingGrams: (e.serving_grams != null ? Number(e.serving_grams) : null)
       };
     }
@@ -4931,7 +4972,7 @@ function buildQuickCatalog() {
         m.lastTs = ts;
         m.emoji = e.emoji || m.emoji;
         m.cal = Number(e.cal || 0); m.protein = Number(e.protein || 0);
-        m.carbs = Number(e.carbs || 0); m.fiber = Number(e.fiber || 0); m.fat = Number(e.fat || 0);
+        m.carbs = Number(e.carbs || 0); m.fiber = Number(e.fiber || 0); m.sugar = Number(e.sugar || 0); m.fat = Number(e.fat || 0);
         m.serving = e.serving || m.serving;
         m.servingGrams = (e.serving_grams != null ? Number(e.serving_grams) : m.servingGrams);
       }
@@ -5055,7 +5096,7 @@ async function logMealTemplate(id) {
     const entry = {
       name: it.name, emoji: it.emoji || '🍽️',
       cal: Number(it.cal) || 0, protein: Number(it.protein) || 0, carbs: Number(it.carbs) || 0,
-      fiber: Number(it.fiber) || 0, fat: Number(it.fat) || 0,
+      fiber: Number(it.fiber) || 0, sugar: Number(it.sugar) || 0, fat: Number(it.fat) || 0,
       source: 'Meal · ' + t.name, ts: Date.now(), date: todayKey()
     };
     const saved = await saveFoodEntry(entry);
@@ -5095,7 +5136,7 @@ async function quickLog(i) {
   const entry = {
     name: f.name, emoji: f.emoji || '🍽️',
     cal: f.cal * qty, protein: f.protein * qty, carbs: f.carbs * qty,
-    fiber: (f.fiber || 0) * qty, fat: f.fat * qty,
+    fiber: (f.fiber || 0) * qty, sugar: (f.sugar || 0) * qty, fat: f.fat * qty,
     source, serving, serving_grams: grams, ts: Date.now(), date: todayKey()
   };
   const saved = await saveFoodEntry(entry);
@@ -5125,7 +5166,7 @@ async function quickAiEstimate() {
   const entry = {
     name: r.name || query, emoji: r.emoji || foodEmoji(query) || '🍽️',
     cal: Math.round(r.calories || 0), protein: Math.round(r.protein_g || 0), carbs: Math.round(r.carbs_g || 0),
-    fiber: Math.round(r.fiber_g || 0), fat: Math.round(r.fat_g || 0),
+    fiber: Math.round(r.fiber_g || 0), sugar: Math.round(r.sugar_g || 0), fat: Math.round(r.fat_g || 0),
     source: 'AI estimate',
     serving: `${fmtQty(r.serving_qty > 0 ? r.serving_qty : 1)} ${canonUnit(r.serving_unit)}`,
     serving_grams: (r.serving_grams > 0) ? Math.round(r.serving_grams) : null,
@@ -5193,7 +5234,7 @@ async function saveMealTemplate() {
   }).map(e => ({
     name: e.name, emoji: e.emoji || '🍽️',
     cal: Number(e.cal || 0), protein: Number(e.protein || 0), carbs: Number(e.carbs || 0),
-    fiber: Number(e.fiber || 0), fat: Number(e.fat || 0)
+    fiber: Number(e.fiber || 0), sugar: Number(e.sugar || 0), fat: Number(e.fat || 0)
   }));
   if (!items.length) { err.textContent = 'Select at least one item.'; err.classList.add('show'); return; }
   err.classList.remove('show');
@@ -5275,7 +5316,7 @@ async function estimateMacros() {
     // In recipe mode with scanned items already added, there's nothing freeform
     // to estimate — just re-total the scanned ingredients.
     if (isRecipe && recipeItems.length) {
-      recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, fat: 0 };
+      recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, sugar: 0, fat: 0 };
       recomputeRecipe();
       return;
     }
@@ -5304,7 +5345,7 @@ async function estimateMacros() {
       // The freeform text is one part of the recipe — fold its TOTAL into the
       // running total alongside the scanned ingredients.
       const num = v => (v == null || isNaN(v)) ? 0 : v;
-      recipeAiTotal = { cal: num(r.calories), protein: num(r.protein_g), carbs: num(r.carbs_g), fiber: num(r.fiber_g), fat: num(r.fat_g) };
+      recipeAiTotal = { cal: num(r.calories), protein: num(r.protein_g), carbs: num(r.carbs_g), fiber: num(r.fiber_g), sugar: num(r.sugar_g), fat: num(r.fat_g) };
       recomputeRecipe();   // fills the per-serving fields + sets the Σ feedback
     } else {
       const setIf = (id, val) => { const el = document.getElementById(id); if (val != null && !isNaN(val)) el.value = Math.round(val); };
@@ -5312,6 +5353,7 @@ async function estimateMacros() {
       setIf('cfProtein', r.protein_g);
       setIf('cfCarbs', r.carbs_g);
       setIf('cfFiber', r.fiber_g);
+      setIf('cfSugar', r.sugar_g);
       setIf('cfFat', r.fat_g);
       if (!document.getElementById('cfServing').value.trim() && r.serving_note) document.getElementById('cfServing').value = r.serving_note;
       feedback.textContent = `✓ Filled in${r.confidence ? ' · confidence: ' + r.confidence : ''}. Review and adjust as needed.`;
@@ -5770,12 +5812,13 @@ async function renderAnalysis() {
   const foodMap = {};
   entries.forEach(e => {
     const key = e.name;
-    if (!foodMap[key]) foodMap[key] = { name: e.name, emoji: e.emoji || '🍽️', cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, count: 0 };
+    if (!foodMap[key]) foodMap[key] = { name: e.name, emoji: e.emoji || '🍽️', cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, count: 0 };
     foodMap[key].cal += e.cal || 0;
     foodMap[key].protein += e.protein || 0;
     foodMap[key].carbs += e.carbs || 0;
     foodMap[key].fat += e.fat || 0;
     foodMap[key].fiber += e.fiber || 0;
+    foodMap[key].sugar += e.sugar || 0;
     foodMap[key].count += 1;
   });
   const foods = Object.values(foodMap);
@@ -5792,6 +5835,7 @@ async function renderAnalysis() {
   const byLowCal = [...foods].sort((a,b)=>a.cal-b.cal).filter(f=>f.cal>0);
   const byFat = [...foods].sort((a,b)=>b.fat-a.fat);
   const byFiber = [...foods].sort((a,b)=>b.fiber-a.fiber).filter(f=>f.fiber>0);
+  const bySugar = [...foods].sort((a,b)=>b.sugar-a.sugar).filter(f=>f.sugar>0);
   const byCount = [...foods].sort((a,b)=>b.count-a.count);
   el.innerHTML =
     maintenanceCard() +
@@ -5800,6 +5844,7 @@ async function renderAnalysis() {
     section('🥗 Lowest Calorie', byLowCal, f=>f.cal, '#34d399', '') +
     section('🧈 Highest Fat', byFat, f=>f.fat, 'var(--fat)', 'g') +
     (byFiber.length ? section('🌾 Highest Fiber', byFiber, f=>f.fiber, '#fb923c', 'g') : '') +
+    (bySugar.length ? section('🍬 Highest Sugar', bySugar, f=>f.sugar, 'var(--sugar)', 'g') : '') +
     `<div class="analysis-section"><h3>🔁 Most Logged</h3>${byCount.slice(0,5).map(f => `
       <div class="analysis-bar-row">
         <span class="ab-name">${f.emoji} ${f.name}</span>
@@ -5913,6 +5958,7 @@ function openSettings() {
   document.getElementById('goalCarbs').value = goals.carbs;
   document.getElementById('goalFat').value = goals.fat;
   document.getElementById('goalFiber').value = goals.fiber || defaultGoals.fiber;
+  document.getElementById('goalSugar').value = goals.sugar != null ? goals.sugar : defaultGoals.sugar;
   document.getElementById('profObjective').value = goals.objective || 'maintain';
   document.getElementById('profDiet').value = goals.diet || 'none';
   document.getElementById('profRestrictions').value = goals.restrictions || '';
@@ -6082,6 +6128,7 @@ async function saveSettings() {
     carbs: parseInt(document.getElementById('goalCarbs').value) || 150,
     fat: parseInt(document.getElementById('goalFat').value) || 60,
     fiber: parseInt(document.getElementById('goalFiber').value) || 30,
+    sugar: parseInt(document.getElementById('goalSugar').value) || 50,
     water_oz: waterGoalOz,
     objective: document.getElementById('profObjective').value || 'maintain',
     diet: document.getElementById('profDiet').value || 'none',
@@ -6316,7 +6363,8 @@ async function loadClientDetail() {
     <div class="hist-stat"><div class="hs-val" style="color:var(--cal)">${Math.round(t.cal)}</div><div class="hs-label">Cal</div><div class="hs-sub">/ ${g.cal}</div></div>
     <div class="hist-stat"><div class="hs-val" style="color:var(--protein)">${Math.round(t.protein)}g</div><div class="hs-label">Protein</div><div class="hs-sub">/ ${g.protein}g</div></div>
     <div class="hist-stat"><div class="hs-val" style="color:var(--carbs)">${Math.round(t.carbs)}g</div><div class="hs-label">Carbs</div><div class="hs-sub">/ ${g.carbs}g</div></div>
-    <div class="hist-stat"><div class="hs-val" style="color:var(--fat)">${Math.round(t.fat)}g</div><div class="hs-label">Fat</div><div class="hs-sub">/ ${g.fat}g</div></div>`;
+    <div class="hist-stat"><div class="hs-val" style="color:var(--fat)">${Math.round(t.fat)}g</div><div class="hs-label">Fat</div><div class="hs-sub">/ ${g.fat}g</div></div>
+    <div class="hist-stat"><div class="hs-val" style="color:var(--sugar)">${Math.round(t.sugar || 0)}g</div><div class="hs-label">Sugar</div><div class="hs-sub">/ ${g.sugar || 50}g</div></div>`;
 
   document.getElementById('cdFoodLog').innerHTML = data.today.entries.length === 0
     ? '<p style="color:var(--muted);font-size:13px;padding:8px 0">No entries for this day.</p>'
@@ -6330,6 +6378,7 @@ async function loadClientDetail() {
               <span class="entry-macro" style="color:var(--protein)">P ${Math.round(e.protein)}g</span>
               <span class="entry-macro" style="color:var(--carbs)">C ${Math.round(e.carbs)}g</span>
               <span class="entry-macro" style="color:var(--fat)">F ${Math.round(e.fat)}g</span>
+              <span class="entry-macro" style="color:var(--sugar)">S ${Math.round(e.sugar || 0)}g</span>
             </div>
           </div>
           <div class="entry-cal">${Math.round(e.cal)}<span class="cal-unit">kcal</span></div>

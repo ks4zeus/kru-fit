@@ -17,6 +17,7 @@ CREATE TABLE food_log (
   carbs REAL DEFAULT 0,
   fat REAL DEFAULT 0,
   fiber REAL DEFAULT 0,
+  sugar REAL DEFAULT 0,      -- tracked separately from net carbs (carbs - fiber)
   source TEXT,
   serving TEXT,              -- editable serving: quantity + standard unit (e.g. "1 cup")
   serving_grams REAL,        -- gram weight of the serving (conversion anchor; null if unknown)
@@ -53,6 +54,7 @@ CREATE TABLE custom_foods (
   carbs REAL DEFAULT 0,
   fat REAL DEFAULT 0,
   fiber REAL DEFAULT 0,
+  sugar REAL DEFAULT 0,
   serving TEXT,
   serving_grams REAL,         -- gram weight of one serving (conversion anchor)
   ingredients TEXT,           -- freeform ingredient text (AI-estimated portion of a recipe)
@@ -99,6 +101,7 @@ CREATE TABLE goals (
   carbs INTEGER DEFAULT 150,
   fat INTEGER DEFAULT 60,
   fiber INTEGER DEFAULT 30,
+  sugar INTEGER DEFAULT 50,
   water_oz INTEGER DEFAULT 64,
   objective TEXT DEFAULT 'maintain',  -- 'lose' | 'maintain' | 'gain' (fitness goal)
   diet TEXT DEFAULT 'none',

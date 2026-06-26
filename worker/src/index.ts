@@ -253,6 +253,7 @@ const NUTRITION_SYSTEM_PROMPT = `You are a nutrition analysis assistant. Given a
   "protein_g": number,
   "carbs_g": number,
   "fiber_g": number,
+  "sugar_g": number,
   "fat_g": number,
   "serving_qty": number,
   "serving_unit": "one of: g, oz, lb, ml, cup, tbsp, tsp, fl oz, each",
@@ -500,8 +501,8 @@ export default {
 
         const inserted = await db
           .prepare(
-            `INSERT INTO food_log (user_id, date, name, emoji, cal, protein, carbs, fat, fiber, source, serving, serving_grams, ts)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO food_log (user_id, date, name, emoji, cal, protein, carbs, fat, fiber, sugar, source, serving, serving_grams, ts)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             userEmail,
@@ -513,6 +514,7 @@ export default {
             body.carbs ?? 0,
             body.fat ?? 0,
             body.fiber ?? 0,
+            body.sugar ?? 0,
             body.source || null,
             body.serving || null,
             body.serving_grams ?? null,
@@ -534,7 +536,7 @@ export default {
         }
         await db
           .prepare(
-            `UPDATE food_log SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, serving = ?, serving_grams = ?
+            `UPDATE food_log SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, sugar = ?, serving = ?, serving_grams = ?
              WHERE id = ? AND user_id = ?`
           )
           .bind(
@@ -545,6 +547,7 @@ export default {
             body.carbs ?? 0,
             body.fat ?? 0,
             body.fiber ?? 0,
+            body.sugar ?? 0,
             body.serving ?? null,
             body.serving_grams ?? null,
             id,
@@ -723,8 +726,8 @@ export default {
 
         const inserted = await db
           .prepare(
-            `INSERT INTO custom_foods (user_id, name, emoji, cal, protein, carbs, fat, fiber, serving, serving_grams, ingredients, recipe_items, servings)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO custom_foods (user_id, name, emoji, cal, protein, carbs, fat, fiber, sugar, serving, serving_grams, ingredients, recipe_items, servings)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             userEmail,
@@ -735,6 +738,7 @@ export default {
             body.carbs ?? 0,
             body.fat ?? 0,
             body.fiber ?? 0,
+            body.sugar ?? 0,
             body.serving || null,
             body.serving_grams ?? null,
             body.ingredients || null,
@@ -757,7 +761,7 @@ export default {
         }
         await db
           .prepare(
-            `UPDATE custom_foods SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, serving = ?, serving_grams = ?, ingredients = ?, recipe_items = ?, servings = ?
+            `UPDATE custom_foods SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, sugar = ?, serving = ?, serving_grams = ?, ingredients = ?, recipe_items = ?, servings = ?
              WHERE id = ? AND user_id = ?`
           )
           .bind(
@@ -768,6 +772,7 @@ export default {
             body.carbs ?? 0,
             body.fat ?? 0,
             body.fiber ?? 0,
+            body.sugar ?? 0,
             body.serving || null,
             body.serving_grams ?? null,
             body.ingredients || null,
@@ -975,6 +980,7 @@ export default {
           carbs: 150,
           fat: 60,
           fiber: 30,
+          sugar: 50,
           water_oz: 64,
           objective: "maintain",
           diet: "none",
@@ -992,14 +998,15 @@ export default {
 
         await db
           .prepare(
-            `INSERT INTO goals (user_id, cal, protein, carbs, fat, fiber, water_oz, objective, diet, restrictions, goal_weight, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            `INSERT INTO goals (user_id, cal, protein, carbs, fat, fiber, sugar, water_oz, objective, diet, restrictions, goal_weight, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
              ON CONFLICT(user_id) DO UPDATE SET
                cal = excluded.cal,
                protein = excluded.protein,
                carbs = excluded.carbs,
                fat = excluded.fat,
                fiber = excluded.fiber,
+               sugar = excluded.sugar,
                water_oz = excluded.water_oz,
                objective = excluded.objective,
                diet = excluded.diet,
@@ -1014,6 +1021,7 @@ export default {
             body.carbs ?? 150,
             body.fat ?? 60,
             body.fiber ?? 30,
+            body.sugar ?? 50,
             body.water_oz ?? 64,
             body.objective || "maintain",
             body.diet || "none",
@@ -1021,7 +1029,7 @@ export default {
             body.goal_weight ?? null
           )
           .run();
-        return jsonResponse({ user_id: userEmail, cal: body.cal ?? 1800, protein: body.protein ?? 180, carbs: body.carbs ?? 150, fat: body.fat ?? 60, fiber: body.fiber ?? 30, water_oz: body.water_oz ?? 64, objective: body.objective || "maintain", diet: body.diet || "none", restrictions: body.restrictions || "", goal_weight: body.goal_weight ?? null });
+        return jsonResponse({ user_id: userEmail, cal: body.cal ?? 1800, protein: body.protein ?? 180, carbs: body.carbs ?? 150, fat: body.fat ?? 60, fiber: body.fiber ?? 30, sugar: body.sugar ?? 50, water_oz: body.water_oz ?? 64, objective: body.objective || "maintain", diet: body.diet || "none", restrictions: body.restrictions || "", goal_weight: body.goal_weight ?? null });
       }
     }
 
@@ -1326,14 +1334,14 @@ export default {
         .first<{ id: string; name: string | null }>();
 
       const goalsRow = await db
-        .prepare("SELECT cal, protein, carbs, fat, fiber, water_oz FROM goals WHERE user_id = ?")
+        .prepare("SELECT cal, protein, carbs, fat, fiber, sugar, water_oz FROM goals WHERE user_id = ?")
         .bind(clientId)
         .first<any>();
-      const goals = goalsRow || { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, water_oz: 64 };
+      const goals = goalsRow || { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, sugar: 50, water_oz: 64 };
 
       const entries = ((await db
         .prepare(
-          "SELECT id, name, emoji, cal, protein, carbs, fat, fiber, serving, source, ts FROM food_log WHERE user_id = ? AND date = ? ORDER BY ts ASC, id ASC"
+          "SELECT id, name, emoji, cal, protein, carbs, fat, fiber, sugar, serving, source, ts FROM food_log WHERE user_id = ? AND date = ? ORDER BY ts ASC, id ASC"
         )
         .bind(clientId, date)
         .all()).results || []) as any[];
@@ -1343,8 +1351,9 @@ export default {
           protein: t.protein + (e.protein || 0),
           carbs: t.carbs + (e.carbs || 0),
           fat: t.fat + (e.fat || 0),
+          sugar: t.sugar + (e.sugar || 0),
         }),
-        { cal: 0, protein: 0, carbs: 0, fat: 0 }
+        { cal: 0, protein: 0, carbs: 0, fat: 0, sugar: 0 }
       );
 
       const log7d = ((await db
