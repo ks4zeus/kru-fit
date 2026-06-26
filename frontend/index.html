@@ -2516,7 +2516,24 @@ let bcProductName = '';
 let bcServingGrams = null;     // grams in one package serving, if known
 let bcCupGrams = 240;          // grams per cup (derived from product, else approx)
 let bcCupExact = false;        // true when cupGrams came from the product label
+let bcSugarEstimated = false;  // true when added sugar was AI-estimated (OFF lacked it)
 let barcodeTarget = 'log';     // 'log' = add scan to today's log; 'recipe' = add to the recipe builder
+
+// OFF rarely carries added sugars. When it's missing but the product has total
+// sugar, estimate the added portion per 100g with AI (capped at total). Returns
+// null on any failure so the caller can fall back to 0 without breaking the scan.
+async function estimateAddedSugarPer100(name, totalSugar100) {
+  try {
+    const desc = `For the packaged product "${name}", which has ${Math.round(totalSugar100)} g of TOTAL sugar per 100 g, estimate how many of those grams are ADDED sugar (added during processing — table sugar, syrups, honey, concentrated juice) per 100 g, excluding naturally-occurring sugar. Treat the food as exactly 100 g.`;
+    const res = await apiRequest('/analyze', { method: 'POST', body: JSON.stringify({ description: desc }) });
+    if (!res.ok || !res.body || res.body.error) return null;
+    const r = res.body;
+    let added = Number(r.sugar_g);
+    if (isNaN(added)) return null;
+    if (r.serving_grams > 0) added = added * 100 / r.serving_grams;   // normalize to per-100g
+    return Math.max(0, Math.min(added, totalSugar100));               // added can't exceed total
+  } catch (e) { return null; }
+}
 let recipeItems = [];          // structured/scanned ingredients in the recipe builder
 let recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, sugar: 0, fat: 0 }; // TOTAL macros of the freeform (AI) portion
 let recipeServingGrams = null;   // per-serving grams of the recipe (sum of ingredient grams ÷ servings)
@@ -3786,6 +3803,18 @@ async function lookupBarcode(code) {
     }
     bcBaseNutrition = per100;
 
+    // If OFF didn't provide added sugars but the product has total sugar, estimate
+    // the added portion with AI (wrapped so a failure never breaks the scan).
+    bcSugarEstimated = false;
+    const offHasAdded = n['added-sugars_100g'] != null || n['added_sugars_100g'] != null
+      || n['added-sugars_serving'] != null || n['added_sugars_serving'] != null;
+    const totalSugar100 = num(n['sugars_100g'])
+      || (num(n['sugars_serving']) && bcServingGrams ? num(n['sugars_serving']) * 100 / bcServingGrams : 0);
+    if (!offHasAdded && totalSugar100 > 0) {
+      const est = await estimateAddedSugarPer100(bcProductName, totalSugar100);
+      if (est != null) { per100.sugar = est; bcBaseNutrition.sugar = est; bcSugarEstimated = true; }
+    }
+
     // Grams per cup: derive from the label when it lists a cup measure, else approximate.
     const cupMatch = servingSize.match(/([\d.]+)\s*cups?\b/i);
     if (cupMatch && bcServingGrams && parseFloat(cupMatch[1]) > 0) {
@@ -3839,13 +3868,20 @@ function updateBarcodeNutrition() {
   document.getElementById('bcFat').textContent = Math.round(bcBaseNutrition.fat * f) + 'g';
   const unit = document.getElementById('bcUnit').value;
   const hint = document.getElementById('bcServingHint');
+  let h;
   if (unit === 'serving' && bcServingGrams) {
-    hint.textContent = `1 serving ≈ ${Math.round(bcServingGrams)} g · ${Math.round(grams)} g total`;
+    h = `1 serving ≈ ${Math.round(bcServingGrams)} g · ${Math.round(grams)} g total`;
   } else if (unit === 'cup') {
-    hint.textContent = `≈ ${Math.round(grams)} g${bcCupExact ? '' : ' · cups are approximate'}`;
+    h = `≈ ${Math.round(grams)} g${bcCupExact ? '' : ' · cups are approximate'}`;
   } else {
-    hint.textContent = `≈ ${Math.round(grams)} g`;
+    h = `≈ ${Math.round(grams)} g`;
   }
+  // Surface added sugar for this amount, flagging when it's an AI estimate.
+  const addedSugar = (bcBaseNutrition.sugar || 0) * f;
+  if (addedSugar > 0 || bcSugarEstimated) {
+    h += ` · added sugar ${Math.round(addedSugar)} g${bcSugarEstimated ? ' (est.)' : ''}`;
+  }
+  hint.textContent = h;
 }
 
 async function addBarcodeEntry() {
