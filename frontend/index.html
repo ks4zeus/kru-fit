@@ -903,6 +903,7 @@
     font-family: var(--mono); font-size: 11px; color: var(--muted); line-height: 1.7;
   }
   .calc-math div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .app-version { text-align: center; font-size: 11px; color: var(--muted); margin-top: 14px; letter-spacing: 0.3px; }
   .calc-math-section { margin-top: 16px; }
   .calc-explain { font-size: 13px; color: var(--muted); font-style: italic; line-height: 1.5; margin-top: 12px; }
   .calc-explain:empty { display: none; }
@@ -2442,6 +2443,7 @@
     </div>
     <button class="btn-primary" onclick="saveSettings()">Save Profile</button>
     <button class="btn-cancel" onclick="closeSettings()">Cancel</button>
+    <div class="app-version" id="appVersion"></div>
   </div>
 </div>
 
@@ -2540,6 +2542,9 @@
 </div>
 <script>
 const API_BASE = '/api';
+// Build version shown at the bottom of the profile page. Bump with each deploy
+// (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
+const APP_VERSION = 'v11';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -7286,6 +7291,8 @@ async function groceryClearChecked() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  const av = document.getElementById('appVersion');
+  if (av) av.textContent = 'Kru Fit · ' + APP_VERSION;
   // Invite deep-link: show the join screen instead of the app.
   const inviteToken = new URLSearchParams(location.search).get('token');
   if (inviteToken) { showInviteAcceptScreen(inviteToken); return; }
