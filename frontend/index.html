@@ -350,6 +350,7 @@
   .fsr-badge.ai { background: rgba(244,208,111,0.15); color: var(--cal); }
   .fs-attrib { text-align: center; font-size: 11px; color: var(--muted); margin: 12px 0 6px; }
   .fs-ai-warn { background: rgba(244,208,111,0.1); border: 1px solid rgba(244,208,111,0.3); color: var(--cal); font-size: 12px; padding: 8px 10px; border-radius: 8px; margin-bottom: 10px; }
+  .fs-note { background: var(--surface2); color: var(--muted); font-size: 12px; padding: 6px 10px; border-radius: 8px; margin-bottom: 8px; }
   .fsp-name { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
   .fsp-row { display: flex; gap: 8px; margin-bottom: 10px; }
   .fsp-row input { flex: 0 0 90px; }
@@ -5572,8 +5573,9 @@ async function runFoodSearch(q) {
   spin.style.display = 'none';
   fsResults = data.results || [];
   if (!fsResults.length) { list.innerHTML = '<div class="fs-empty">No matches found.</div>'; return; }
+  const note = data.note ? `<div class="fs-note">${escapeHtml(data.note)}</div>` : '';
   const warn = data.source === 'ai' ? '<div class="fs-ai-warn">⚠️ No database match found — AI estimate, verify before logging</div>' : '';
-  list.innerHTML = warn + foodResultRows(fsResults, 'pickFoodResult');
+  list.innerHTML = note + warn + foodResultRows(fsResults, 'pickFoodResult');
 }
 function searchRef(r) { return { qty: r.serving_qty || 100, unit: r.serving_unit || 'g', grams: r.serving_grams }; }
 function searchScaled(r, qty, unit) {
@@ -5661,7 +5663,8 @@ async function runCfSearch(q) {
     return;
   }
   revealAiEstimate(false);
-  list.innerHTML = foodResultRows(cfLastResults, 'cfPickResult');
+  const note = data.note ? `<div class="fs-note">${escapeHtml(data.note)}</div>` : '';
+  list.innerHTML = note + foodResultRows(cfLastResults, 'cfPickResult');
 }
 function cfPickResult(i) {
   const r = cfLastResults[i];

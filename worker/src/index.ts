@@ -350,7 +350,7 @@ async function usdaSearch(env: Env, q: string): Promise<FoodResult[]> {
   if (!env.USDA_API_KEY) return [];
   try {
     const resp = await fetch(
-      `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${encodeURIComponent(env.USDA_API_KEY)}`,
+      `${env.USDA_BASE || "https://api.nal.usda.gov"}/fdc/v1/foods/search?api_key=${encodeURIComponent(env.USDA_API_KEY)}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -367,7 +367,7 @@ async function usdaGetById(env: Env, fdcId: string): Promise<FoodResult | null> 
   if (!env.USDA_API_KEY) return null;
   try {
     const resp = await fetch(
-      `https://api.nal.usda.gov/fdc/v1/food/${encodeURIComponent(fdcId)}?api_key=${encodeURIComponent(env.USDA_API_KEY)}`
+      `${env.USDA_BASE || "https://api.nal.usda.gov"}/fdc/v1/food/${encodeURIComponent(fdcId)}?api_key=${encodeURIComponent(env.USDA_API_KEY)}`
     );
     if (!resp.ok) return null;
     return parseUsdaFood(await resp.json());
@@ -414,27 +414,82 @@ async function aiEstimateFood(env: Env, db: D1Database, userEmail: string, q: st
   } catch (e) { console.error("AI estimate failed", e); return null; }
 }
 
-// Three-tier lookup: D1 cache → USDA → AI (AI only when aiFallback is true).
+// Common food aliases USDA doesn't list under the user's term. Keyed lowercase.
+// Extend this map as gaps in USDA coverage are discovered.
+const FOOD_ALIASES: Record<string, string> = {
+  "chicken tenderloin": "chicken breast",
+  "chicken tender": "chicken breast",
+  "chicken strips": "chicken breast",
+  "chicken fingers": "chicken breast",
+  "beef mince": "ground beef",
+  "mince": "ground beef",
+  "minced beef": "ground beef",
+  "rocket": "arugula",
+  "courgette": "zucchini",
+  "aubergine": "eggplant",
+  "coriander": "cilantro",
+  "prawns": "shrimp",
+  "mangetout": "snow peas",
+};
+
+function searchNote(usedQuery: string, originalQuery: string): string {
+  return `Showing results for '${usedQuery}' — closest USDA match for '${originalQuery}'`;
+}
+
+// Lookup: D1 cache → USDA (with alias + partial-word fallbacks) → AI.
+// Query-rewrite fallbacks and AI only run for interactive search (aiFallback=true);
+// verify-library (aiFallback=false) keeps the strict original-query behaviour.
 async function searchFoods(
   env: Env, db: D1Database, userEmail: string, q: string, aiFallback: boolean
-): Promise<{ results: FoodResult[]; source: string }> {
+): Promise<{ results: FoodResult[]; source: string; note?: string }> {
+  const ENOUGH = 3;   // a query that returns this many is "good enough" — stop here
   const cached = ((await db
     .prepare("SELECT * FROM foods_cache WHERE LOWER(name) LIKE LOWER(?) ORDER BY source = 'usda' DESC, name ASC LIMIT 10")
     .bind(`%${q}%`)
     .all()).results || []) as any[];
   if (cached.length >= 5) return { results: cached.map(rowToResult), source: "cache" };
 
-  const usda = await usdaSearch(env, q);
-  if (usda.length > 0) {
-    await cacheUsdaFoods(db, usda);
-    return { results: usda.slice(0, 10), source: "usda" };
+  const orig = await usdaSearch(env, q);
+
+  // Non-interactive (verify-library): original query only, then cache. No rewrites/AI.
+  if (!aiFallback) {
+    if (orig.length > 0) { await cacheUsdaFoods(db, orig); return { results: orig.slice(0, 10), source: "usda" }; }
+    if (cached.length > 0) return { results: cached.map(rowToResult), source: "cache" };
+    return { results: [], source: "usda" };
+  }
+
+  if (orig.length >= ENOUGH) { await cacheUsdaFoods(db, orig); return { results: orig.slice(0, 10), source: "usda" }; }
+  const attempts: Array<{ q: string; results: FoodResult[] }> = [{ q, results: orig }];
+
+  // Smart fallback (a): alias retry on an exact full-query match.
+  const alias = FOOD_ALIASES[q.trim().toLowerCase()];
+  if (alias) {
+    const ar = await usdaSearch(env, alias);
+    if (ar.length > 0) { await cacheUsdaFoods(db, ar); return { results: ar.slice(0, 10), source: "usda", note: searchNote(alias, q) }; }
+  }
+
+  // Smart fallback (b): retry with the first two words, then the first word.
+  const words = q.trim().split(/\s+/).filter(Boolean);
+  const candidates: string[] = [];
+  if (words.length > 2) candidates.push(words.slice(0, 2).join(" "));
+  if (words.length > 1) candidates.push(words[0]);
+  for (const cand of candidates) {
+    const cr = await usdaSearch(env, cand);
+    if (cr.length >= ENOUGH) { await cacheUsdaFoods(db, cr); return { results: cr.slice(0, 10), source: "usda", note: searchNote(cand, q) }; }
+    attempts.push({ q: cand, results: cr });
+  }
+
+  // Nothing hit the threshold — prefer ANY non-empty USDA results over AI.
+  const best = attempts.find((a) => a.results.length > 0);
+  if (best) {
+    await cacheUsdaFoods(db, best.results);
+    return { results: best.results.slice(0, 10), source: "usda", note: best.q !== q ? searchNote(best.q, q) : undefined };
   }
   if (cached.length > 0) return { results: cached.map(rowToResult), source: "cache" };
 
-  if (aiFallback) {
-    const ai = await aiEstimateFood(env, db, userEmail, q);
-    if (ai) return { results: [ai], source: "ai" };
-  }
+  // Tier 3: AI estimate (last resort).
+  const ai = await aiEstimateFood(env, db, userEmail, q);
+  if (ai) return { results: [ai], source: "ai" };
   return { results: [], source: "usda" };
 }
 
@@ -581,8 +636,8 @@ export default {
     if (segments[1] === "foods" && segments[2] === "search" && segments.length === 3 && request.method === "GET") {
       const q = (url.searchParams.get("q") || "").trim();
       if (q.length < 2) return jsonResponse({ results: [], source: "cache", total: 0 });
-      const { results, source } = await searchFoods(env, db, userEmail, q, true);
-      return jsonResponse({ results, source, total: results.length });
+      const { results, source, note } = await searchFoods(env, db, userEmail, q, true);
+      return jsonResponse({ results, source, total: results.length, note: note || null });
     }
 
     // ---- Verify the whole custom-food library against USDA (recipes excluded) ----
@@ -1809,6 +1864,8 @@ type Env = {
   DB: D1Database;
   ANTHROPIC_API_KEY?: string;
   USDA_API_KEY?: string;
+  USDA_BASE?: string;   // override the USDA API origin (testing); defaults to the real one
+
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   ADMIN_EMAILS?: string;
