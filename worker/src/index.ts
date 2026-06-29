@@ -146,8 +146,10 @@ async function mePayload(db: D1Database, env: Env, userEmail: string) {
   const name = row?.name ? String(row.name).trim() : null;
   const role = row?.role || "solo";
   const admin = isAdmin(userEmail, env);
-  // Admins are implicitly eligible; otherwise it's an admin-granted per-user flag.
-  const trainerEligible = admin || !!row?.trainer_eligible;
+  // Trainer eligibility is an explicit, admin-granted per-user flag — NOT implied by
+  // being an admin (so the coaching setup stays hidden until actually granted). The
+  // /api/trainer/setup route still lets an admin create an org regardless.
+  const trainerEligible = !!row?.trainer_eligible;
 
   let trainer: { name: string; org_id: string; org_name: string } | null = null;
   let org: { id: string; name: string; client_count: number } | null = null;

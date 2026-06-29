@@ -2400,7 +2400,6 @@
 
       <button class="btn-primary blue" onclick="calculateMacros()">Calculate &amp; fill goals</button>
       <div class="we-feedback" id="calcFeedback" style="color:#60a5fa"></div>
-      <div class="calc-explain" id="calcExplain"></div>
       <div class="calc-disclaimer">Estimates only — not medical advice. A starting point; adjust based on your real-world results.</div>
     </div>
     <div class="settings-grid">
@@ -2430,10 +2429,11 @@
       </div>
     </div>
     <div class="calc-math-section" id="calcMathSection" style="display:none">
+      <div class="calc-explain" id="calcExplain"></div>
       <div class="calc-sub">🧮 How your goals were calculated</div>
       <div class="calc-math" id="calcMath"></div>
     </div>
-    <div class="profile-box" id="trainerProfileBox">
+    <div class="profile-box" id="trainerProfileBox" style="display:none">
       <div class="calc-sub">Coaching</div>
       <div class="setting-row">
         <label>Trainer mode</label>
@@ -2544,7 +2544,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v11';
+const APP_VERSION = 'v12';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -6491,6 +6491,7 @@ function openSettings() {
   document.getElementById('profDiet').value = goals.diet || 'none';
   document.getElementById('profRestrictions').value = goals.restrictions || '';
   prefillCalc();
+  applyTrainerVisibility();   // re-gate the coaching box each time (fail-closed)
   document.getElementById('settingsModal').classList.add('open');
 }
 
@@ -6524,6 +6525,13 @@ function prefillCalc() {
       const last = weightLog[keys[keys.length - 1]];
       document.getElementById('calcWeight').value = toDisplayWeight(last.val, last.unit).toFixed(1);
     }
+  }
+  // Restore the last calculation's breakdown + explanation so they're always visible.
+  const res = loadLocal('fuellog_calc_result', null);
+  if (res && (res.math || res.explain)) {
+    document.getElementById('calcMath').innerHTML = res.math || '';
+    document.getElementById('calcExplain').textContent = res.explain || '';
+    document.getElementById('calcMathSection').style.display = 'block';
   }
 }
 
@@ -6646,7 +6654,8 @@ function calculateMacros() {
     `→ target ${target} kcal`,
     `P ${protein} · C ${carbs} · F ${fat} · fiber ${fiber}`,
   ];
-  document.getElementById('calcMath').innerHTML = mathRows.map(r => `<div>${r}</div>`).join('');
+  const mathHtml = mathRows.map(r => `<div>${r}</div>`).join('');
+  document.getElementById('calcMath').innerHTML = mathHtml;
   document.getElementById('calcMathSection').style.display = 'block';
 
   fb.style.color = '#60a5fa';
@@ -6689,7 +6698,10 @@ function calculateMacros() {
       ? 'Carbohydrates are kept generous to fuel training and support muscle growth.'
       : 'Carbohydrates make up the remainder of your calories for sustained daily energy.';
 
-  document.getElementById('calcExplain').textContent = [calSentence, proteinSentence, fatSentence, carbSentence].join(' ');
+  const explainText = [calSentence, proteinSentence, fatSentence, carbSentence].join(' ');
+  document.getElementById('calcExplain').textContent = explainText;
+  // Persist so the breakdown + explanation stay visible whenever Settings reopens.
+  saveLocal('fuellog_calc_result', { math: mathHtml, explain: explainText });
 
   saveLocal('fuellog_calc', {
     sex, age, ft, inch, weight: weightInput, wUnit, bf: v('calcBf'), steps: v('calcSteps'),
