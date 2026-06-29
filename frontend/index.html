@@ -904,7 +904,9 @@
   }
   .calc-math div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .app-version { text-align: center; font-size: 11px; color: var(--muted); margin-top: 14px; letter-spacing: 0.3px; }
-  .calc-math-section { margin-top: 16px; }
+  .calc-math-section { margin: 16px 0; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--surface); }
+  .calc-math-section .calc-explain { margin-top: 0; }
+  .calc-math-toggle { display: block; margin-top: 10px; background: none; border: none; color: var(--carbs); font-size: 12px; cursor: pointer; padding: 0; font-family: var(--font); }
   .calc-explain { font-size: 13px; color: var(--muted); font-style: italic; line-height: 1.5; margin-top: 12px; }
   .calc-explain:empty { display: none; }
   .calc-disclaimer { font-size: 10px; color: var(--muted); font-style: italic; line-height: 1.4; margin-top: 10px; }
@@ -2428,11 +2430,6 @@
         <input type="number" id="goalSugar" value="50">
       </div>
     </div>
-    <div class="calc-math-section" id="calcMathSection" style="display:none">
-      <div class="calc-explain" id="calcExplain"></div>
-      <div class="calc-sub">🧮 How your goals were calculated</div>
-      <div class="calc-math" id="calcMath"></div>
-    </div>
     <div class="profile-box" id="trainerProfileBox" style="display:none">
       <div class="calc-sub">Coaching</div>
       <div class="setting-row">
@@ -2440,6 +2437,11 @@
         <button class="btn-primary" id="becomeTrainerBtn" onclick="openTrainerSetup()" style="width:auto;padding:8px 16px;font-size:12px">Set up coaching profile</button>
       </div>
       <div class="prof-note" id="trainerModeNote">Manage clients and see their logs from a Clients tab.</div>
+    </div>
+    <div class="calc-math-section" id="calcMathSection" style="display:none">
+      <div class="calc-explain" id="calcExplain"></div>
+      <button class="calc-math-toggle" id="calcMathToggle" onclick="toggleCalcMath()" style="display:none">▶ Show the math</button>
+      <div class="calc-math" id="calcMath" style="display:none"></div>
     </div>
     <button class="btn-primary" onclick="saveSettings()">Save Profile</button>
     <button class="btn-cancel" onclick="closeSettings()">Cancel</button>
@@ -2544,7 +2546,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v12';
+const APP_VERSION = 'v13';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -6526,13 +6528,8 @@ function prefillCalc() {
       document.getElementById('calcWeight').value = toDisplayWeight(last.val, last.unit).toFixed(1);
     }
   }
-  // Restore the last calculation's breakdown + explanation so they're always visible.
-  const res = loadLocal('fuellog_calc_result', null);
-  if (res && (res.math || res.explain)) {
-    document.getElementById('calcMath').innerHTML = res.math || '';
-    document.getElementById('calcExplain').textContent = res.explain || '';
-    document.getElementById('calcMathSection').style.display = 'block';
-  }
+  // Always-on explanation generated from the current saved goals (no Calculate needed).
+  renderGoalExplanation();
 }
 
 function calcStepMult(steps) {
@@ -6541,6 +6538,90 @@ function calcStepMult(steps) {
   if (steps < 10000) return 1.5;
   if (steps < 15000) return 1.65;
   return 1.8;
+}
+
+// Compose the 3-4 sentence goal explanation. The cap/floor flags are only known
+// right after a full Calculate; when regenerating from saved goals they're omitted.
+function composeGoalExplanation(v) {
+  const calMap = {
+    'lose-slow': 'Your calorie target is set for approximately 0.5 lb/week of fat loss.',
+    'lose-moderate': 'Your calorie target is set for approximately 1 lb/week of fat loss.',
+    'lose-aggressive': 'Your calorie target is set for approximately 1.5–2 lb/week of fat loss.',
+    'gain-slow': 'Your calorie target supports a slow, lean muscle gain of approximately 0.25–0.5 lb/week.',
+    'gain-moderate': 'Your calorie target supports steady muscle gain of approximately 0.5–1 lb/week.',
+    'gain-aggressive': 'Your calorie target supports an aggressive muscle gain phase.',
+  };
+  let calSentence;
+  if (v.goal === 'maintain') calSentence = 'Your calorie target is set to maintain your current weight.';
+  else if (v.rate && calMap[`${v.goal}-${v.rate}`]) calSentence = calMap[`${v.goal}-${v.rate}`];
+  else calSentence = v.goal === 'gain' ? 'Your calorie target supports gradual muscle gain.' : 'Your calorie target is set for steady fat loss.';
+  if (v.ageFloored) calSentence += ` A minimum of ${v.ageFloor} kcal has been applied for your age group.`;
+  if (v.bmrFloored) calSentence += ' Your target was raised to match your BMR to avoid metabolic adaptation.';
+
+  const goalWord = { lose: 'fat-loss', gain: 'muscle-building', maintain: 'maintenance' }[v.goal] || v.goal;
+  const proteinSentence = v.proteinCapped
+    ? `Protein has been moderated to ${v.protein}g to keep your macro split balanced at this calorie level.`
+    : `Protein is set high to preserve muscle mass during your ${goalWord} phase.`;
+
+  let fatSentence;
+  if (v.fatFloorFired) fatSentence = `Fat is kept at the minimum recommended level of ${v.fat}g to support hormones and vitamin absorption.`;
+  else if (v.macroStyle === 'high-carb') fatSentence = 'Fat is kept intentionally low to leave more room for carbohydrates.';
+  else if (v.macroStyle === 'low-carb') fatSentence = 'Fat is higher to replace carbohydrates as your primary energy source.';
+  else fatSentence = 'Fat is set at a moderate level to support hormones, satiety, and overall health.';
+
+  const carbSentence = v.goal === 'lose'
+    ? 'Carbohydrates fill the remaining calories to fuel your workouts and support recovery.'
+    : v.goal === 'gain'
+      ? 'Carbohydrates are kept generous to fuel training and support muscle growth.'
+      : 'Carbohydrates make up the remainder of your calories for sustained daily energy.';
+
+  return [calSentence, proteinSentence, fatSentence, carbSentence].join(' ');
+}
+
+// Always-on explanation generated from the CURRENT saved goals (runs on Settings
+// open, no Calculate needed). The math breakdown only appears if the calculator was
+// actually run (it needs BMR/activity inputs), restored from the last result.
+function renderGoalExplanation() {
+  const section = document.getElementById('calcMathSection');
+  if (!section) return;
+  const num = id => { const el = document.getElementById(id); return el ? (parseFloat(el.value) || 0) : 0; };
+  const calc = loadLocal('fuellog_calc', null) || {};
+  const cal = num('goalCal'), fat = num('goalFat');
+  let macroStyle = calc.pref;
+  if (!macroStyle && cal > 0) {
+    const fatRatio = (fat * 9) / cal;   // infer style from the saved split
+    macroStyle = fatRatio <= 0.27 ? 'high-carb' : fatRatio >= 0.40 ? 'low-carb' : 'balanced';
+  }
+  const objEl = document.getElementById('profObjective');
+  document.getElementById('calcExplain').textContent = composeGoalExplanation({
+    goal: (objEl && objEl.value) || (goals && goals.objective) || 'maintain',
+    rate: calc.rate || null,
+    target: cal,
+    protein: num('goalProtein'),
+    carbs: num('goalCarbs'),
+    fat,
+    macroStyle,
+  });
+  const res = loadLocal('fuellog_calc_result', null);
+  const mathEl = document.getElementById('calcMath');
+  const toggle = document.getElementById('calcMathToggle');
+  if (res && res.math) {
+    mathEl.innerHTML = res.math;
+    mathEl.style.display = 'none';
+    toggle.textContent = '▶ Show the math';
+    toggle.style.display = 'block';
+  } else {
+    mathEl.innerHTML = '';
+    toggle.style.display = 'none';
+  }
+  section.style.display = 'block';
+}
+
+function toggleCalcMath() {
+  const m = document.getElementById('calcMath');
+  const open = m.style.display === 'none';
+  m.style.display = open ? 'block' : 'none';
+  document.getElementById('calcMathToggle').textContent = (open ? '▼ Hide' : '▶ Show') + ' the math';
 }
 
 // Best-in-class estimate: Katch-McArdle/Mifflin BMR -> steps NEAT + exercise ->
@@ -6656,6 +6737,9 @@ function calculateMacros() {
   ];
   const mathHtml = mathRows.map(r => `<div>${r}</div>`).join('');
   document.getElementById('calcMath').innerHTML = mathHtml;
+  document.getElementById('calcMath').style.display = 'none';      // collapsed; user expands
+  document.getElementById('calcMathToggle').textContent = '▶ Show the math';
+  document.getElementById('calcMathToggle').style.display = 'block';
   document.getElementById('calcMathSection').style.display = 'block';
 
   fb.style.color = '#60a5fa';
@@ -6665,43 +6749,15 @@ function calculateMacros() {
     : (wasFloored ? '⚠️ Minimum recommended intake applied for your age group. Consult a doctor before going lower.' : '');
   fb.innerHTML = escapeHtml(summary) + (floorNote ? `<div style="color:var(--cal);margin-top:6px">${floorNote}</div>` : '');
 
-  // ---- Plain-language explanation, composed from the actual computed values ----
-  const calMap = {
-    'lose-slow': 'Your calorie target is set for approximately 0.5 lb/week of fat loss.',
-    'lose-moderate': 'Your calorie target is set for approximately 1 lb/week of fat loss.',
-    'lose-aggressive': 'Your calorie target is set for approximately 1.5–2 lb/week of fat loss.',
-    'gain-slow': 'Your calorie target supports a slow, lean muscle gain of approximately 0.25–0.5 lb/week.',
-    'gain-moderate': 'Your calorie target supports steady muscle gain of approximately 0.5–1 lb/week.',
-    'gain-aggressive': 'Your calorie target supports an aggressive muscle gain phase.',
-  };
+  // Plain-language explanation from the freshly computed values (with cap/floor flags).
   const ageFloored = wasFloored && !bmrFloored;
-  let calSentence = goal === 'maintain'
-    ? 'Your calorie target is set to maintain your current weight.'
-    : (calMap[`${goal}-${rate}`] || 'Your calorie target has been set from your inputs.');
-  if (ageFloored) calSentence += ` A minimum of ${ageFloor} kcal has been applied for your age group.`;
-  if (bmrFloored) calSentence += ' Your target was raised to match your BMR to avoid metabolic adaptation.';
-
-  const goalWord = { lose: 'fat-loss', gain: 'muscle-building', maintain: 'maintenance' }[goal] || goal;
-  const proteinSentence = proteinCapped
-    ? `Protein has been moderated to ${protein}g to keep your macro split balanced at this calorie level.`
-    : `Protein is set high to preserve muscle mass during your ${goalWord} phase.`;
-
-  let fatSentence;
-  if (fatFloorFired) fatSentence = `Fat is kept at the minimum recommended level of ${fat}g to support hormones and vitamin absorption.`;
-  else if (macroStyle === 'high-carb') fatSentence = 'Fat is kept intentionally low to leave more room for carbohydrates.';
-  else if (macroStyle === 'low-carb') fatSentence = 'Fat is higher to replace carbohydrates as your primary energy source.';
-  else fatSentence = 'Fat is set at a moderate level to support hormones, satiety, and overall health.';
-
-  const carbSentence = goal === 'lose'
-    ? 'Carbohydrates fill the remaining calories to fuel your workouts and support recovery.'
-    : goal === 'gain'
-      ? 'Carbohydrates are kept generous to fuel training and support muscle growth.'
-      : 'Carbohydrates make up the remainder of your calories for sustained daily energy.';
-
-  const explainText = [calSentence, proteinSentence, fatSentence, carbSentence].join(' ');
+  const explainText = composeGoalExplanation({
+    goal, rate, target, protein, carbs, fat, macroStyle,
+    proteinCapped, fatFloorFired, ageFloored, bmrFloored, ageFloor,
+  });
   document.getElementById('calcExplain').textContent = explainText;
-  // Persist so the breakdown + explanation stay visible whenever Settings reopens.
-  saveLocal('fuellog_calc_result', { math: mathHtml, explain: explainText });
+  // Persist the math so the collapsible breakdown survives a Settings reopen.
+  saveLocal('fuellog_calc_result', { math: mathHtml });
 
   saveLocal('fuellog_calc', {
     sex, age, ft, inch, weight: weightInput, wUnit, bf: v('calcBf'), steps: v('calcSteps'),
