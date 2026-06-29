@@ -903,6 +903,8 @@
     font-family: var(--mono); font-size: 11px; color: var(--muted); line-height: 1.7;
   }
   .calc-math div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .calc-explain { font-size: 13px; color: var(--muted); font-style: italic; line-height: 1.5; margin-top: 12px; }
+  .calc-explain:empty { display: none; }
   .calc-disclaimer { font-size: 10px; color: var(--muted); font-style: italic; line-height: 1.4; margin-top: 10px; }
 
   .calc-sub { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 8px; }
@@ -2398,6 +2400,7 @@
       <div class="we-feedback" id="calcFeedback" style="color:#60a5fa"></div>
       <button class="calc-math-toggle" id="calcMathToggle" onclick="toggleCalcMath()" style="display:none">▸ Show the math</button>
       <div class="calc-math" id="calcMath" style="display:none"></div>
+      <div class="calc-explain" id="calcExplain"></div>
       <div class="calc-disclaimer">Estimates only — not medical advice. A starting point; adjust based on your real-world results.</div>
     </div>
     <div class="settings-grid">
@@ -6607,9 +6610,10 @@ function calculateMacros() {
   // ---- Protein: bodyweight (or lean mass) target, capped at 35% of calories ----
   const proteinBaseLb = bfKnown ? lbmKg * 2.20462 : weightLb;
   const proteinPerLb = bfKnown ? (goal === 'lose' ? 1.2 : 1.0) : (goal === 'lose' ? 1.0 : 0.85);
-  let protein = Math.round(proteinBaseLb * proteinPerLb);
+  const proteinTarget = Math.round(proteinBaseLb * proteinPerLb);
   const proteinCalCap = Math.floor((target * 0.35) / 4);
-  protein = Math.min(protein, proteinCalCap);
+  const protein = Math.min(proteinTarget, proteinCalCap);
+  const proteinCapped = proteinCalCap < proteinTarget;
 
   // ---- Fat: share of REMAINING calories by macro style, with a healthy floor.
   // Carbs then take whatever's left, so calories always sum to the target. ----
@@ -6617,7 +6621,10 @@ function calculateMacros() {
   const fatPct = { 'high-carb': 0.25, balanced: 0.35, 'low-carb': 0.45 }[macroStyle] || 0.35;
   const fatFloorGrams = Math.max(40, Math.min(0.3 * weightLb, (target * 0.20) / 9));
   const remainingCal = target - protein * 4;
-  const fat = Math.max(Math.round(fatFloorGrams), Math.round((remainingCal * fatPct) / 9));
+  const fatFloorR = Math.round(fatFloorGrams);
+  const fatStyleR = Math.round((remainingCal * fatPct) / 9);
+  const fat = Math.max(fatFloorR, fatStyleR);
+  const fatFloorFired = fatFloorR > fatStyleR;
   const carbs = Math.max(0, Math.round((remainingCal - fat * 9) / 4));
   const fiber = Math.round(target / 1000 * 14);
 
@@ -6647,6 +6654,41 @@ function calculateMacros() {
     ? '⚠️ Target raised to match your estimated BMR — eating below this level long-term is not recommended.'
     : (wasFloored ? '⚠️ Minimum recommended intake applied for your age group. Consult a doctor before going lower.' : '');
   fb.innerHTML = escapeHtml(summary) + (floorNote ? `<div style="color:var(--cal);margin-top:6px">${floorNote}</div>` : '');
+
+  // ---- Plain-language explanation, composed from the actual computed values ----
+  const calMap = {
+    'lose-slow': 'Your calorie target is set for approximately 0.5 lb/week of fat loss.',
+    'lose-moderate': 'Your calorie target is set for approximately 1 lb/week of fat loss.',
+    'lose-aggressive': 'Your calorie target is set for approximately 1.5–2 lb/week of fat loss.',
+    'gain-slow': 'Your calorie target supports a slow, lean muscle gain of approximately 0.25–0.5 lb/week.',
+    'gain-moderate': 'Your calorie target supports steady muscle gain of approximately 0.5–1 lb/week.',
+    'gain-aggressive': 'Your calorie target supports an aggressive muscle gain phase.',
+  };
+  const ageFloored = wasFloored && !bmrFloored;
+  let calSentence = goal === 'maintain'
+    ? 'Your calorie target is set to maintain your current weight.'
+    : (calMap[`${goal}-${rate}`] || 'Your calorie target has been set from your inputs.');
+  if (ageFloored) calSentence += ` A minimum of ${ageFloor} kcal has been applied for your age group.`;
+  if (bmrFloored) calSentence += ' Your target was raised to match your BMR to avoid metabolic adaptation.';
+
+  const goalWord = { lose: 'fat-loss', gain: 'muscle-building', maintain: 'maintenance' }[goal] || goal;
+  const proteinSentence = proteinCapped
+    ? `Protein has been moderated to ${protein}g to keep your macro split balanced at this calorie level.`
+    : `Protein is set high to preserve muscle mass during your ${goalWord} phase.`;
+
+  let fatSentence;
+  if (fatFloorFired) fatSentence = `Fat is kept at the minimum recommended level of ${fat}g to support hormones and vitamin absorption.`;
+  else if (macroStyle === 'high-carb') fatSentence = 'Fat is kept intentionally low to leave more room for carbohydrates.';
+  else if (macroStyle === 'low-carb') fatSentence = 'Fat is higher to replace carbohydrates as your primary energy source.';
+  else fatSentence = 'Fat is set at a moderate level to support hormones, satiety, and overall health.';
+
+  const carbSentence = goal === 'lose'
+    ? 'Carbohydrates fill the remaining calories to fuel your workouts and support recovery.'
+    : goal === 'gain'
+      ? 'Carbohydrates are kept generous to fuel training and support muscle growth.'
+      : 'Carbohydrates make up the remainder of your calories for sustained daily energy.';
+
+  document.getElementById('calcExplain').textContent = [calSentence, proteinSentence, fatSentence, carbSentence].join(' ');
 
   saveLocal('fuellog_calc', {
     sex, age, ft, inch, weight: weightInput, wUnit, bf: v('calcBf'), steps: v('calcSteps'),

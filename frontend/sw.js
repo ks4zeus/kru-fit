@@ -1,5 +1,5 @@
 // Kru Fit service worker. Bump CACHE_VERSION to invalidate old caches on deploy.
-const CACHE_VERSION = 'kru-fit-v8';
+const CACHE_VERSION = 'kru-fit-v9';
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',
