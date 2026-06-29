@@ -6713,7 +6713,7 @@ async function renderGrocery() {
 
   const row = (it) => `
     <div class="grocery-item ${it.added_by_role === 'trainer' ? 'trainer-item' : ''} ${it.checked ? 'checked' : ''}">
-      <button class="gi-check${it.checked ? ' on' : ''}" onclick="groceryCheck(${Number(it.id)}, ${it.checked ? 0 : 1})" title="${it.added_by_role === 'trainer' ? 'Got it — remove from list' : (it.checked ? 'Uncheck' : 'Check off')}">${it.checked ? '✓' : ''}</button>
+      <button class="gi-check${it.checked ? ' on' : ''}" onclick="groceryCheck(${Number(it.id)}, ${it.checked ? 0 : 1})" title="${it.checked ? 'Uncheck' : 'Check off'}">${it.checked ? '✓' : ''}</button>
       <div class="gi-content">
         <span class="gi-name">${escapeHtml(it.item)}</span>
         ${it.note ? `<span class="gi-note">${it.added_by_role === 'trainer' ? '💬 ' : ''}${escapeHtml(it.note)}</span>` : (it.added_by_role === 'trainer' ? '<span class="gi-note">from your coach</span>' : '')}
@@ -6732,27 +6732,34 @@ async function renderGrocery() {
   el.innerHTML = html;
 }
 
+// Every grocery mutation re-fetches from the API on success — never an optimistic
+// DOM change. A failed request leaves the list exactly as it was (so a check that
+// doesn't reach the server can't make an item vanish).
 async function groceryAdd() {
   const itemEl = document.getElementById('groceryItemInput');
   const noteEl = document.getElementById('groceryNoteInput');
   const item = (itemEl.value || '').trim();
   if (!item) return;
   const note = (noteEl.value || '').trim();
-  await apiRequest('/grocery', { method: 'POST', body: JSON.stringify({ item, note: note || null }) });
+  const res = await apiRequest('/grocery', { method: 'POST', body: JSON.stringify({ item, note: note || null }) });
+  if (!res.ok) { alert('Could not add the item — check your connection and try again.'); return; }
   itemEl.value = ''; noteEl.value = ''; itemEl.focus();
   renderGrocery();
 }
 async function groceryCheck(id, checked) {
-  await apiRequest(`/grocery/${id}/check`, { method: 'PUT', body: JSON.stringify({ checked }) });
-  renderGrocery();
+  const res = await apiRequest(`/grocery/${id}/check`, { method: 'PUT', body: JSON.stringify({ checked }) });
+  if (res.ok) renderGrocery();                 // confirmed → reflect the new state
+  else alert('Could not update that item — check your connection and try again.');
 }
 async function groceryDelete(id) {
-  await apiRequest(`/grocery/${id}`, { method: 'DELETE' });
-  renderGrocery();
+  const res = await apiRequest(`/grocery/${id}`, { method: 'DELETE' });
+  if (res.ok) renderGrocery();
+  else alert('Could not remove that item — check your connection and try again.');
 }
 async function groceryClearChecked() {
-  await apiRequest('/grocery/checked', { method: 'DELETE' });
-  renderGrocery();
+  const res = await apiRequest('/grocery/checked', { method: 'DELETE' });
+  if (res.ok) renderGrocery();
+  else alert('Could not clear bought items — check your connection and try again.');
 }
 
 document.addEventListener('DOMContentLoaded', async () => {

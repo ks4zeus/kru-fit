@@ -1105,27 +1105,20 @@ export default {
         return jsonResponse({ ok: true });
       }
 
-      // Check / uncheck an item on your list. Checking off a coach suggestion
-      // REMOVES it (suggestions change week to week); your own items toggle done.
+      // Check / uncheck any item on your list — trainer suggestions AND your own
+      // items both just toggle done (coach items move to the checked section so the
+      // trainer can see they were picked up; the client still can't delete them).
       if (request.method === "PUT" && segments.length === 4 && segments[3] === "check") {
         const id = Number(segments[2]);
         if (!Number.isFinite(id)) return jsonResponse({ error: "Invalid id" }, 400);
         const body = await parseJson(request);
         const checked = body?.checked ? 1 : 0;
-        const row = await db
-          .prepare("SELECT added_by_role FROM grocery_list WHERE id = ? AND client_id = ?")
-          .bind(id, userEmail)
-          .first<{ added_by_role: string }>();
-        if (!row) return jsonResponse({ ok: true });
-        if (checked && row.added_by_role === "trainer") {
-          await db.prepare("DELETE FROM grocery_list WHERE id = ? AND client_id = ?").bind(id, userEmail).run();
-          return jsonResponse({ ok: true, removed: true });
-        }
-        await db
+        const result = await db
           .prepare("UPDATE grocery_list SET checked = ?, checked_at = CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END WHERE id = ? AND client_id = ?")
           .bind(checked, checked, id, userEmail)
           .run();
-        return jsonResponse({ ok: true });
+        if (!result.meta?.changes) return jsonResponse({ error: "Item not found" }, 404);
+        return jsonResponse({ ok: true, id, checked: !!checked });
       }
 
       // Delete one of your OWN items (a client can't delete a trainer's suggestion).
