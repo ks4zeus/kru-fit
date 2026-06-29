@@ -1482,9 +1482,18 @@
 
   /* Client: coach note card (Today tab, read-only) */
   .coach-note-card { margin: 12px 0 0; background: rgba(244,208,111,0.06); border: 1px solid rgba(244,208,111,0.25); border-radius: 12px; padding: 12px 14px; }
-  .coach-note-card .cnc-head { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .coach-note-card .cnc-head { font-size: 12px; color: var(--muted); margin-bottom: 6px; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
   .coach-note-card .cnc-head strong { color: #F4D06F; }
+  .coach-note-card .cnc-date { color: var(--muted); font-family: var(--mono); }
   .coach-note-card .cnc-text { font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+  .cnc-dismiss { background: none; border: none; color: var(--muted); font-size: 14px; cursor: pointer; flex-shrink: 0; padding: 0 2px; line-height: 1; }
+  /* Trainer client-detail note feed */
+  .cd-note { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+  .cd-note.dismissed { opacity: 0.55; }
+  .cd-note-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
+  .cd-note-date { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .cd-note-seen { color: var(--protein); }
+  .cd-note-text { font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 
   /* Client detail */
   .cd-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; gap: 12px; }
@@ -2408,11 +2417,12 @@
     <div class="cd-macro-summary" id="cdMacroSummary"></div>
     <div class="section-head" style="padding:10px 0 8px"><h2>Food log</h2></div>
     <div id="cdFoodLog"></div>
-    <div class="section-head" style="padding:10px 0 8px"><h2>Coach note</h2></div>
+    <div class="section-head" style="padding:10px 0 8px"><h2>Coach notes</h2></div>
     <div class="cd-note-wrap">
-      <textarea id="cdNoteInput" placeholder="Leave a note for this day…" rows="3"></textarea>
-      <button class="btn-primary" onclick="saveCoachNote()" style="margin-top:8px">Save note</button>
+      <textarea id="cdNoteInput" placeholder="Write a note for this client…" rows="3"></textarea>
+      <button class="btn-primary" onclick="addCoachNote()" style="margin-top:8px">Add note</button>
     </div>
+    <div id="cdNotesList" style="margin-top:12px"></div>
     <div class="section-head" style="padding:10px 0 8px"><h2>Weight</h2></div>
     <div class="chart-card" style="margin:0 0 12px"><canvas id="cdWeightChart" height="140"></canvas></div>
     <div class="section-head" style="padding:10px 0 8px"><h2>🛒 Grocery list</h2></div>
@@ -2709,22 +2719,32 @@ async function loadViewDate() {
   loadCoachNoteToday();
 }
 
-// Read-only coach note for the viewed day, shown after the food log for connected
-// clients only. Renders nothing when there's no note.
+// Short date label for a coach note, e.g. "Jun 28".
+function noteDate(d) {
+  return d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+}
+
+// Coach-note feed for connected clients, shown after the food log. Newest first;
+// each note is dismissable. Renders nothing when there are no active notes.
 async function loadCoachNoteToday() {
   const el = document.getElementById('coachNoteToday');
   if (!el) return;
   if (!(currentUser && currentUser.trainer)) { el.innerHTML = ''; return; }
-  const day = viewDate;
-  const res = await apiRequest('/coach-notes?date=' + day);
-  if (day !== viewDate) return; // a newer day-change won the race
+  const res = await apiRequest('/coach-notes');
   const notes = (res.ok && res.body) || [];
   if (!notes.length) { el.innerHTML = ''; return; }
   el.innerHTML = notes.map(n => `
     <div class="coach-note-card">
-      <div class="cnc-head">💬 Note from <strong>${escapeHtml(n.trainer_name || 'your coach')}</strong></div>
+      <div class="cnc-head">
+        <span>💬 <strong>${escapeHtml(n.trainer_name || 'your coach')}</strong> · <span class="cnc-date">${escapeHtml(noteDate(n.date))}</span></span>
+        <button class="cnc-dismiss" onclick="dismissCoachNote(${Number(n.id)})" title="Dismiss">✕</button>
+      </div>
       <div class="cnc-text">${escapeHtml(n.note)}</div>
     </div>`).join('');
+}
+async function dismissCoachNote(id) {
+  const res = await apiRequest('/coach-notes/' + id + '/dismiss', { method: 'PUT' });
+  if (res.ok) loadCoachNoteToday();
 }
 
 // Copy a past entry into today's log.
@@ -6521,8 +6541,7 @@ async function loadClientDetail() {
           <div class="entry-cal">${Math.round(e.cal)}<span class="cal-unit">kcal</span></div>
         </div>`).join('');
 
-  const note = (data.coach_notes || []).find(n => n.date === cdCurrentDate);
-  document.getElementById('cdNoteInput').value = note ? note.note : '';
+  renderCdNotes(data.coach_notes || []);
 
   const w = data.weight_30d || [];
   const cv = document.getElementById('cdWeightChart');
@@ -6546,13 +6565,35 @@ function cdChangeDate(delta) {
   loadClientDetail();
 }
 
-async function saveCoachNote() {
+// Coach-note feed in the client detail: composer adds a new note; dismissed notes
+// show greyed with a "seen" marker; the trainer can delete their own notes.
+function renderCdNotes(notes) {
+  const el = document.getElementById('cdNotesList');
+  if (!el) return;
+  if (!notes.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px">No notes yet.</p>'; return; }
+  el.innerHTML = notes.map(n => `
+    <div class="cd-note ${n.dismissed_at ? 'dismissed' : ''}">
+      <div class="cd-note-head">
+        <span class="cd-note-date">${escapeHtml(noteDate(n.date))}${n.dismissed_at ? ' · <span class="cd-note-seen">✓ Seen by client</span>' : ''}</span>
+        <button class="cnc-dismiss" onclick="deleteCoachNote(${Number(n.id)})" title="Delete note">✕</button>
+      </div>
+      <div class="cd-note-text">${escapeHtml(n.note)}</div>
+    </div>`).join('');
+}
+async function addCoachNote() {
   const ta = document.getElementById('cdNoteInput');
+  const note = ta.value.trim();
+  if (!note) return;
   const res = await apiRequest('/trainer/notes', {
     method: 'POST',
-    body: JSON.stringify({ client_id: selectedClientId, date: cdCurrentDate, note: ta.value.trim() })
+    body: JSON.stringify({ client_id: selectedClientId, date: todayKey(), note })
   });
-  if (res.ok) { ta.style.borderColor = 'var(--protein)'; setTimeout(() => ta.style.borderColor = '', 1500); }
+  if (res.ok) { ta.value = ''; loadClientDetail(); }
+  else alert('Could not add the note — check your connection and try again.');
+}
+async function deleteCoachNote(id) {
+  const res = await apiRequest('/trainer/notes/' + id, { method: 'DELETE' });
+  if (res.ok) loadClientDetail();
 }
 
 // ---- Grocery panel in client detail ----

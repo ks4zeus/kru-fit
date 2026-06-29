@@ -1039,28 +1039,38 @@ export default {
       }
     }
 
-    // ---- Client: read own coach notes for a day (read-only) ----
+    // ---- Client: read own active (non-dismissed) coach notes — newest first ----
     if (segments[1] === "coach-notes" && segments.length === 2 && request.method === "GET") {
-      const date = (url.searchParams.get("date") || new Date().toISOString().slice(0, 10)).slice(0, 10);
       const rows = ((await db
         .prepare(
-          `SELECT cn.note, cn.date, cn.created_at, o.name AS org_name, u.name AS trainer_name
+          `SELECT cn.id, cn.note, cn.date, cn.created_at, o.name AS org_name, u.name AS trainer_name
            FROM coach_notes cn
            JOIN organizations o ON o.id = cn.org_id
            LEFT JOIN users u ON u.id = cn.trainer_id
-           WHERE cn.client_id = ? AND cn.date = ?
-           ORDER BY cn.updated_at DESC`
+           WHERE cn.client_id = ? AND cn.dismissed_at IS NULL
+           ORDER BY cn.created_at DESC`
         )
-        .bind(userEmail, date)
+        .bind(userEmail)
         .all()).results || []) as any[];
       const notes = rows.map((r) => ({
+        id: r.id,
         note: r.note,
         date: r.date,
         trainer_name: (r.trainer_name && String(r.trainer_name).trim()) || r.org_name,
-        org_name: r.org_name,
         created_at: r.created_at,
       }));
       return jsonResponse(notes);
+    }
+
+    // ---- Client: dismiss a coach note (only the client it's addressed to) ----
+    if (segments[1] === "coach-notes" && segments.length === 4 && segments[3] === "dismiss" && request.method === "PUT") {
+      const id = Number(segments[2]);
+      if (!Number.isFinite(id)) return jsonResponse({ error: "Invalid id" }, 400);
+      await db
+        .prepare("UPDATE coach_notes SET dismissed_at = datetime('now'), dismissed_by = ? WHERE id = ? AND client_id = ?")
+        .bind(userEmail, id, userEmail)
+        .run();
+      return jsonResponse({ ok: true });
     }
 
     // ---- Client/solo: own grocery list ----
@@ -1375,7 +1385,7 @@ export default {
         .all()).results || []) as any[]).reverse();
 
       const coachNotes = ((await db
-        .prepare("SELECT id, date, note, created_at FROM coach_notes WHERE org_id = ? AND client_id = ? ORDER BY date DESC")
+        .prepare("SELECT id, date, note, dismissed_at, created_at FROM coach_notes WHERE org_id = ? AND client_id = ? ORDER BY created_at DESC")
         .bind(orgId, clientId)
         .all()).results || []) as any[];
 
@@ -1401,31 +1411,32 @@ export default {
     }
 
     // ---- Trainer: upsert a coach note (empty note clears it) ----
+    // ---- Trainer: add a coach note (feed — always a new row) ----
     if (segments[1] === "trainer" && segments[2] === "notes" && segments.length === 3 && request.method === "POST") {
       const orgId = await ownedOrgId(db, userEmail);
       if (!orgId) return jsonResponse({ error: "Not a trainer" }, 403);
       const body = await parseJson(request);
       const clientId = (body?.client_id ?? "").toString().trim();
-      const date = (body?.date ?? "").toString().trim().slice(0, 10);
-      const note = (body?.note ?? "").toString().trim().slice(0, 2000);
-      if (!clientId || !date) return jsonResponse({ error: "client_id and date required" }, 400);
+      const date = (body?.date ?? "").toString().trim().slice(0, 10) || new Date().toISOString().slice(0, 10);
+      const note = (body?.note ?? "").toString().trim();
+      if (!clientId || !note) return jsonResponse({ error: "client_id and note required" }, 400);
       if (!(await clientInOrg(db, orgId, clientId))) return jsonResponse({ error: "Client not in your roster" }, 403);
-
-      if (!note) {
-        await db
-          .prepare("DELETE FROM coach_notes WHERE org_id = ? AND client_id = ? AND date = ?")
-          .bind(orgId, clientId, date)
-          .run();
-        return jsonResponse({ ok: true, cleared: true });
-      }
-      await db
-        .prepare(
-          `INSERT INTO coach_notes (org_id, client_id, trainer_id, date, note)
-           VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(client_id, date, org_id) DO UPDATE SET
-             note = excluded.note, trainer_id = excluded.trainer_id, updated_at = datetime('now')`
-        )
+      const ins = await db
+        .prepare("INSERT INTO coach_notes (org_id, client_id, trainer_id, date, note) VALUES (?, ?, ?, ?, ?)")
         .bind(orgId, clientId, userEmail, date, note)
+        .run();
+      return jsonResponse({ ok: true, id: ins.meta?.last_row_id });
+    }
+
+    // ---- Trainer: delete one of their own notes ----
+    if (segments[1] === "trainer" && segments[2] === "notes" && segments.length === 4 && request.method === "DELETE") {
+      const orgId = await ownedOrgId(db, userEmail);
+      if (!orgId) return jsonResponse({ error: "Not a trainer" }, 403);
+      const id = Number(segments[3]);
+      if (!Number.isFinite(id)) return jsonResponse({ error: "Invalid id" }, 400);
+      await db
+        .prepare("DELETE FROM coach_notes WHERE id = ? AND org_id = ? AND trainer_id = ?")
+        .bind(id, orgId, userEmail)
         .run();
       return jsonResponse({ ok: true });
     }

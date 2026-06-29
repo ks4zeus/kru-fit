@@ -148,17 +148,19 @@ CREATE TABLE invites (
   expires_at TEXT NOT NULL         -- datetime('now','+7 days')
 );
 
--- Coach notes on a client's specific day. UNIQUE lets the trainer upsert per day.
+-- Coach notes: a persistent feed (multiple notes per day). `date` is the reference
+-- date the note was written; the client can dismiss a note (dismissed_at set).
 CREATE TABLE coach_notes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   org_id TEXT NOT NULL,
   client_id TEXT NOT NULL,
   trainer_id TEXT NOT NULL,
-  date TEXT NOT NULL,              -- YYYY-MM-DD
+  date TEXT NOT NULL,              -- YYYY-MM-DD reference date (not a unique key)
   note TEXT NOT NULL,
+  dismissed_at TEXT,              -- set when the client dismisses it
+  dismissed_by TEXT,
   created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now')),
-  UNIQUE(client_id, date, org_id)
+  updated_at TEXT DEFAULT (datetime('now'))
 );
 
 -- Grocery list. org_id is nullable: grocery is universal (solo users have no org).
