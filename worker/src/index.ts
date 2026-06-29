@@ -1273,7 +1273,7 @@ export default {
              (SELECT val  FROM weight_log w WHERE w.user_id = m.user_id ORDER BY w.date DESC, w.id DESC LIMIT 1)          AS w_val,
              (SELECT unit FROM weight_log w WHERE w.user_id = m.user_id ORDER BY w.date DESC, w.id DESC LIMIT 1)          AS w_unit,
              (SELECT val  FROM weight_log w WHERE w.user_id = m.user_id ORDER BY w.date DESC, w.id DESC LIMIT 1 OFFSET 1) AS w_prev,
-             (SELECT COUNT(DISTINCT date) FROM food_log WHERE user_id = m.user_id AND date >= date('now', '-6 days')) AS compliance_7d
+             (SELECT COUNT(DISTINCT date) FROM food_log WHERE user_id = m.user_id AND date >= date(?, '-6 days') AND date <= ?) AS compliance_7d
            FROM memberships m
            LEFT JOIN users u    ON u.id = m.user_id
            LEFT JOIN goals g    ON g.user_id = m.user_id
@@ -1282,7 +1282,9 @@ export default {
            GROUP BY m.user_id, m.status, u.name, g.cal, g.protein, g.carbs, g.fat
            ORDER BY entry_count DESC, u.name ASC`
         )
-        .bind(today, org.id)
+        // ? order follows the SQL text: compliance window start, window end (both
+        // the trainer-local "today"), then the today food join, then org id.
+        .bind(today, today, today, org.id)
         .all()).results || []) as any[];
 
       const clients = rows.map((r) => ({
