@@ -6592,13 +6592,17 @@ function calculateMacros() {
   let adjVal = 0;
   if (goal === 'lose') adjVal = -(loseAdj[rate] || 500);
   else if (goal === 'gain') adjVal = (gainAdj[rate] || 300);
-  // Minimum recommended intake, rising with age.
-  let calFloor = sex === 'female' ? 1200 : 1500;
-  if (age >= 60) calFloor = sex === 'female' ? 1400 : 1600;
-  if (age >= 70) calFloor = sex === 'female' ? 1500 : 1700;
-  let target = maintenance + adjVal;
-  const wasFloored = target < calFloor;
-  target = Math.round(Math.max(target, calFloor) / 10) * 10;
+  // Minimum recommended intake: rises with age, and never below estimated BMR.
+  // Final target = max(raw target, age floor, BMR).
+  let ageFloor = sex === 'female' ? 1200 : 1500;
+  if (age >= 60) ageFloor = sex === 'female' ? 1400 : 1600;
+  if (age >= 70) ageFloor = sex === 'female' ? 1500 : 1700;
+  const bmrFloor = Math.round(bmr);
+  const effectiveFloor = Math.max(ageFloor, bmrFloor);
+  const rawTarget = maintenance + adjVal;
+  const wasFloored = rawTarget < effectiveFloor;
+  const bmrFloored = wasFloored && bmrFloor >= ageFloor;   // BMR is the binding (higher) floor
+  let target = Math.round(Math.max(rawTarget, effectiveFloor) / 10) * 10;
 
   // ---- Protein: bodyweight (or lean mass) target, capped at 35% of calories ----
   const proteinBaseLb = bfKnown ? lbmKg * 2.20462 : weightLb;
@@ -6630,7 +6634,7 @@ function calculateMacros() {
     ...(exPerDay > 0 ? [`+ exercise ${Math.round(exPerDay)}/day`] : []),
     `= formula TDEE ${Math.round(formulaTDEE)}`,
     ...(observed ? [`observed (your data) ${Math.round(observed)}`, `blend 30/70 → maintenance ${maintenance}`] : [`maintenance ${maintenance}`]),
-    `${goal === 'maintain' ? 'goal ±0' : (goal === 'lose' ? 'deficit ' : 'surplus ') + (adjVal > 0 ? '+' : '−') + Math.abs(adjVal)}${wasFloored ? ' (floored to min)' : ''}`,
+    `${goal === 'maintain' ? 'goal ±0' : (goal === 'lose' ? 'deficit ' : 'surplus ') + (adjVal > 0 ? '+' : '−') + Math.abs(adjVal)}${wasFloored ? (bmrFloored ? ' (raised to BMR)' : ' (floored to min)') : ''}`,
     `→ target ${target} kcal`,
     `P ${protein} · C ${carbs} · F ${fat} · fiber ${fiber}`,
   ];
@@ -6639,9 +6643,10 @@ function calculateMacros() {
 
   fb.style.color = '#60a5fa';
   const summary = `Maintenance ≈ ${maintenance} kcal${calibrated ? ' (calibrated from your data)' : ' (estimated)'}. Target ${target} · ${protein}P / ${carbs}C / ${fat}F · ${fiber}g fiber. Review & Save Goals.`;
-  fb.innerHTML = escapeHtml(summary) + (wasFloored
-    ? `<div style="color:var(--cal);margin-top:6px">⚠️ Minimum recommended intake applied for your age group. Consult a doctor before going lower.</div>`
-    : '');
+  const floorNote = bmrFloored
+    ? '⚠️ Target raised to match your estimated BMR — eating below this level long-term is not recommended.'
+    : (wasFloored ? '⚠️ Minimum recommended intake applied for your age group. Consult a doctor before going lower.' : '');
+  fb.innerHTML = escapeHtml(summary) + (floorNote ? `<div style="color:var(--cal);margin-top:6px">${floorNote}</div>` : '');
 
   saveLocal('fuellog_calc', {
     sex, age, ft, inch, weight: weightInput, wUnit, bf: v('calcBf'), steps: v('calcSteps'),
