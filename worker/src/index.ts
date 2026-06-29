@@ -213,6 +213,19 @@ async function clientInOrg(db: D1Database, orgId: string, clientId: string): Pro
   return !!m;
 }
 
+// Consecutive logged days ending at todayStr — mirrors the client's calcStreak()
+// (an empty *today* doesn't break the streak; any earlier gap does).
+function calcStreakFromSet(logged: Set<string>, todayStr: string): number {
+  let streak = 0;
+  const base = new Date(todayStr + "T12:00:00Z");
+  for (let i = 0; i < 400; i++) {
+    const ds = new Date(base.getTime() - i * 86400000).toISOString().slice(0, 10);
+    if (logged.has(ds)) streak++;
+    else if (i > 0) break;
+  }
+  return streak;
+}
+
 // Anthropic per-model pricing, USD per 1M tokens (input, output).
 const AI_PRICING: Record<string, { in: number; out: number }> = {
   "claude-sonnet-4-6": { in: 3.0, out: 15.0 },
@@ -1280,6 +1293,7 @@ export default {
              g.protein AS goal_protein,
              g.carbs   AS goal_carbs,
              g.fat     AS goal_fat,
+             g.objective AS goal_objective,
              (SELECT val  FROM weight_log w WHERE w.user_id = m.user_id ORDER BY w.date DESC, w.id DESC LIMIT 1)          AS w_val,
              (SELECT unit FROM weight_log w WHERE w.user_id = m.user_id ORDER BY w.date DESC, w.id DESC LIMIT 1)          AS w_unit,
              (SELECT val  FROM weight_log w WHERE w.user_id = m.user_id ORDER BY w.date DESC, w.id DESC LIMIT 1 OFFSET 1) AS w_prev,
@@ -1289,7 +1303,7 @@ export default {
            LEFT JOIN goals g    ON g.user_id = m.user_id
            LEFT JOIN food_log f ON f.user_id = m.user_id AND f.date = ?
            WHERE m.org_id = ? AND m.role = 'client' AND m.status = 'active'
-           GROUP BY m.user_id, m.status, u.name, g.cal, g.protein, g.carbs, g.fat
+           GROUP BY m.user_id, m.status, u.name, g.cal, g.protein, g.carbs, g.fat, g.objective
            ORDER BY entry_count DESC, u.name ASC`
         )
         // ? order follows the SQL text: compliance window start, window end (both
@@ -1314,6 +1328,7 @@ export default {
           protein: r.goal_protein ?? 180,
           carbs: r.goal_carbs ?? 150,
           fat: r.goal_fat ?? 60,
+          objective: r.goal_objective || "maintain",
         },
         // Latest weigh-in + trend vs the previous entry (trend null if only one).
         weight: r.w_val == null ? null : {
@@ -1323,7 +1338,24 @@ export default {
         },
         // Distinct days logged in the last 7 (0–7), not entry count.
         compliance_7d: r.compliance_7d || 0,
+        streak: 0,   // filled in below
       }));
+
+      // Streaks: distinct logged dates per active client over the recent window,
+      // computed once for the whole roster (anchored to the trainer-local today).
+      const streakRows = ((await db
+        .prepare(
+          `SELECT f.user_id AS user_id, f.date AS date FROM food_log f
+           JOIN memberships m ON m.user_id = f.user_id
+           WHERE m.org_id = ? AND m.role = 'client' AND m.status = 'active'
+             AND f.date >= date(?, '-90 days') AND f.date <= ?
+           GROUP BY f.user_id, f.date`
+        )
+        .bind(org.id, today, today)
+        .all()).results || []) as any[];
+      const datesByUser: Record<string, Set<string>> = {};
+      streakRows.forEach((r) => { (datesByUser[r.user_id] = datesByUser[r.user_id] || new Set()).add(r.date); });
+      clients.forEach((c) => { c.streak = calcStreakFromSet(datesByUser[c.user_id] || new Set(), today); });
 
       return jsonResponse(clients);
     }
@@ -1348,10 +1380,11 @@ export default {
         .first<{ id: string; name: string | null }>();
 
       const goalsRow = await db
-        .prepare("SELECT cal, protein, carbs, fat, fiber, sugar, water_oz FROM goals WHERE user_id = ?")
+        .prepare("SELECT cal, protein, carbs, fat, fiber, sugar, water_oz, objective FROM goals WHERE user_id = ?")
         .bind(clientId)
         .first<any>();
-      const goals = goalsRow || { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, sugar: 50, water_oz: 64 };
+      const goals = goalsRow || { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, sugar: 50, water_oz: 64, objective: "maintain" };
+      const objective = goals.objective || "maintain";
 
       const entries = ((await db
         .prepare(
@@ -1399,14 +1432,57 @@ export default {
         checked_items: groceryRows.filter((g) => g.checked),
       };
 
+      // Water for the selected day.
+      const waterRow = await db
+        .prepare("SELECT oz FROM water_log WHERE user_id = ? AND date = ?")
+        .bind(clientId, date)
+        .first<{ oz: number }>();
+      const water_today = waterRow?.oz || 0;
+
+      // When this client joined the trainer's org.
+      const memRow = await db
+        .prepare("SELECT created_at FROM memberships WHERE user_id = ? AND org_id = ?")
+        .bind(clientId, orgId)
+        .first<{ created_at: string }>();
+      const member_since = memRow?.created_at || null;
+
+      // Consecutive logged days up to the selected date.
+      const streakRows = ((await db
+        .prepare("SELECT DISTINCT date FROM food_log WHERE user_id = ? AND date >= date(?, '-365 days') AND date <= ?")
+        .bind(clientId, date, date)
+        .all()).results || []) as any[];
+      const streak = calcStreakFromSet(new Set(streakRows.map((r) => r.date)), date);
+
+      // Weekly averages over the same 7-day window as log_7d (averaged over logged days).
+      const waRow = await db
+        .prepare(
+          `SELECT COUNT(DISTINCT date) AS days, SUM(cal) AS cal, SUM(protein) AS protein, SUM(carbs) AS carbs, SUM(fat) AS fat
+           FROM food_log WHERE user_id = ? AND date >= date(?, '-6 days') AND date <= ?`
+        )
+        .bind(clientId, date, date)
+        .first<any>();
+      const wd = waRow?.days || 0;
+      const week_avg = {
+        days_logged: wd,
+        cal: wd ? Math.round((waRow.cal || 0) / wd) : 0,
+        protein: wd ? Math.round((waRow.protein || 0) / wd) : 0,
+        carbs: wd ? Math.round((waRow.carbs || 0) / wd) : 0,
+        fat: wd ? Math.round((waRow.fat || 0) / wd) : 0,
+      };
+
       return jsonResponse({
         user: { id: user?.id || clientId, name: user?.name || null },
         goals,
+        objective,
         today: { entries, totals },
         log_7d: log7d,
         weight_30d: weight30d,
         coach_notes: coachNotes,
         grocery,
+        water_today,
+        member_since,
+        streak,
+        week_avg,
       });
     }
 

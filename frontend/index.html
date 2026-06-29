@@ -1461,9 +1461,10 @@
   .pill-ok   { background: rgba(74,222,128,0.12); color: var(--protein); }
   .pill-warn { background: rgba(245,166,35,0.12);  color: var(--cal); }
   .pill-bad  { background: rgba(239,68,68,0.12);   color: var(--danger); }
-  .client-macros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .client-card-obj { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .client-macros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
   .cm-item { text-align: center; }
-  .cm-val { font-size: 13px; font-weight: 700; font-family: var(--mono); }
+  .cm-val { font-size: 12px; font-weight: 700; font-family: var(--mono); }
   .cm-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
   .cm-bar { height: 3px; background: var(--surface2); border-radius: 99px; overflow: hidden; margin-top: 3px; }
   .cm-fill { height: 100%; border-radius: 99px; }
@@ -1502,7 +1503,10 @@
   .cd-date-nav { display: flex; align-items: center; justify-content: space-between; background: var(--surface2); border-radius: 10px; padding: 8px 14px; margin-bottom: 14px; font-size: 14px; font-weight: 600; }
   .cd-date-nav button { background: none; border: none; color: var(--text); font-size: 20px; cursor: pointer; padding: 0 8px; }
   .cd-date-nav button:disabled { opacity: 0.3; cursor: default; }
-  .cd-macro-summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 14px; }
+  .cd-macro-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 14px; }
+  .cd-summary { font-size: 12px; color: var(--muted); margin: -6px 0 12px; line-height: 1.5; }
+  .cd-chart-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
+  .cd-week-strip { font-size: 12px; color: var(--text); background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; margin: 0 0 12px; line-height: 1.5; }
   .cd-note-wrap textarea { width: 100%; box-sizing: border-box; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; color: var(--text); font-family: var(--font); font-size: 14px; resize: vertical; outline: none; }
   .cd-note-wrap textarea:focus { border-color: #F4D06F; }
 
@@ -2409,12 +2413,17 @@
       </div>
       <button class="btn-cancel" onclick="closeClientDetail()" style="width:auto;padding:8px 16px;margin:0;flex-shrink:0">Close</button>
     </div>
+    <div class="cd-summary" id="cdSummary"></div>
     <div class="cd-date-nav">
       <button onclick="cdChangeDate(-1)">‹</button>
       <span id="cdDateLabel"></span>
       <button onclick="cdChangeDate(1)" id="cdNextBtn">›</button>
     </div>
     <div class="cd-macro-summary" id="cdMacroSummary"></div>
+    <div class="section-head" style="padding:10px 0 8px"><h2>This week</h2></div>
+    <div class="chart-card" style="margin:0 0 8px"><div class="cd-chart-label">Calories / day</div><canvas id="cdCalChart" height="120"></canvas></div>
+    <div class="chart-card" style="margin:0 0 8px"><div class="cd-chart-label">Protein / day</div><canvas id="cdProteinChart" height="120"></canvas></div>
+    <div class="cd-week-strip" id="cdWeekStrip"></div>
     <div class="section-head" style="padding:10px 0 8px"><h2>Food log</h2></div>
     <div id="cdFoodLog"></div>
     <div class="section-head" style="padding:10px 0 8px"><h2>Coach notes</h2></div>
@@ -6416,6 +6425,11 @@ function complianceColor(n) {
   return !n ? 'var(--danger)' : n >= 7 ? 'var(--protein)' : 'var(--cal)';
 }
 
+// Diet objective → emoji label (shared by the roster card and client detail).
+function objLabel(o) {
+  return o === 'lose' ? '🎯 Lose weight' : o === 'gain' ? '💪 Gain muscle' : '⚖️ Maintain';
+}
+
 function getClientStatus(client) {
   if (!client.today || client.today.entry_count === 0) return 'bad';
   const goals = client.goals || { protein: 150 };
@@ -6445,21 +6459,26 @@ function renderClientRoster() {
     const last = today.last_logged_at
       ? new Date(today.last_logged_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
       : 'No entries today';
+    // Severity on the "low protein" pill: how far under goal they are today.
+    const proteinGap = Math.round((today.protein || 0) - (goals.protein || 0));
+    const pillText = status === 'warn' ? `${pillLabel} · ${proteinGap}g` : pillLabel;
     return `
     <div class="client-card" onclick="openClientByIndex(${i})">
       <div class="client-card-top">
         <div class="client-avatar">${escapeHtml(name.charAt(0).toUpperCase())}</div>
         <div style="min-width:0">
           <div class="client-card-name">${escapeHtml(name)}</div>
+          <div class="client-card-obj">${objLabel(goals.objective)}</div>
           <div class="client-card-sub">${today.entry_count} ${today.entry_count === 1 ? 'entry' : 'entries'} · ${escapeHtml(last)}</div>
-          <div class="client-card-comp" style="color:${complianceColor(c.compliance_7d)}">${c.compliance_7d || 0}/7 days this week</div>
+          <div class="client-card-comp" style="color:${complianceColor(c.compliance_7d)}">${c.compliance_7d || 0}/7 · 🔥 ${c.streak || 0}</div>
         </div>
-        <div class="client-status-pill ${pillClass}">${pillLabel}</div>
+        <div class="client-status-pill ${pillClass}">${pillText}</div>
       </div>
       <div class="client-macros">
         <div class="cm-item"><div class="cm-val" style="color:var(--cal)">${Math.round(today.cal)}</div><div class="cm-label">kcal</div><div class="cm-bar"><div class="cm-fill" style="width:${pct(today.cal, goals.cal)}%;background:var(--cal)"></div></div></div>
         <div class="cm-item"><div class="cm-val" style="color:var(--protein)">${Math.round(today.protein)}g</div><div class="cm-label">protein</div><div class="cm-bar"><div class="cm-fill" style="width:${pct(today.protein, goals.protein)}%;background:var(--protein)"></div></div></div>
         <div class="cm-item"><div class="cm-val" style="color:var(--carbs)">${Math.round(today.carbs)}g</div><div class="cm-label">carbs</div><div class="cm-bar"><div class="cm-fill" style="width:${pct(today.carbs, goals.carbs)}%;background:var(--carbs)"></div></div></div>
+        <div class="cm-item"><div class="cm-val" style="color:var(--fat)">${Math.round(today.fat)}g</div><div class="cm-label">fat</div><div class="cm-bar"><div class="cm-fill" style="width:${pct(today.fat, goals.fat)}%;background:var(--fat)"></div></div></div>
       </div>
       ${renderClientWeight(c)}
     </div>`;
@@ -6509,6 +6528,15 @@ async function loadClientDetail() {
   document.getElementById('cdName').textContent = data.user.name || data.user.id;
   document.getElementById('cdSub').textContent = data.user.id;
 
+  // Client summary bar: objective · member since · current streak.
+  const sb = [objLabel(data.objective || (data.goals && data.goals.objective))];
+  if (data.member_since) {
+    const days = Math.max(0, Math.floor((Date.now() - new Date(data.member_since.replace(' ', 'T') + 'Z').getTime()) / 86400000));
+    sb.push(`Member ${days} day${days !== 1 ? 's' : ''}`);
+  }
+  sb.push(`🔥 ${data.streak || 0} day streak`);
+  document.getElementById('cdSummary').textContent = sb.join(' · ');
+
   const isToday = cdCurrentDate === todayKey();
   document.getElementById('cdDateLabel').textContent = isToday
     ? 'Today'
@@ -6521,7 +6549,35 @@ async function loadClientDetail() {
     <div class="hist-stat"><div class="hs-val" style="color:var(--protein)">${Math.round(t.protein)}g</div><div class="hs-label">Protein</div><div class="hs-sub">/ ${g.protein}g</div></div>
     <div class="hist-stat"><div class="hs-val" style="color:var(--carbs)">${Math.round(t.carbs)}g</div><div class="hs-label">Carbs</div><div class="hs-sub">/ ${g.carbs}g</div></div>
     <div class="hist-stat"><div class="hs-val" style="color:var(--fat)">${Math.round(t.fat)}g</div><div class="hs-label">Fat</div><div class="hs-sub">/ ${g.fat}g</div></div>
-    <div class="hist-stat"><div class="hs-val" style="color:var(--sugar)">${Math.round(t.sugar || 0)}g</div><div class="hs-label">Added</div><div class="hs-sub">/ ${g.sugar || 50}g</div></div>`;
+    <div class="hist-stat"><div class="hs-val" style="color:var(--sugar)">${Math.round(t.sugar || 0)}g</div><div class="hs-label">Added Sugar</div><div class="hs-sub">/ ${g.sugar || 50}g</div></div>
+    <div class="hist-stat"><div class="hs-val" style="color:var(--carbs)">💧${Math.round(data.water_today || 0)}</div><div class="hs-label">Water</div><div class="hs-sub">/ ${g.water_oz || 64}oz</div></div>`;
+
+  // 7-day macro charts (calories + protein) with goal lines; empty bars for no-log days.
+  const byDate = {};
+  (data.log_7d || []).forEach(d => { byDate[d.date] = d; });
+  const labels7 = [], calData = [], proData = [];
+  for (let i = 6; i >= 0; i--) {
+    const dd = new Date(cdCurrentDate + 'T12:00:00'); dd.setDate(dd.getDate() - i);
+    const rec = byDate[dateKey(dd)];
+    labels7.push(dd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    calData.push(rec ? Math.round(rec.cal) : null);
+    proData.push(rec ? Math.round(rec.protein) : null);
+  }
+  drawBarChart('cdCalChart', labels7, [{ label: 'Calories', data: calData, color: '#f5a623' }], g.cal);
+  drawBarChart('cdProteinChart', labels7, [{ label: 'Protein', data: proData, color: '#4ade80' }], g.protein);
+
+  // Weekly summary strip (this week's averages + avg weight + days logged).
+  const wa = data.week_avg || {};
+  const strip = [];
+  if (wa.days_logged > 0) {
+    strip.push(`Avg ${Math.round(wa.cal).toLocaleString()} kcal`);
+    strip.push(`Avg ${Math.round(wa.protein)}g protein`);
+  }
+  const weekStart = (() => { const dd = new Date(cdCurrentDate + 'T12:00:00'); dd.setDate(dd.getDate() - 6); return dateKey(dd); })();
+  const wWk = (data.weight_30d || []).filter(x => x.date >= weekStart && x.date <= cdCurrentDate).map(x => toDisplayWeight(x.val, x.unit));
+  if (wWk.length) strip.push(`Avg ${(wWk.reduce((s, v) => s + v, 0) / wWk.length).toFixed(1)} ${weightUnit}`);
+  strip.push(`${wa.days_logged || 0}/7 days logged`);
+  document.getElementById('cdWeekStrip').textContent = strip.join(' · ');
 
   document.getElementById('cdFoodLog').innerHTML = data.today.entries.length === 0
     ? '<p style="color:var(--muted);font-size:13px;padding:8px 0">No entries for this day.</p>'
@@ -6535,7 +6591,7 @@ async function loadClientDetail() {
               <span class="entry-macro" style="color:var(--protein)">P ${Math.round(e.protein)}g</span>
               <span class="entry-macro" style="color:var(--carbs)">C ${Math.round(e.carbs)}g</span>
               <span class="entry-macro" style="color:var(--fat)">F ${Math.round(e.fat)}g</span>
-              <span class="entry-macro" style="color:var(--sugar)">S ${Math.round(e.sugar || 0)}g</span>
+              <span class="entry-macro" style="color:var(--sugar)">AS ${Math.round(e.sugar || 0)}g</span>
             </div>
           </div>
           <div class="entry-cal">${Math.round(e.cal)}<span class="cal-unit">kcal</span></div>
