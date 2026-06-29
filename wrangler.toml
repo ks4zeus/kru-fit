@@ -18,6 +18,8 @@ database_id = "3863195b-28ac-4423-b67b-45c27d9ee01f"
 [vars]
 ACCESS_TEAM_DOMAIN = "travelkru.cloudflareaccess.com"
 ACCESS_AUD = "047314cbdd4b99c556b15785d1feb77e60e73c08ed8f5d944bb1726bb78a5405"
+# Admin allowlist (comma-separated). The Access OTP identity for the owner.
+ADMIN_EMAILS = "ks4zeus@yahoo.com"
 
 # Secrets (do NOT commit). Set with:
 #   wrangler pages secret put ANTHROPIC_API_KEY --project-name kru-fit
