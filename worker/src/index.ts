@@ -1272,7 +1272,8 @@ export default {
              g.fat     AS goal_fat,
              (SELECT val  FROM weight_log w WHERE w.user_id = m.user_id ORDER BY w.date DESC, w.id DESC LIMIT 1)          AS w_val,
              (SELECT unit FROM weight_log w WHERE w.user_id = m.user_id ORDER BY w.date DESC, w.id DESC LIMIT 1)          AS w_unit,
-             (SELECT val  FROM weight_log w WHERE w.user_id = m.user_id ORDER BY w.date DESC, w.id DESC LIMIT 1 OFFSET 1) AS w_prev
+             (SELECT val  FROM weight_log w WHERE w.user_id = m.user_id ORDER BY w.date DESC, w.id DESC LIMIT 1 OFFSET 1) AS w_prev,
+             (SELECT COUNT(DISTINCT date) FROM food_log WHERE user_id = m.user_id AND date >= date('now', '-6 days')) AS compliance_7d
            FROM memberships m
            LEFT JOIN users u    ON u.id = m.user_id
            LEFT JOIN goals g    ON g.user_id = m.user_id
@@ -1308,6 +1309,8 @@ export default {
           unit: r.w_unit || "lbs",
           trend: r.w_prev == null ? null : Math.round((r.w_val - r.w_prev) * 10) / 10,
         },
+        // Distinct days logged in the last 7 (0–7), not entry count.
+        compliance_7d: r.compliance_7d || 0,
       }));
 
       return jsonResponse(clients);

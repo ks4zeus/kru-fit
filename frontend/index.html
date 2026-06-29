@@ -1456,6 +1456,7 @@
   .client-avatar { width: 38px; height: 38px; border-radius: 50%; background: rgba(244,208,111,0.1); color: #F4D06F; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; flex-shrink: 0; }
   .client-card-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .client-card-sub { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 1px; }
+  .client-card-comp { font-size: 11px; font-family: var(--mono); margin-top: 2px; }
   .client-status-pill { margin-left: auto; font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 99px; white-space: nowrap; flex-shrink: 0; }
   .pill-ok   { background: rgba(74,222,128,0.12); color: var(--protein); }
   .pill-warn { background: rgba(245,166,35,0.12);  color: var(--cal); }
@@ -6378,13 +6379,21 @@ async function renderTrainerTab() {
 
   const logged = trainerClients.filter(c => c.today && c.today.entry_count > 0).length;
   const attention = trainerClients.filter(c => getClientStatus(c) === 'bad').length;
-  // 7d compliance is a placeholder until the roster query surfaces it.
+  // Average distinct-days-logged over the last 7 days across the roster.
+  const avgCompliance = trainerClients.length
+    ? Math.round(trainerClients.reduce((s, c) => s + (c.compliance_7d || 0), 0) / trainerClients.length)
+    : 0;
   metricsEl.innerHTML =
     `<div class="tm-card"><div class="tm-val" style="color:var(--protein)">${logged}</div><div class="tm-label">Logged today</div></div>`
-    + `<div class="tm-card"><div class="tm-val" style="color:var(--cal)">—</div><div class="tm-label">7d compliance</div></div>`
+    + `<div class="tm-card"><div class="tm-val" style="color:${complianceColor(avgCompliance)}">${avgCompliance}/7</div><div class="tm-label">7d compliance</div></div>`
     + `<div class="tm-card"><div class="tm-val" style="color:var(--danger)">${attention}</div><div class="tm-label">Need attention</div></div>`;
 
   renderClientRoster();
+}
+
+// Traffic-light colour for 7-day compliance: 0/null red, 7 green, in between amber.
+function complianceColor(n) {
+  return !n ? 'var(--danger)' : n >= 7 ? 'var(--protein)' : 'var(--cal)';
 }
 
 function getClientStatus(client) {
@@ -6423,6 +6432,7 @@ function renderClientRoster() {
         <div style="min-width:0">
           <div class="client-card-name">${escapeHtml(name)}</div>
           <div class="client-card-sub">${today.entry_count} ${today.entry_count === 1 ? 'entry' : 'entries'} · ${escapeHtml(last)}</div>
+          <div class="client-card-comp" style="color:${complianceColor(c.compliance_7d)}">${c.compliance_7d || 0}/7 days this week</div>
         </div>
         <div class="client-status-pill ${pillClass}">${pillLabel}</div>
       </div>
