@@ -362,6 +362,14 @@
   .cf-src { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 99px; margin-left: 6px; }
   .cf-src.ok { background: rgba(74,222,128,0.15); color: var(--protein); }
   .cf-src.ai { background: rgba(244,208,111,0.15); color: var(--cal); }
+  .cf-upd { background: none; border: none; cursor: pointer; font-size: 12px; margin-left: 4px; padding: 0 2px; }
+  .uus-sub { font-size: 14px; font-weight: 600; margin-bottom: 12px; word-break: break-word; }
+  .uus-compare { display: grid; grid-template-columns: 1fr auto auto; gap: 6px 16px; font-size: 13px; margin-bottom: 12px; align-items: baseline; }
+  .uus-compare .uus-h { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+  .uus-compare .uus-m { color: var(--muted); }
+  .uus-compare .uus-cur, .uus-compare .uus-new { font-family: var(--mono); text-align: right; }
+  .uus-compare .uus-new { color: var(--protein); }
+  .uus-note { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
   .cf-sync-btn { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--carbs); background: transparent; color: var(--carbs); font-weight: 600; cursor: pointer; margin-bottom: 10px; font-family: var(--font); }
   .cf-sync-btn:disabled { opacity: 0.6; cursor: default; }
   .toast { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 10px 16px; border-radius: 99px; font-size: 13px; z-index: 9999; box-shadow: 0 4px 16px rgba(0,0,0,0.4); opacity: 0; transition: opacity 0.25s; pointer-events: none; max-width: 90%; text-align: center; }
@@ -2063,6 +2071,17 @@
     <div id="foodSearchPicker" style="display:none"></div>
     <div class="fs-attrib">Powered by USDA FoodData Central</div>
     <button class="btn-cancel" onclick="closeFoodSearchModal()">Close</button>
+  </div>
+</div>
+<div class="modal-bg" id="usdaUpdateSheet">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">🔄 Update from USDA</div>
+    <div class="uus-sub" id="uusName"></div>
+    <div class="uus-compare" id="uusCompare"></div>
+    <div class="uus-note">USDA values are per 100g. Using them replaces this food's macros and sets its serving to 100 g.</div>
+    <button class="btn-primary" onclick="confirmUsdaUpdate()">Use USDA data</button>
+    <button class="btn-cancel" onclick="closeUsdaUpdate()">Keep mine</button>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -5027,7 +5046,7 @@ function renderCustomFoodLibrary() {
     <div class="cf-lib-item">
       <span class="cf-lib-emoji">${cfEsc(displayEmoji(f.name, f.emoji))}</span>
       <div class="cf-lib-info" onclick="prefillCustom('${f.id}')" title="Tap to edit">
-        <div class="cf-lib-name">${cfEsc(f.name)}${isRecipeFood(f) ? ' 🍲' : ''}${sourceBadge(f.source)}</div>
+        <div class="cf-lib-name">${cfEsc(f.name)}${isRecipeFood(f) ? ' 🍲' : ''}${sourceBadge(f.source)}${(!isRecipeFood(f) && f.source !== 'usda' && !f.fdc_id) ? `<button class="cf-upd" onclick="event.stopPropagation();updateFoodFromUsda('${f.id}')" title="Check USDA for verified data">🔄 Update</button>` : ''}</div>
         <div class="cf-lib-macros">${Math.round(f.cal || 0)} cal${isRecipeFood(f) ? '/serv' : ''} · P${Math.round(f.protein || 0)} C${Math.round(f.carbs || 0)} F${Math.round(f.fat || 0)}</div>
       </div>
       <span class="cf-lib-times">×</span>
@@ -5709,6 +5728,43 @@ async function syncWithUsda() {
   } finally {
     btn.disabled = false; btn.textContent = orig;
   }
+}
+
+// ---- Per-food USDA update (confirmation sheet) ----
+let uusFoodId = null, uusFdcId = null;
+async function updateFoodFromUsda(id) {
+  const f = findCustomFood(id);
+  if (!f) return;
+  showToast('Searching USDA…');
+  const res = await apiRequest('/foods/search?q=' + encodeURIComponent(f.name));
+  const results = (res.ok && res.body && res.body.results) || [];
+  const top = results.find(r => r.fdc_id);   // first verified USDA result
+  if (!top) { showToast('No USDA match found for ' + f.name); return; }
+  uusFoodId = id; uusFdcId = top.fdc_id;
+  document.getElementById('uusName').textContent = `${f.name}  →  ${top.name}`;
+  const rows = [['Calories', 'cal', 'cal'], ['Protein', 'protein', 'protein'], ['Carbs', 'carbs', 'carbs'], ['Fat', 'fat', 'fat'], ['Fiber', 'fiber', 'fiber'], ['Added sugar', 'sugar', 'sugar_added']];
+  document.getElementById('uusCompare').innerHTML =
+    `<div class="uus-m"></div><div class="uus-h uus-cur">Current</div><div class="uus-h uus-new">USDA/100g</div>` +
+    rows.map(([label, ck, uk]) => { const u = ck === 'cal' ? '' : 'g'; return `<div class="uus-m">${label}</div><div class="uus-cur">${Math.round(f[ck] || 0)}${u}</div><div class="uus-new">${Math.round(top[uk] || 0)}${u}</div>`; }).join('');
+  document.getElementById('usdaUpdateSheet').classList.add('open');
+}
+async function confirmUsdaUpdate() {
+  if (!uusFoodId || !uusFdcId) return;
+  const res = await apiRequest('/foods/update-from-usda', { method: 'POST', body: JSON.stringify({ custom_food_id: Number(uusFoodId), fdc_id: uusFdcId }) });
+  if (res.ok && res.body && res.body.food) {
+    const updated = res.body.food;
+    customFoods = customFoods.map(f => String(f.id) === String(uusFoodId) ? { ...f, ...updated } : f);
+    saveLocal(STORAGE_KEYS.customFoods, customFoods);
+    renderCustomFoodLibrary();
+    closeUsdaUpdate();
+    showToast('✓ Updated from USDA');
+  } else {
+    showToast('Update failed — try again.');
+  }
+}
+function closeUsdaUpdate() {
+  document.getElementById('usdaUpdateSheet').classList.remove('open');
+  uusFoodId = null; uusFdcId = null;
 }
 
 async function estimateMacros() {

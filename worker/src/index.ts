@@ -309,6 +309,7 @@ interface FoodResult {
   cal: number; protein: number; carbs: number; fat: number; fiber: number; sugar_added: number;
   serving_qty: number; serving_unit: string; serving_grams: number | null;
   source: string;
+  data_type?: string | null;   // USDA dataType (Foundation / SR Legacy / Survey (FNDDS) / Branded); null for cache rows
 }
 
 // Map a USDA food (search or detail shape) to our FoodResult, reading nutrients by
@@ -334,7 +335,48 @@ function parseUsdaFood(f: any): FoodResult {
     fiber: byId["1079"] || 0,
     sugar_added: byId["1235"] || 0,
     serving_qty: 100, serving_unit: "g", serving_grams: 100, source: "usda",
+    data_type: f.dataType || null,
   };
+}
+
+// ---- Result ranking: whole foods above branded/restaurant ----
+function startsWithAllCapsBrand(name: string): boolean {
+  const first = (name || "").trim().split(/[\s,]+/)[0] || "";
+  return first.length >= 2 && /[A-Z]/.test(first) && first === first.toUpperCase() && !/[a-z]/.test(first);
+}
+// Lower = ranks higher. exact match → whole foods → FNDDS → branded/restaurant.
+function rankScore(r: FoodResult, qLower: string): number {
+  const name = (r.name || "").toLowerCase();
+  if (name === qLower) return 0;
+  const cat = r.category || "";
+  const dt = r.data_type || "";
+  const branded = dt === "Branded" || /Branded Food|Restaurant Foods/i.test(cat) || startsWithAllCapsBrand(r.name);
+  if (branded) return 4;
+  if (dt === "Survey (FNDDS)") return 3;
+  if (dt === "Foundation" || dt === "SR Legacy") return 1;
+  return 2;   // unknown (e.g. cache rows with no stored dataType)
+}
+// Dedup by fdc_id (first wins — pass cache results first for priority), AI rows keyed by name.
+function dedupByFdc(list: FoodResult[]): FoodResult[] {
+  const seen = new Set<string>();
+  const out: FoodResult[] = [];
+  for (const r of list) {
+    const k = r.fdc_id ? `fdc:${r.fdc_id}` : `name:${(r.name || "").toLowerCase()}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(r);
+  }
+  return out;
+}
+// Dedup + rank + cap at 10. Applied in the Worker before returning.
+function finalizeResults(list: FoodResult[], q: string): FoodResult[] {
+  const qLower = (q || "").trim().toLowerCase();
+  const deduped = dedupByFdc(list);
+  deduped.sort((a, b) => {
+    const d = rankScore(a, qLower) - rankScore(b, qLower);
+    return d !== 0 ? d : (a.name || "").localeCompare(b.name || "");
+  });
+  return deduped.slice(0, 10);
 }
 
 function rowToResult(r: any): FoodResult {
@@ -443,29 +485,31 @@ async function searchFoods(
   env: Env, db: D1Database, userEmail: string, q: string, aiFallback: boolean
 ): Promise<{ results: FoodResult[]; source: string; note?: string }> {
   const ENOUGH = 3;   // a query that returns this many is "good enough" — stop here
-  const cached = ((await db
+  const cachedRows = ((await db
     .prepare("SELECT * FROM foods_cache WHERE LOWER(name) LIKE LOWER(?) ORDER BY source = 'usda' DESC, name ASC LIMIT 10")
     .bind(`%${q}%`)
     .all()).results || []) as any[];
-  if (cached.length >= 5) return { results: cached.map(rowToResult), source: "cache" };
+  const cached = cachedRows.map(rowToResult);
+  if (cachedRows.length >= 5) return { results: finalizeResults(cached, q), source: "cache" };
 
   const orig = await usdaSearch(env, q);
+  // Merge cache + fresh USDA; cache listed first so it wins on fdc_id dedup.
+  const merged = [...cached, ...orig];
 
-  // Non-interactive (verify-library): original query only, then cache. No rewrites/AI.
+  // Non-interactive (verify-library): merged original-query results only — no rewrites/AI.
   if (!aiFallback) {
-    if (orig.length > 0) { await cacheUsdaFoods(db, orig); return { results: orig.slice(0, 10), source: "usda" }; }
-    if (cached.length > 0) return { results: cached.map(rowToResult), source: "cache" };
+    if (merged.length > 0) { await cacheUsdaFoods(db, orig); return { results: finalizeResults(merged, q), source: orig.length ? "usda" : "cache" }; }
     return { results: [], source: "usda" };
   }
 
-  if (orig.length >= ENOUGH) { await cacheUsdaFoods(db, orig); return { results: orig.slice(0, 10), source: "usda" }; }
-  const attempts: Array<{ q: string; results: FoodResult[] }> = [{ q, results: orig }];
+  if (merged.length >= ENOUGH) { await cacheUsdaFoods(db, orig); return { results: finalizeResults(merged, q), source: orig.length ? "usda" : "cache" }; }
+  const attempts: Array<{ q: string; results: FoodResult[] }> = [{ q, results: merged }];
 
   // Smart fallback (a): alias retry on an exact full-query match.
   const alias = FOOD_ALIASES[q.trim().toLowerCase()];
   if (alias) {
     const ar = await usdaSearch(env, alias);
-    if (ar.length > 0) { await cacheUsdaFoods(db, ar); return { results: ar.slice(0, 10), source: "usda", note: searchNote(alias, q) }; }
+    if (ar.length > 0) { await cacheUsdaFoods(db, ar); return { results: finalizeResults(ar, alias), source: "usda", note: searchNote(alias, q) }; }
   }
 
   // Smart fallback (b): retry with the first two words, then the first word.
@@ -475,22 +519,61 @@ async function searchFoods(
   if (words.length > 1) candidates.push(words[0]);
   for (const cand of candidates) {
     const cr = await usdaSearch(env, cand);
-    if (cr.length >= ENOUGH) { await cacheUsdaFoods(db, cr); return { results: cr.slice(0, 10), source: "usda", note: searchNote(cand, q) }; }
+    if (cr.length >= ENOUGH) { await cacheUsdaFoods(db, cr); return { results: finalizeResults(cr, cand), source: "usda", note: searchNote(cand, q) }; }
     attempts.push({ q: cand, results: cr });
   }
 
-  // Nothing hit the threshold — prefer ANY non-empty USDA results over AI.
+  // Nothing hit the threshold — prefer ANY non-empty USDA/cache results over AI.
   const best = attempts.find((a) => a.results.length > 0);
   if (best) {
     await cacheUsdaFoods(db, best.results);
-    return { results: best.results.slice(0, 10), source: "usda", note: best.q !== q ? searchNote(best.q, q) : undefined };
+    return { results: finalizeResults(best.results, best.q), source: "usda", note: best.q !== q ? searchNote(best.q, q) : undefined };
   }
-  if (cached.length > 0) return { results: cached.map(rowToResult), source: "cache" };
 
   // Tier 3: AI estimate (last resort).
   const ai = await aiEstimateFood(env, db, userEmail, q);
   if (ai) return { results: [ai], source: "ai" };
   return { results: [], source: "usda" };
+}
+
+// Match a user's custom foods (recipes excluded) against USDA and overwrite matches.
+async function verifyLibrary(
+  env: Env, db: D1Database, userId: string
+): Promise<{ updated: number; no_match: number; total: number }> {
+  const foods = ((await db
+    .prepare(
+      `SELECT id, name, source FROM custom_foods
+       WHERE user_id = ?
+         AND (ingredients IS NULL OR ingredients = '')
+         AND (recipe_items IS NULL OR recipe_items = '')`
+    )
+    .bind(userId)
+    .all()).results || []) as any[];
+  let updated = 0, no_match = 0;
+  for (const food of foods) {
+    const { results } = await searchFoods(env, db, userId, food.name, false);
+    const top = results[0];
+    const fname = String(food.name).toLowerCase();
+    const tn = top ? String(top.name).toLowerCase() : "";
+    const matched = top && top.fdc_id && (tn.includes(fname) || fname.includes(tn));
+    if (matched) {
+      await db
+        .prepare(
+          `UPDATE custom_foods SET cal=?, protein=?, carbs=?, fat=?, fiber=?, sugar=?, serving='100 g', serving_grams=100, source='usda', fdc_id=?, verified_at=datetime('now')
+           WHERE id=? AND user_id=?`
+        )
+        .bind(top.cal, top.protein, top.carbs, top.fat, top.fiber, top.sugar_added, top.fdc_id, food.id, userId)
+        .run();
+      updated++;
+    } else {
+      await db
+        .prepare("UPDATE custom_foods SET source='ai' WHERE id=? AND user_id=? AND (source IS NULL OR source='')")
+        .bind(food.id, userId)
+        .run();
+      no_match++;
+    }
+  }
+  return { updated, no_match, total: foods.length };
 }
 
 export default {
@@ -642,41 +725,27 @@ export default {
 
     // ---- Verify the whole custom-food library against USDA (recipes excluded) ----
     if (segments[1] === "foods" && segments[2] === "verify-library" && segments.length === 3 && request.method === "POST") {
-      const foods = ((await db
+      return jsonResponse(await verifyLibrary(env, db, userEmail));
+    }
+
+    // ---- Admin: one-time bulk sync of all users' custom-food libraries ----
+    if (segments[1] === "admin" && segments[2] === "sync-libraries" && request.method === "GET") {
+      if (!isAdmin(userEmail, env)) return jsonResponse({ error: "Forbidden" }, 403);
+      const users = ((await db
         .prepare(
-          `SELECT id, name, source FROM custom_foods
-           WHERE user_id = ?
+          `SELECT DISTINCT user_id FROM custom_foods
+           WHERE source IN ('user', 'ai')
              AND (ingredients IS NULL OR ingredients = '')
              AND (recipe_items IS NULL OR recipe_items = '')`
         )
-        .bind(userEmail)
         .all()).results || []) as any[];
-      let updated = 0, no_match = 0;
-      for (const food of foods) {
-        const { results } = await searchFoods(env, db, userEmail, food.name, false);
-        const top = results[0];
-        const fname = String(food.name).toLowerCase();
-        const tn = top ? String(top.name).toLowerCase() : "";
-        const matched = top && top.fdc_id && (tn.includes(fname) || fname.includes(tn));
-        if (matched) {
-          await db
-            .prepare(
-              `UPDATE custom_foods SET cal=?, protein=?, carbs=?, fat=?, fiber=?, sugar=?, source='usda', fdc_id=?, verified_at=datetime('now')
-               WHERE id=? AND user_id=?`
-            )
-            .bind(top.cal, top.protein, top.carbs, top.fat, top.fiber, top.sugar_added, top.fdc_id, food.id, userEmail)
-            .run();
-          updated++;
-        } else {
-          // No match: leave macros; tag unverified rows as 'ai' (never downgrade 'usda'/'user').
-          await db
-            .prepare("UPDATE custom_foods SET source='ai' WHERE id=? AND user_id=? AND (source IS NULL OR source='')")
-            .bind(food.id, userEmail)
-            .run();
-          no_match++;
-        }
+      let foods_updated = 0, foods_unmatched = 0;
+      for (const u of users) {
+        const r = await verifyLibrary(env, db, u.user_id);
+        foods_updated += r.updated;
+        foods_unmatched += r.no_match;
       }
-      return jsonResponse({ updated, no_match, total: foods.length });
+      return jsonResponse({ users_processed: users.length, foods_updated, foods_unmatched });
     }
 
     // ---- Update one custom food from a specific USDA match ----
@@ -695,7 +764,7 @@ export default {
       if (!food) return jsonResponse({ error: "USDA food not found" }, 404);
       const upd = await db
         .prepare(
-          `UPDATE custom_foods SET cal=?, protein=?, carbs=?, fat=?, fiber=?, sugar=?, source='usda', fdc_id=?, verified_at=datetime('now')
+          `UPDATE custom_foods SET cal=?, protein=?, carbs=?, fat=?, fiber=?, sugar=?, serving='100 g', serving_grams=100, source='usda', fdc_id=?, verified_at=datetime('now')
            WHERE id=? AND user_id=?`
         )
         .bind(food.cal, food.protein, food.carbs, food.fat, food.fiber, food.sugar_added, fdcId, cfId, userEmail)
