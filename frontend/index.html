@@ -905,6 +905,7 @@
   .calc-math div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .app-version { text-align: center; font-size: 11px; color: var(--muted); margin-top: 14px; letter-spacing: 0.3px; }
   .calc-math-section { margin: 16px 0; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--surface); }
+  .calc-explain-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
   .calc-math-section .calc-explain { margin-top: 0; }
   .calc-math-toggle { display: block; margin-top: 10px; background: none; border: none; color: var(--carbs); font-size: 12px; cursor: pointer; padding: 0; font-family: var(--font); }
   .calc-explain { font-size: 13px; color: var(--muted); font-style: italic; line-height: 1.5; margin-top: 12px; }
@@ -2439,6 +2440,7 @@
       <div class="prof-note" id="trainerModeNote">Manage clients and see their logs from a Clients tab.</div>
     </div>
     <div class="calc-math-section" id="calcMathSection" style="display:none">
+      <div class="calc-explain-title">🧮 How your goals were calculated</div>
       <div class="calc-explain" id="calcExplain"></div>
       <button class="calc-math-toggle" id="calcMathToggle" onclick="toggleCalcMath()" style="display:none">▶ Show the math</button>
       <div class="calc-math" id="calcMath" style="display:none"></div>
@@ -2546,7 +2548,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v13';
+const APP_VERSION = 'v14';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
