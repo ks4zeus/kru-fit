@@ -903,6 +903,7 @@
     font-family: var(--mono); font-size: 11px; color: var(--muted); line-height: 1.7;
   }
   .calc-math div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .calc-math-section { margin-top: 16px; }
   .calc-explain { font-size: 13px; color: var(--muted); font-style: italic; line-height: 1.5; margin-top: 12px; }
   .calc-explain:empty { display: none; }
   .calc-disclaimer { font-size: 10px; color: var(--muted); font-style: italic; line-height: 1.4; margin-top: 10px; }
@@ -2398,8 +2399,6 @@
 
       <button class="btn-primary blue" onclick="calculateMacros()">Calculate &amp; fill goals</button>
       <div class="we-feedback" id="calcFeedback" style="color:#60a5fa"></div>
-      <button class="calc-math-toggle" id="calcMathToggle" onclick="toggleCalcMath()" style="display:none">▸ Show the math</button>
-      <div class="calc-math" id="calcMath" style="display:none"></div>
       <div class="calc-explain" id="calcExplain"></div>
       <div class="calc-disclaimer">Estimates only — not medical advice. A starting point; adjust based on your real-world results.</div>
     </div>
@@ -2428,6 +2427,10 @@
         <label><span class="dot" style="background:var(--sugar)"></span>Added sugar (g)</label>
         <input type="number" id="goalSugar" value="50">
       </div>
+    </div>
+    <div class="calc-math-section" id="calcMathSection" style="display:none">
+      <div class="calc-sub">🧮 How your goals were calculated</div>
+      <div class="calc-math" id="calcMath"></div>
     </div>
     <div class="profile-box" id="trainerProfileBox">
       <div class="calc-sub">Coaching</div>
@@ -6497,13 +6500,6 @@ function toggleCalc() {
   document.getElementById('calcToggle').textContent = open ? '🧮 Hide calculator' : '🧮 Help me calculate my macros';
 }
 
-function toggleCalcMath() {
-  const m = document.getElementById('calcMath');
-  const open = m.style.display === 'none';
-  m.style.display = open ? 'block' : 'none';
-  document.getElementById('calcMathToggle').textContent = (open ? '▾ Hide' : '▸ Show') + ' the math';
-}
-
 // Restore saved calculator inputs and prefill weight from the latest log.
 function prefillCalc() {
   document.getElementById('calcWUnit').textContent = weightUnit || 'lbs';
@@ -6646,7 +6642,7 @@ function calculateMacros() {
     `P ${protein} · C ${carbs} · F ${fat} · fiber ${fiber}`,
   ];
   document.getElementById('calcMath').innerHTML = mathRows.map(r => `<div>${r}</div>`).join('');
-  document.getElementById('calcMathToggle').style.display = 'block';
+  document.getElementById('calcMathSection').style.display = 'block';
 
   fb.style.color = '#60a5fa';
   const summary = `Maintenance ≈ ${maintenance} kcal${calibrated ? ' (calibrated from your data)' : ' (estimated)'}. Target ${target} · ${protein}P / ${carbs}C / ${fat}F · ${fiber}g fiber. Review & Save Goals.`;
