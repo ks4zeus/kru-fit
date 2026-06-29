@@ -6584,7 +6584,7 @@ function calculateMacros() {
   if (observed) maintenance = formulaTDEE * 0.3 + observed * 0.7;
   maintenance = Math.round(maintenance);
 
-  // ---- Apply goal + pace, with a safety floor ----
+  // ---- Apply goal + pace, with an age-aware safety floor ----
   const goal = v('calcGoal');
   const rate = v('calcRate');
   const loseAdj = { slow: 250, moderate: 500, aggressive: 800 };
@@ -6592,19 +6592,29 @@ function calculateMacros() {
   let adjVal = 0;
   if (goal === 'lose') adjVal = -(loseAdj[rate] || 500);
   else if (goal === 'gain') adjVal = (gainAdj[rate] || 300);
-  const floor = Math.max(Math.round(bmr * 1.05), sex === 'male' ? 1500 : 1200);
+  // Minimum recommended intake, rising with age.
+  let calFloor = sex === 'female' ? 1200 : 1500;
+  if (age >= 60) calFloor = sex === 'female' ? 1400 : 1600;
+  if (age >= 70) calFloor = sex === 'female' ? 1500 : 1700;
   let target = maintenance + adjVal;
-  const wasFloored = target < floor;
-  target = Math.round(Math.max(target, floor) / 10) * 10;
+  const wasFloored = target < calFloor;
+  target = Math.round(Math.max(target, calFloor) / 10) * 10;
 
-  // ---- Protein (lean mass if known), fat (by macro style), carbs fill rest ----
+  // ---- Protein: bodyweight (or lean mass) target, capped at 35% of calories ----
   const proteinBaseLb = bfKnown ? lbmKg * 2.20462 : weightLb;
   const proteinPerLb = bfKnown ? (goal === 'lose' ? 1.2 : 1.0) : (goal === 'lose' ? 1.0 : 0.85);
   let protein = Math.round(proteinBaseLb * proteinPerLb);
-  const fatPct = { balanced: 0.28, 'high-carb': 0.22, 'low-carb': 0.40 }[v('calcPref')] || 0.28;
-  const fat = Math.round(Math.max(0.3 * weightLb, (target * fatPct) / 9));
-  if (protein * 4 + fat * 9 > target * 0.95) protein = Math.round((target * 0.6) / 4); // leave room for carbs
-  const carbs = Math.max(0, Math.round((target - protein * 4 - fat * 9) / 4));
+  const proteinCalCap = Math.floor((target * 0.35) / 4);
+  protein = Math.min(protein, proteinCalCap);
+
+  // ---- Fat: share of REMAINING calories by macro style, with a healthy floor.
+  // Carbs then take whatever's left, so calories always sum to the target. ----
+  const macroStyle = v('calcPref');
+  const fatPct = { 'high-carb': 0.25, balanced: 0.35, 'low-carb': 0.45 }[macroStyle] || 0.35;
+  const fatFloorGrams = Math.max(40, Math.min(0.3 * weightLb, (target * 0.20) / 9));
+  const remainingCal = target - protein * 4;
+  const fat = Math.max(Math.round(fatFloorGrams), Math.round((remainingCal * fatPct) / 9));
+  const carbs = Math.max(0, Math.round((remainingCal - fat * 9) / 4));
   const fiber = Math.round(target / 1000 * 14);
 
   document.getElementById('goalCal').value = target;
@@ -6628,7 +6638,10 @@ function calculateMacros() {
   document.getElementById('calcMathToggle').style.display = 'block';
 
   fb.style.color = '#60a5fa';
-  fb.textContent = `Maintenance ≈ ${maintenance} kcal${calibrated ? ' (calibrated from your data)' : ' (estimated)'}. Target ${target} · ${protein}P / ${carbs}C / ${fat}F · ${fiber}g fiber. Review & Save Goals.`;
+  const summary = `Maintenance ≈ ${maintenance} kcal${calibrated ? ' (calibrated from your data)' : ' (estimated)'}. Target ${target} · ${protein}P / ${carbs}C / ${fat}F · ${fiber}g fiber. Review & Save Goals.`;
+  fb.innerHTML = escapeHtml(summary) + (wasFloored
+    ? `<div style="color:var(--cal);margin-top:6px">⚠️ Minimum recommended intake applied for your age group. Consult a doctor before going lower.</div>`
+    : '');
 
   saveLocal('fuellog_calc', {
     sex, age, ft, inch, weight: weightInput, wUnit, bf: v('calcBf'), steps: v('calcSteps'),
