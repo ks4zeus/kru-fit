@@ -303,7 +303,7 @@
   .add-section {
     padding: 0 20px 16px;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 10px;
   }
   .add-btn {
@@ -333,6 +333,38 @@
   }
   .add-btn.photo { border-color: var(--protein); }
   .add-btn.barcode { border-color: var(--carbs); }
+  .add-btn.search { border-color: #3b82f6; }
+
+  /* ---- Food search (USDA) ---- */
+  .fs-input { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface2); color: var(--text); font-size: 15px; font-family: var(--font); margin-bottom: 10px; box-sizing: border-box; }
+  .fs-spinner { text-align: center; color: var(--muted); font-size: 13px; padding: 14px; }
+  .fs-empty { text-align: center; color: var(--muted); font-size: 13px; padding: 14px; }
+  .fsr { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; cursor: pointer; }
+  .fsr:active { background: var(--surface2); }
+  .fsr-info { min-width: 0; flex: 1; }
+  .fsr-name { font-size: 14px; font-weight: 600; }
+  .fsr-cat { font-size: 11px; color: var(--muted); }
+  .fsr-macros { font-size: 12px; color: var(--text); font-family: var(--mono); margin-top: 2px; }
+  .fsr-badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 99px; white-space: nowrap; flex-shrink: 0; }
+  .fsr-badge.ok { background: rgba(74,222,128,0.15); color: var(--protein); }
+  .fsr-badge.ai { background: rgba(244,208,111,0.15); color: var(--cal); }
+  .fs-attrib { text-align: center; font-size: 11px; color: var(--muted); margin: 12px 0 6px; }
+  .fs-ai-warn { background: rgba(244,208,111,0.1); border: 1px solid rgba(244,208,111,0.3); color: var(--cal); font-size: 12px; padding: 8px 10px; border-radius: 8px; margin-bottom: 10px; }
+  .fsp-name { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+  .fsp-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .fsp-row input { flex: 0 0 90px; }
+  .fsp-row select { flex: 1; }
+  .fsp-preview { font-size: 13px; color: var(--muted); font-family: var(--mono); margin-bottom: 12px; }
+  .cf-prefill-badge { display: none; font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 8px; margin-bottom: 10px; }
+  .cf-prefill-badge.ok { background: rgba(74,222,128,0.12); color: var(--protein); }
+  .cf-prefill-badge.ai { background: rgba(244,208,111,0.12); color: var(--cal); }
+  .cf-src { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 99px; margin-left: 6px; }
+  .cf-src.ok { background: rgba(74,222,128,0.15); color: var(--protein); }
+  .cf-src.ai { background: rgba(244,208,111,0.15); color: var(--cal); }
+  .cf-sync-btn { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--carbs); background: transparent; color: var(--carbs); font-weight: 600; cursor: pointer; margin-bottom: 10px; font-family: var(--font); }
+  .cf-sync-btn:disabled { opacity: 0.6; cursor: default; }
+  .toast { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 10px 16px; border-radius: 99px; font-size: 13px; z-index: 9999; box-shadow: 0 4px 16px rgba(0,0,0,0.4); opacity: 0; transition: opacity 0.25s; pointer-events: none; max-width: 90%; text-align: center; }
+  .toast.show { opacity: 1; }
 
   .section-head {
     padding: 0 20px 10px;
@@ -1673,6 +1705,11 @@
       <span class="btn-label">Custom</span>
       <span class="btn-sub">Food or recipe</span>
     </button>
+    <button class="add-btn search" onclick="openFoodSearchModal()">
+      <span class="btn-icon">🔍</span>
+      <span class="btn-label">Search</span>
+      <span class="btn-sub">Food database</span>
+    </button>
   </div>
   <div class="water-bar-wrap today-only">
     <div class="water-bar-head">
@@ -1936,13 +1973,19 @@
       <span class="rt-label">🍲 Batch recipe</span>
       <span class="rt-yield" id="cfYieldWrap" style="display:none">makes <input type="number" id="cfServingsYield" value="1" min="0.5" step="0.5" inputmode="decimal" oninput="recomputeRecipe()"> servings</span>
     </div>
+    <div id="cfSearchWrap">
+      <input type="text" class="fs-input" id="cfSearchInput" placeholder="🔍 Search food database…" autocomplete="off" oninput="onCfSearchInput()">
+      <div id="cfSearchSpinner" class="fs-spinner" style="display:none">Searching…</div>
+      <div id="cfSearchResults"></div>
+      <div class="cf-prefill-badge" id="cfPrefillBadge"></div>
+    </div>
     <div class="recipe-items" id="cfRecipeSection" style="display:none">
       <div class="recipe-items-head"><span>🧾 Ingredients</span></div>
       <div id="cfRecipeItems"></div>
       <button type="button" class="ri-scan-btn" onclick="openBarcodeForRecipe()">📷 Scan ingredient</button>
       <div class="ri-subtotal" id="cfRecipeSubtotal" style="display:none"></div>
     </div>
-    <div class="ai-estimate">
+    <div class="ai-estimate" id="cfAiSection">
       <label id="cfDescLabel">✨ Describe it (type or 🎤 speak) & let AI fill the macros</label>
       <textarea id="cfDesc" rows="2" placeholder="e.g. 2 scrambled eggs with cheddar and a slice of buttered sourdough toast"></textarea>
       <div class="ai-actions">
@@ -2003,11 +2046,25 @@
     <button class="btn-primary" onclick="saveCustomFood(true)" style="margin-top:8px">Log Now + Save</button>
     <div id="cfLibrarySection" class="cf-lib-section" style="display:none">
       <div class="cf-lib-head">📚 Your Library</div>
+      <button class="cf-sync-btn" id="cfSyncBtn" onclick="syncWithUsda()">🔄 Sync with USDA</button>
       <div id="cfLibraryList"></div>
     </div>
     <button class="btn-cancel" onclick="closeCustomFoodModal()">Cancel</button>
   </div>
 </div>
+<div class="modal-bg" id="foodSearchModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">🔍 Search foods</div>
+    <input type="text" class="fs-input" id="foodSearchInput" placeholder="Search food database…" autocomplete="off" oninput="onFoodSearchInput()">
+    <div id="foodSearchSpinner" class="fs-spinner" style="display:none">Searching…</div>
+    <div id="foodSearchResults"></div>
+    <div id="foodSearchPicker" style="display:none"></div>
+    <div class="fs-attrib">Powered by USDA FoodData Central</div>
+    <button class="btn-cancel" onclick="closeFoodSearchModal()">Close</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
 <div class="modal-bg" id="photoModal">
   <div class="modal">
     <div class="modal-handle"></div>
@@ -4792,6 +4849,10 @@ function openCustomFoodModal() {
   resetCfServing();
   document.getElementById('cfIsRecipe').checked = false;
   document.getElementById('cfServingsYield').value = '1';
+  document.getElementById('cfSearchInput').value = '';
+  document.getElementById('cfSearchResults').innerHTML = '';
+  document.getElementById('cfPrefillBadge').style.display = 'none';
+  cfLastResults = [];
   toggleRecipeMode();
   document.getElementById('cfAiFeedback').textContent = '';
   document.getElementById('cfError').classList.remove('show');
@@ -4816,6 +4877,10 @@ function toggleRecipeMode() {
   document.getElementById('cfDesc').placeholder = on
     ? '1 tbsp olive oil\na pinch of salt\n1 tsp cinnamon'
     : 'e.g. 2 scrambled eggs with cheddar and a slice of buttered sourdough toast';
+  // USDA search is for single foods; recipe mode uses the freeform AI builder instead.
+  document.getElementById('cfSearchWrap').style.display = on ? 'none' : '';
+  document.getElementById('cfEstimateBtn').textContent = on ? '✨ Estimate macros' : '✨ Estimate with AI';
+  revealAiEstimate(false);   // single mode: hidden until a search returns nothing; recipe: shown
   if (on) { renderRecipeItems(); recomputeRecipe(); }
 }
 
@@ -4955,7 +5020,7 @@ function renderCustomFoodLibrary() {
     <div class="cf-lib-item">
       <span class="cf-lib-emoji">${cfEsc(displayEmoji(f.name, f.emoji))}</span>
       <div class="cf-lib-info" onclick="prefillCustom('${f.id}')" title="Tap to edit">
-        <div class="cf-lib-name">${cfEsc(f.name)}${isRecipeFood(f) ? ' 🍲' : ''}</div>
+        <div class="cf-lib-name">${cfEsc(f.name)}${isRecipeFood(f) ? ' 🍲' : ''}${sourceBadge(f.source)}</div>
         <div class="cf-lib-macros">${Math.round(f.cal || 0)} cal${isRecipeFood(f) ? '/serv' : ''} · P${Math.round(f.protein || 0)} C${Math.round(f.carbs || 0)} F${Math.round(f.fat || 0)}</div>
       </div>
       <span class="cf-lib-times">×</span>
@@ -5406,6 +5471,214 @@ function toggleDictation(targetId, btn, fbId) {
 function stopDictation() {
   if (recognition && dictating) { try { recognition.stop(); } catch (e) {} }
   setMicState(false);
+}
+
+// ================= USDA food search =================
+let fsResults = [], fsSelected = null, fsTimer = null;   // Search-modal state
+let cfLastResults = [], cfSearchTimer = null;            // Custom-food search state
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 3500);
+}
+function sourceBadge(src) {
+  if (src === 'usda') return ' <span class="cf-src ok">✓ USDA</span>';
+  if (src === 'ai') return ' <span class="cf-src ai">🤖 AI</span>';
+  return '';   // 'user' (manual) — no badge
+}
+async function fetchFoodSearch(q) {
+  const res = await apiRequest('/foods/search?q=' + encodeURIComponent(q));
+  return (res.ok && res.body) ? res.body : { results: [], source: 'cache', total: 0 };
+}
+// USDA/cache results are per-100g; AI results are per their assumed serving.
+function resultMacroLine(r) {
+  return (r.source === 'usda' || r.source === 'cache')
+    ? `${Math.round(r.cal)} cal · ${Math.round(r.protein)}g protein / 100g`
+    : `${Math.round(r.cal)} cal · ${Math.round(r.protein)}g protein / ${fmtQty(r.serving_qty)} ${r.serving_unit}`;
+}
+function resultBadge(source) {
+  return source === 'ai'
+    ? '<span class="fsr-badge ai">🤖 AI estimate</span>'
+    : '<span class="fsr-badge ok">✓ USDA</span>';
+}
+function foodResultRows(results, onclickName) {
+  return results.map((r, i) => `
+    <div class="fsr" onclick="${onclickName}(${i})">
+      <div class="fsr-info">
+        <div class="fsr-name">${escapeHtml(r.name)}</div>
+        ${r.category ? `<div class="fsr-cat">${escapeHtml(r.category)}</div>` : ''}
+        <div class="fsr-macros">${escapeHtml(resultMacroLine(r))}</div>
+      </div>
+      ${resultBadge(r.source)}
+    </div>`).join('');
+}
+
+// ---- Search modal (Today) ----
+function openFoodSearchModal() {
+  fsResults = []; fsSelected = null;
+  document.getElementById('foodSearchInput').value = '';
+  document.getElementById('foodSearchResults').innerHTML = '';
+  const picker = document.getElementById('foodSearchPicker');
+  picker.style.display = 'none'; picker.innerHTML = '';
+  document.getElementById('foodSearchSpinner').style.display = 'none';
+  document.getElementById('foodSearchModal').classList.add('open');
+  setTimeout(() => document.getElementById('foodSearchInput').focus(), 100);
+}
+function closeFoodSearchModal() {
+  document.getElementById('foodSearchModal').classList.remove('open');
+  clearTimeout(fsTimer);
+}
+function onFoodSearchInput() {
+  clearTimeout(fsTimer);
+  const q = document.getElementById('foodSearchInput').value.trim();
+  document.getElementById('foodSearchPicker').style.display = 'none';
+  if (q.length < 2) { document.getElementById('foodSearchResults').innerHTML = ''; document.getElementById('foodSearchSpinner').style.display = 'none'; return; }
+  fsTimer = setTimeout(() => runFoodSearch(q), 400);   // debounce 400ms
+}
+async function runFoodSearch(q) {
+  const spin = document.getElementById('foodSearchSpinner');
+  const list = document.getElementById('foodSearchResults');
+  spin.style.display = 'block'; list.innerHTML = '';
+  const data = await fetchFoodSearch(q);
+  if (document.getElementById('foodSearchInput').value.trim() !== q) return;   // stale
+  spin.style.display = 'none';
+  fsResults = data.results || [];
+  if (!fsResults.length) { list.innerHTML = '<div class="fs-empty">No matches found.</div>'; return; }
+  const warn = data.source === 'ai' ? '<div class="fs-ai-warn">⚠️ No database match found — AI estimate, verify before logging</div>' : '';
+  list.innerHTML = warn + foodResultRows(fsResults, 'pickFoodResult');
+}
+function searchRef(r) { return { qty: r.serving_qty || 100, unit: r.serving_unit || 'g', grams: r.serving_grams }; }
+function searchScaled(r, qty, unit) {
+  const ref = searchRef(r);
+  const factor = rescaleFactor(ref, qty, unit);
+  if (factor == null) return null;
+  return {
+    cal: r.cal * factor, protein: r.protein * factor, carbs: r.carbs * factor,
+    fat: r.fat * factor, fiber: r.fiber * factor, sugar: r.sugar_added * factor,
+    grams: servingToGrams(qty, unit, ref),
+  };
+}
+function pickFoodResult(i) {
+  const r = fsResults[i];
+  if (!r) return;
+  fsSelected = r;
+  document.getElementById('foodSearchResults').innerHTML = '';
+  const usda = (r.source === 'usda' || r.source === 'cache');
+  const defQty = usda ? 100 : fmtQty(r.serving_qty || 1);
+  const defUnit = usda ? 'g' : canonUnit(r.serving_unit);
+  const picker = document.getElementById('foodSearchPicker');
+  picker.style.display = '';
+  picker.innerHTML = `
+    <div class="fsp-name">${escapeHtml(r.name)} ${resultBadge(r.source)}</div>
+    <div class="fsp-row">
+      <input type="number" id="fspQty" value="${defQty}" min="0" step="any" inputmode="decimal" oninput="updateSearchPreview()">
+      <select id="fspUnit" onchange="updateSearchPreview()">${servingUnitOptions(defUnit)}</select>
+    </div>
+    <div class="fsp-preview" id="fspPreview"></div>
+    <button class="btn-primary" onclick="logSearchResult()">Add to today</button>
+    <button class="btn-cancel" onclick="backToSearchResults()" style="margin-top:8px">Back</button>`;
+  updateSearchPreview();
+}
+function updateSearchPreview() {
+  const r = fsSelected; if (!r) return;
+  const qty = parseFloat(document.getElementById('fspQty').value) || 0;
+  const s = searchScaled(r, qty, document.getElementById('fspUnit').value);
+  document.getElementById('fspPreview').textContent = s
+    ? `${Math.round(s.cal)} cal · ${Math.round(s.protein)}g P · ${Math.round(s.carbs)}g C · ${Math.round(s.fat)}g F`
+    : "Can't convert that unit for this food.";
+}
+async function logSearchResult() {
+  const r = fsSelected; if (!r) return;
+  const qty = parseFloat(document.getElementById('fspQty').value) || 0;
+  const unit = document.getElementById('fspUnit').value;
+  const s = searchScaled(r, qty, unit);
+  if (!s) { showToast("Can't convert that unit for this food."); return; }
+  const entry = {
+    name: r.name, emoji: '🔍',
+    cal: s.cal, protein: s.protein, carbs: s.carbs, fiber: s.fiber, sugar: s.sugar, fat: s.fat,
+    source: (r.source === 'ai' ? 'AI estimate' : 'USDA') + ` · ${fmtQty(qty)} ${unit}`,
+    serving: `${fmtQty(qty)} ${unit}`,
+    serving_grams: s.grams != null ? Math.round(s.grams) : null,
+    ts: Date.now(), date: todayKey()
+  };
+  const saved = await saveFoodEntry(entry);
+  log.push(saved); saveLog(); renderLog(); updateTotals();
+  closeFoodSearchModal();
+  showToast('Added ' + r.name);
+}
+function backToSearchResults() {
+  const picker = document.getElementById('foodSearchPicker');
+  picker.style.display = 'none'; picker.innerHTML = '';
+  onFoodSearchInput();
+}
+
+// ---- Custom-food modal: USDA-first prefill ----
+function onCfSearchInput() {
+  clearTimeout(cfSearchTimer);
+  const q = document.getElementById('cfSearchInput').value.trim();
+  if (q.length < 2) { document.getElementById('cfSearchResults').innerHTML = ''; document.getElementById('cfSearchSpinner').style.display = 'none'; return; }
+  cfSearchTimer = setTimeout(() => runCfSearch(q), 400);
+}
+async function runCfSearch(q) {
+  const spin = document.getElementById('cfSearchSpinner');
+  const list = document.getElementById('cfSearchResults');
+  spin.style.display = 'block'; list.innerHTML = '';
+  const data = await fetchFoodSearch(q);
+  if (document.getElementById('cfSearchInput').value.trim() !== q) return;
+  spin.style.display = 'none';
+  cfLastResults = data.results || [];
+  if (!cfLastResults.length) {
+    list.innerHTML = '<div class="fs-empty">No database match.</div>';
+    revealAiEstimate(true);   // surface "Can't find it? Estimate with AI"
+    return;
+  }
+  revealAiEstimate(false);
+  list.innerHTML = foodResultRows(cfLastResults, 'cfPickResult');
+}
+function cfPickResult(i) {
+  const r = cfLastResults[i];
+  if (!r) return;
+  document.getElementById('cfName').value = r.name;
+  const set = (id, v) => document.getElementById(id).value = Math.round(v || 0);
+  set('cfCal', r.cal); set('cfProtein', r.protein); set('cfCarbs', r.carbs);
+  set('cfFat', r.fat); set('cfFiber', r.fiber); set('cfSugar', r.sugar_added);
+  const usda = (r.source === 'usda' || r.source === 'cache');
+  resetCfServing(usda ? 100 : (r.serving_qty || 1), usda ? 'g' : canonUnit(r.serving_unit), r.serving_grams);
+  const badge = document.getElementById('cfPrefillBadge');
+  if (r.source === 'ai') { badge.className = 'cf-prefill-badge ai'; badge.textContent = '⚠️ AI estimate — verify before saving'; }
+  else { badge.className = 'cf-prefill-badge ok'; badge.textContent = '✓ USDA verified data'; }
+  badge.style.display = 'block';
+  document.getElementById('cfSearchResults').innerHTML = '';
+  hideCfEstimatedFor();
+}
+// Secondary AI estimate is shown only when a search came up empty (or in recipe mode).
+function revealAiEstimate(show) {
+  const isRecipe = document.getElementById('cfIsRecipe').checked;
+  document.getElementById('cfAiSection').style.display = (show || isRecipe) ? '' : 'none';
+}
+
+// ---- Library: verify the whole library against USDA ----
+async function syncWithUsda() {
+  const btn = document.getElementById('cfSyncBtn');
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Checking your foods against USDA database…';
+  try {
+    const res = await apiRequest('/foods/verify-library', { method: 'POST' });
+    if (!res.ok) throw new Error('sync failed');
+    const { updated, no_match } = res.body;
+    await loadCustomFoods();
+    renderCustomFoodLibrary();
+    showToast(`✓ ${updated} food${updated !== 1 ? 's' : ''} updated from USDA · ${no_match} not matched`);
+  } catch (e) {
+    showToast('Sync failed — try again.');
+  } finally {
+    btn.disabled = false; btn.textContent = orig;
+  }
 }
 
 async function estimateMacros() {

@@ -60,8 +60,33 @@ CREATE TABLE custom_foods (
   ingredients TEXT,           -- freeform ingredient text (AI-estimated portion of a recipe)
   recipe_items TEXT,          -- JSON array of scanned/structured ingredients (per-100g base + amount/unit)
   servings REAL DEFAULT 1,    -- yield (number of servings the recipe makes)
+  source TEXT DEFAULT 'user', -- 'user' (manual), 'usda' (verified), 'ai' (estimate)
+  fdc_id TEXT,                -- USDA FoodData Central id when verified
+  verified_at TEXT,          -- when last matched/updated from USDA
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- USDA FoodData Central lookup cache (per-100g verified nutrition keyed by FDC id).
+CREATE TABLE foods_cache (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fdc_id TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  brand TEXT,
+  category TEXT,
+  cal REAL DEFAULT 0,
+  protein REAL DEFAULT 0,
+  carbs REAL DEFAULT 0,
+  fat REAL DEFAULT 0,
+  fiber REAL DEFAULT 0,
+  sugar_added REAL DEFAULT 0,
+  serving_qty REAL DEFAULT 100,
+  serving_unit TEXT DEFAULT 'g',
+  serving_grams REAL DEFAULT 100,
+  source TEXT DEFAULT 'usda',
+  cached_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_foods_cache_name ON foods_cache(name);
+CREATE INDEX idx_foods_cache_fdc ON foods_cache(fdc_id);
 
 CREATE TABLE meal_templates (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

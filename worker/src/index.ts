@@ -299,6 +299,145 @@ Identify the most important takeaways and respond ONLY with valid JSON (no markd
 }
 Rules: base every claim on the numbers provided. Be concise and specific — 2 to 4 items per list. Be supportive, never judgmental or alarmist. Prefer realistic, accessible foods that close the biggest gaps. STRICTLY respect the person's dietary_preference and restrictions if present: never suggest meat/poultry to a vegetarian, never suggest any animal products (meat, fish, dairy, eggs) to a vegan, never suggest meat (but fish is ok) to a pescatarian, and never suggest anything that conflicts with their stated restrictions/allergies. This is general guidance, not medical advice.`;
 
+// ---- USDA FoodData Central food search ----
+// All cached/USDA results are per-100g (serving_qty 100 / serving_unit 'g' / serving_grams 100).
+interface FoodResult {
+  fdc_id: string | null;
+  name: string;
+  brand: string | null;
+  category: string | null;
+  cal: number; protein: number; carbs: number; fat: number; fiber: number; sugar_added: number;
+  serving_qty: number; serving_unit: string; serving_grams: number | null;
+  source: string;
+}
+
+// Map a USDA food (search or detail shape) to our FoodResult, reading nutrients by
+// nutrientId. NOTE: these codes are USDA *nutrientId* values (energy's nutrientNumber
+// is "208"; its nutrientId is 1008). Sugar uses 1235 = Added Sugars (NOT 2000 = Total
+// Sugars) so the app's added-sugar model holds — whole foods correctly read ~0.
+function parseUsdaFood(f: any): FoodResult {
+  const byId: Record<string, number> = {};
+  for (const n of f.foodNutrients || []) {
+    const id = n.nutrientId ?? (n.nutrient && n.nutrient.id);
+    const val = n.value ?? n.amount;
+    if (id != null && val != null) byId[String(id)] = Number(val);
+  }
+  return {
+    fdc_id: String(f.fdcId),
+    name: f.description || "Unknown",
+    brand: f.brandOwner || null,
+    category: (typeof f.foodCategory === "object" ? f.foodCategory?.description : f.foodCategory) || null,
+    cal: byId["1008"] || 0,
+    protein: byId["1003"] || 0,
+    carbs: byId["1005"] || 0,
+    fat: byId["1004"] || 0,
+    fiber: byId["1079"] || 0,
+    sugar_added: byId["1235"] || 0,
+    serving_qty: 100, serving_unit: "g", serving_grams: 100, source: "usda",
+  };
+}
+
+function rowToResult(r: any): FoodResult {
+  return {
+    fdc_id: r.fdc_id, name: r.name, brand: r.brand, category: r.category,
+    cal: r.cal, protein: r.protein, carbs: r.carbs, fat: r.fat, fiber: r.fiber, sugar_added: r.sugar_added,
+    serving_qty: r.serving_qty ?? 100, serving_unit: r.serving_unit || "g", serving_grams: r.serving_grams ?? 100,
+    source: r.source || "usda",
+  };
+}
+
+async function usdaSearch(env: Env, q: string): Promise<FoodResult[]> {
+  if (!env.USDA_API_KEY) return [];
+  try {
+    const resp = await fetch(
+      `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${encodeURIComponent(env.USDA_API_KEY)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q, dataType: ["Foundation", "SR Legacy", "Survey (FNDDS)"], pageSize: 15 }),
+      }
+    );
+    if (!resp.ok) { console.error("USDA search error", resp.status); return []; }
+    const data = (await resp.json()) as any;
+    return (data.foods || []).map(parseUsdaFood);
+  } catch (e) { console.error("USDA search failed", e); return []; }
+}
+
+async function usdaGetById(env: Env, fdcId: string): Promise<FoodResult | null> {
+  if (!env.USDA_API_KEY) return null;
+  try {
+    const resp = await fetch(
+      `https://api.nal.usda.gov/fdc/v1/food/${encodeURIComponent(fdcId)}?api_key=${encodeURIComponent(env.USDA_API_KEY)}`
+    );
+    if (!resp.ok) return null;
+    return parseUsdaFood(await resp.json());
+  } catch (e) { console.error("USDA byId failed", e); return null; }
+}
+
+async function cacheUsdaFoods(db: D1Database, foods: FoodResult[]) {
+  for (const f of foods) {
+    if (!f.fdc_id) continue;
+    try {
+      await db.prepare(
+        `INSERT OR IGNORE INTO foods_cache (fdc_id, name, brand, category, cal, protein, carbs, fat, fiber, sugar_added, serving_qty, serving_unit, serving_grams, source)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 100, 'g', 100, 'usda')`
+      ).bind(f.fdc_id, f.name, f.brand, f.category, f.cal, f.protein, f.carbs, f.fat, f.fiber, f.sugar_added).run();
+    } catch (e) { console.error("foods_cache insert failed", e); }
+  }
+}
+
+// AI estimate for a named food (Tier 3 fallback). Never cached into foods_cache.
+async function aiEstimateFood(env: Env, db: D1Database, userEmail: string, q: string): Promise<FoodResult | null> {
+  if (!env.ANTHROPIC_API_KEY) return null;
+  try {
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: AI_MODEL_TEXT, max_tokens: 1000,
+        system: NUTRITION_SYSTEM_PROMPT + SERVING_DEFAULTS_GUIDANCE,
+        messages: [{ role: "user", content: [{ type: "text", text: `Estimate the nutrition for this food and provide it as JSON:\n\n${q}` }] }],
+      }),
+    });
+    if (!resp.ok) { console.error("AI estimate error", resp.status); return null; }
+    const data = (await resp.json()) as any;
+    await recordAiUsage(db, userEmail, "foods-search", AI_MODEL_TEXT, data.usage);
+    const text = (data.content || []).map((b: any) => b.text || "").join("").replace(/```json|```/g, "").trim();
+    const r = JSON.parse(text);
+    return {
+      fdc_id: null, name: r.name || q, brand: null, category: null,
+      cal: r.calories || 0, protein: r.protein_g || 0, carbs: r.carbs_g || 0, fat: r.fat_g || 0,
+      fiber: r.fiber_g || 0, sugar_added: r.sugar_g || 0,
+      serving_qty: r.serving_qty > 0 ? r.serving_qty : 1, serving_unit: r.serving_unit || "serving",
+      serving_grams: r.serving_grams || null, source: "ai",
+    };
+  } catch (e) { console.error("AI estimate failed", e); return null; }
+}
+
+// Three-tier lookup: D1 cache → USDA → AI (AI only when aiFallback is true).
+async function searchFoods(
+  env: Env, db: D1Database, userEmail: string, q: string, aiFallback: boolean
+): Promise<{ results: FoodResult[]; source: string }> {
+  const cached = ((await db
+    .prepare("SELECT * FROM foods_cache WHERE LOWER(name) LIKE LOWER(?) ORDER BY source = 'usda' DESC, name ASC LIMIT 10")
+    .bind(`%${q}%`)
+    .all()).results || []) as any[];
+  if (cached.length >= 5) return { results: cached.map(rowToResult), source: "cache" };
+
+  const usda = await usdaSearch(env, q);
+  if (usda.length > 0) {
+    await cacheUsdaFoods(db, usda);
+    return { results: usda.slice(0, 10), source: "usda" };
+  }
+  if (cached.length > 0) return { results: cached.map(rowToResult), source: "cache" };
+
+  if (aiFallback) {
+    const ai = await aiEstimateFood(env, db, userEmail, q);
+    if (ai) return { results: [ai], source: "ai" };
+  }
+  return { results: [], source: "usda" };
+}
+
 export default {
   async fetch(request: Request, env: Env) {
     if (request.method === "OPTIONS") {
@@ -436,6 +575,79 @@ export default {
         console.error("AI parse failure, raw text:", text);
         return jsonResponse({ error: "Could not parse AI response" }, 502);
       }
+    }
+
+    // ---- Food search: cache → USDA → AI ----
+    if (segments[1] === "foods" && segments[2] === "search" && segments.length === 3 && request.method === "GET") {
+      const q = (url.searchParams.get("q") || "").trim();
+      if (q.length < 2) return jsonResponse({ results: [], source: "cache", total: 0 });
+      const { results, source } = await searchFoods(env, db, userEmail, q, true);
+      return jsonResponse({ results, source, total: results.length });
+    }
+
+    // ---- Verify the whole custom-food library against USDA (recipes excluded) ----
+    if (segments[1] === "foods" && segments[2] === "verify-library" && segments.length === 3 && request.method === "POST") {
+      const foods = ((await db
+        .prepare(
+          `SELECT id, name, source FROM custom_foods
+           WHERE user_id = ?
+             AND (ingredients IS NULL OR ingredients = '')
+             AND (recipe_items IS NULL OR recipe_items = '')`
+        )
+        .bind(userEmail)
+        .all()).results || []) as any[];
+      let updated = 0, no_match = 0;
+      for (const food of foods) {
+        const { results } = await searchFoods(env, db, userEmail, food.name, false);
+        const top = results[0];
+        const fname = String(food.name).toLowerCase();
+        const tn = top ? String(top.name).toLowerCase() : "";
+        const matched = top && top.fdc_id && (tn.includes(fname) || fname.includes(tn));
+        if (matched) {
+          await db
+            .prepare(
+              `UPDATE custom_foods SET cal=?, protein=?, carbs=?, fat=?, fiber=?, sugar=?, source='usda', fdc_id=?, verified_at=datetime('now')
+               WHERE id=? AND user_id=?`
+            )
+            .bind(top.cal, top.protein, top.carbs, top.fat, top.fiber, top.sugar_added, top.fdc_id, food.id, userEmail)
+            .run();
+          updated++;
+        } else {
+          // No match: leave macros; tag unverified rows as 'ai' (never downgrade 'usda'/'user').
+          await db
+            .prepare("UPDATE custom_foods SET source='ai' WHERE id=? AND user_id=? AND (source IS NULL OR source='')")
+            .bind(food.id, userEmail)
+            .run();
+          no_match++;
+        }
+      }
+      return jsonResponse({ updated, no_match, total: foods.length });
+    }
+
+    // ---- Update one custom food from a specific USDA match ----
+    if (segments[1] === "foods" && segments[2] === "update-from-usda" && segments.length === 3 && request.method === "POST") {
+      const body = await parseJson(request);
+      const cfId = Number(body?.custom_food_id);
+      const fdcId = (body?.fdc_id ?? "").toString().trim();
+      if (!Number.isFinite(cfId) || !fdcId) return jsonResponse({ error: "custom_food_id and fdc_id required" }, 400);
+      let food: FoodResult | null = null;
+      const cachedRow = await db.prepare("SELECT * FROM foods_cache WHERE fdc_id = ?").bind(fdcId).first<any>();
+      if (cachedRow) food = rowToResult(cachedRow);
+      if (!food) {
+        food = await usdaGetById(env, fdcId);
+        if (food) await cacheUsdaFoods(db, [food]);
+      }
+      if (!food) return jsonResponse({ error: "USDA food not found" }, 404);
+      const upd = await db
+        .prepare(
+          `UPDATE custom_foods SET cal=?, protein=?, carbs=?, fat=?, fiber=?, sugar=?, source='usda', fdc_id=?, verified_at=datetime('now')
+           WHERE id=? AND user_id=?`
+        )
+        .bind(food.cal, food.protein, food.carbs, food.fat, food.fiber, food.sugar_added, fdcId, cfId, userEmail)
+        .run();
+      if (!upd.meta?.changes) return jsonResponse({ error: "Custom food not found" }, 404);
+      const updatedFood = await db.prepare("SELECT * FROM custom_foods WHERE id = ? AND user_id = ?").bind(cfId, userEmail).first();
+      return jsonResponse({ ok: true, food: updatedFood });
     }
 
     // ---- AI diet analysis ("coach") ----
@@ -1583,6 +1795,7 @@ export default {
 type Env = {
   DB: D1Database;
   ANTHROPIC_API_KEY?: string;
+  USDA_API_KEY?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   ADMIN_EMAILS?: string;

@@ -19,5 +19,8 @@ database_id = "3863195b-28ac-4423-b67b-45c27d9ee01f"
 ACCESS_TEAM_DOMAIN = "travelkru.cloudflareaccess.com"
 ACCESS_AUD = "047314cbdd4b99c556b15785d1feb77e60e73c08ed8f5d944bb1726bb78a5405"
 
-# Secret (do NOT commit). Set with:
+# Secrets (do NOT commit). Set with:
 #   wrangler pages secret put ANTHROPIC_API_KEY --project-name kru-fit
+#   wrangler pages secret put USDA_API_KEY --project-name kru-fit
+# USDA_API_KEY is required for food search (USDA FoodData Central). Get one free at
+# https://fdc.nal.usda.gov/api-key-signup.html
