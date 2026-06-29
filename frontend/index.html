@@ -3445,7 +3445,10 @@ async function saveCustomFood(logNow) {
     serving_grams: servingGrams,
     ingredients: isRecipe ? document.getElementById('cfDesc').value.trim() : '',
     recipe_items: isRecipe && recipeItems.length ? JSON.stringify(recipeItems) : null,
-    servings: isRecipe ? Math.max(0.5, parseFloat(document.getElementById('cfServingsYield').value) || 1) : 1
+    servings: isRecipe ? Math.max(0.5, parseFloat(document.getElementById('cfServingsYield').value) || 1) : 1,
+    // Provenance (recipes are always 'user' — excluded from USDA sync).
+    source: isRecipe ? 'user' : cfFormSource,
+    fdc_id: isRecipe ? null : cfFormFdcId
   };
   if (editingCustomFoodId != null) {
     // Editing an existing item → update in place (no duplicate).
@@ -3477,6 +3480,8 @@ async function saveCustomFood(logNow) {
   recipeItems = [];
   recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, sugar: 0, fat: 0 };
   recipeServingGrams = null;
+  cfFormSource = 'user'; cfFormFdcId = null;
+  document.getElementById('cfPrefillBadge').style.display = 'none';
   renderCustomFoodLibrary();
   ['cfName','cfEmoji','cfCal','cfProtein','cfCarbs','cfFiber','cfSugar','cfFat','cfDesc'].forEach(id => document.getElementById(id).value = '');
   resetCfServing();
@@ -4852,7 +4857,8 @@ function openCustomFoodModal() {
   document.getElementById('cfSearchInput').value = '';
   document.getElementById('cfSearchResults').innerHTML = '';
   document.getElementById('cfPrefillBadge').style.display = 'none';
-  cfLastResults = [];
+  cfLastResults = []; cfFormSource = 'user'; cfFormFdcId = null;
+  attachCfMacroListeners();
   toggleRecipeMode();
   document.getElementById('cfAiFeedback').textContent = '';
   document.getElementById('cfError').classList.remove('show');
@@ -5044,6 +5050,7 @@ function prefillCustom(id) {
   document.getElementById('cfSugar').value = f.sugar || '';
   document.getElementById('cfFat').value = f.fat || '';
   resetCfServing(parseServingQty(f.serving) || 1, servingUnitOf(f.serving), f.serving_grams);
+  cfFormSource = f.source || 'user'; cfFormFdcId = f.fdc_id || null;   // preserve provenance on edit
   const isRecipe = isRecipeFood(f);
   document.getElementById('cfIsRecipe').checked = isRecipe;
   const servings = Math.max(0.5, parseFloat(f.servings) || 1);
@@ -5476,6 +5483,23 @@ function stopDictation() {
 // ================= USDA food search =================
 let fsResults = [], fsSelected = null, fsTimer = null;   // Search-modal state
 let cfLastResults = [], cfSearchTimer = null;            // Custom-food search state
+// Provenance of the data currently in the custom-food form ('user'/'usda'/'ai').
+let cfFormSource = 'user', cfFormFdcId = null, cfMacroListenersOn = false;
+// Hand-editing the macros means it's no longer verified USDA/AI data.
+function cfInvalidateSource() {
+  if (cfFormSource !== 'user') {
+    cfFormSource = 'user'; cfFormFdcId = null;
+    const b = document.getElementById('cfPrefillBadge'); if (b) b.style.display = 'none';
+  }
+}
+function attachCfMacroListeners() {
+  if (cfMacroListenersOn) return;
+  ['cfCal', 'cfProtein', 'cfCarbs', 'cfFat', 'cfFiber', 'cfSugar'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', cfInvalidateSource);   // user typing only; .value= doesn't fire
+  });
+  cfMacroListenersOn = true;
+}
 
 function showToast(msg) {
   const t = document.getElementById('toast');
@@ -5648,6 +5672,9 @@ function cfPickResult(i) {
   set('cfFat', r.fat); set('cfFiber', r.fiber); set('cfSugar', r.sugar_added);
   const usda = (r.source === 'usda' || r.source === 'cache');
   resetCfServing(usda ? 100 : (r.serving_qty || 1), usda ? 'g' : canonUnit(r.serving_unit), r.serving_grams);
+  // Remember provenance so the saved row is tagged at creation (no Sync needed).
+  cfFormSource = usda ? 'usda' : 'ai';
+  cfFormFdcId = usda ? (r.fdc_id || null) : null;
   const badge = document.getElementById('cfPrefillBadge');
   if (r.source === 'ai') { badge.className = 'cf-prefill-badge ai'; badge.textContent = '⚠️ AI estimate — verify before saving'; }
   else { badge.className = 'cf-prefill-badge ok'; badge.textContent = '✓ USDA verified data'; }
@@ -5735,6 +5762,7 @@ async function estimateMacros() {
       const sQty = (r.serving_qty > 0) ? r.serving_qty : 1;
       const sUnit = canonUnit(r.serving_unit);
       resetCfServing(sQty, sUnit, r.serving_grams);
+      cfFormSource = 'ai'; cfFormFdcId = null;   // AI estimate → tag the saved row 'ai'
       showCfEstimatedFor(sQty, sUnit);
       feedback.textContent = `✓ Filled in${r.confidence ? ' · confidence: ' + r.confidence : ''}. Review and adjust as needed.`;
     }

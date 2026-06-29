@@ -954,11 +954,15 @@ export default {
         if (!body?.name) {
           return jsonResponse({ error: "Missing name" }, 400);
         }
+        // Provenance: 'usda' (verified) / 'ai' (estimate) / 'user' (manual, default).
+        const source = (body.source === "usda" || body.source === "ai") ? body.source : "user";
+        const fdcId = source === "usda" && body.fdc_id ? String(body.fdc_id) : null;
+        const verifiedAt = source === "usda" ? new Date().toISOString().slice(0, 19).replace("T", " ") : null;
 
         const inserted = await db
           .prepare(
-            `INSERT INTO custom_foods (user_id, name, emoji, cal, protein, carbs, fat, fiber, sugar, serving, serving_grams, ingredients, recipe_items, servings)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO custom_foods (user_id, name, emoji, cal, protein, carbs, fat, fiber, sugar, serving, serving_grams, ingredients, recipe_items, servings, source, fdc_id, verified_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             userEmail,
@@ -974,11 +978,14 @@ export default {
             body.serving_grams ?? null,
             body.ingredients || null,
             body.recipe_items || null,
-            body.servings ?? 1
+            body.servings ?? 1,
+            source,
+            fdcId,
+            verifiedAt
           )
           .run();
 
-        return jsonResponse({ id: inserted.meta?.last_row_id, ...body });
+        return jsonResponse({ id: inserted.meta?.last_row_id, ...body, source, fdc_id: fdcId, verified_at: verifiedAt });
       }
 
       if (request.method === "PUT") {
@@ -990,9 +997,12 @@ export default {
         if (!body?.name) {
           return jsonResponse({ error: "Missing name" }, 400);
         }
+        const source = (body.source === "usda" || body.source === "ai") ? body.source : "user";
+        const fdcId = source === "usda" && body.fdc_id ? String(body.fdc_id) : null;
+        const verifiedAt = source === "usda" ? new Date().toISOString().slice(0, 19).replace("T", " ") : null;
         await db
           .prepare(
-            `UPDATE custom_foods SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, sugar = ?, serving = ?, serving_grams = ?, ingredients = ?, recipe_items = ?, servings = ?
+            `UPDATE custom_foods SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, sugar = ?, serving = ?, serving_grams = ?, ingredients = ?, recipe_items = ?, servings = ?, source = ?, fdc_id = ?, verified_at = ?
              WHERE id = ? AND user_id = ?`
           )
           .bind(
@@ -1009,11 +1019,14 @@ export default {
             body.ingredients || null,
             body.recipe_items || null,
             body.servings ?? 1,
+            source,
+            fdcId,
+            verifiedAt,
             id,
             userEmail
           )
           .run();
-        return jsonResponse({ id, ...body });
+        return jsonResponse({ id, ...body, source, fdc_id: fdcId, verified_at: verifiedAt });
       }
 
       if (request.method === "DELETE") {
