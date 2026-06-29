@@ -744,38 +744,61 @@ export default {
       }
     }
 
-    // ---- Admin: one-time bulk sync of all users' custom-food libraries ----
+    // ---- Admin: bulk sync of custom-food libraries against USDA ----
+    // Bounded per call (?limit=, default 20) so the invocation always returns well
+    // within the time/subrequest budget — a full library would otherwise run too long
+    // and the runtime kills it mid-flight (blank response). Re-run until complete:true.
+    // Each food is processed once — matches become 'usda'; misses get verified_at
+    // stamped so they drop out of the next batch (so `remaining` always shrinks).
     if (segments[1] === "admin" && segments[2] === "sync-libraries" && request.method === "GET") {
       if (!isAdmin(userEmail, env)) return jsonResponse({ error: "Forbidden" }, 403);
-      // Always return JSON (never throw → no Error 1101). Accumulate so a mid-sweep
-      // failure still reports progress.
-      let users_processed = 0, foods_updated = 0, foods_unmatched = 0, users_failed = 0;
+      console.log("sync-libraries called");
+      const UNCHECKED =
+        `source IN ('user', 'ai') AND verified_at IS NULL
+         AND (ingredients IS NULL OR ingredients = '') AND (recipe_items IS NULL OR recipe_items = '')`;
+      let users_processed = 0, foods_updated = 0, foods_unmatched = 0, errors = 0, processed = 0, remaining = 0;
       let fatal: any = null;
       try {
-        const users = ((await db
-          .prepare(
-            `SELECT DISTINCT user_id FROM custom_foods
-             WHERE source IN ('user', 'ai')
-               AND (ingredients IS NULL OR ingredients = '')
-               AND (recipe_items IS NULL OR recipe_items = '')`
-          )
+        const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit")) || 20));
+        const foods = ((await db
+          .prepare(`SELECT id, user_id, name FROM custom_foods WHERE ${UNCHECKED} ORDER BY id LIMIT ?`)
+          .bind(limit)
           .all()).results || []) as any[];
-        for (const u of users) {
+        const usersSet = new Set<string>();
+        for (const food of foods) {
+          usersSet.add(food.user_id);
           try {
-            const r = await verifyLibrary(env, db, u.user_id);
-            foods_updated += r.updated;
-            foods_unmatched += r.no_match;
-            users_processed++;
+            const { results } = await searchFoods(env, db, food.user_id, food.name, false);
+            const top = results[0];
+            const fname = String(food.name).toLowerCase();
+            const tn = top ? String(top.name).toLowerCase() : "";
+            if (top && top.fdc_id && (tn.includes(fname) || fname.includes(tn))) {
+              await db
+                .prepare(`UPDATE custom_foods SET cal=?, protein=?, carbs=?, fat=?, fiber=?, sugar=?, serving='100 g', serving_grams=100, source='usda', fdc_id=?, verified_at=datetime('now') WHERE id=?`)
+                .bind(top.cal, top.protein, top.carbs, top.fat, top.fiber, top.sugar_added, top.fdc_id, food.id)
+                .run();
+              foods_updated++;
+            } else {
+              // No match — stamp verified_at as "checked" so it isn't re-scanned next batch.
+              await db.prepare("UPDATE custom_foods SET verified_at=datetime('now') WHERE id=?").bind(food.id).run();
+              foods_unmatched++;
+            }
           } catch (e) {
-            console.error("sync user failed", u.user_id, e);
-            users_failed++;
+            console.error("sync food failed", food.id, e);
+            errors++;
           }
         }
+        processed = foods.length;
+        users_processed = usersSet.size;
+        const remRow = await db.prepare(`SELECT COUNT(*) AS n FROM custom_foods WHERE ${UNCHECKED}`).first<{ n: number }>();
+        remaining = remRow?.n || 0;
       } catch (err: any) {
         console.error("sync-libraries fatal", err);
         fatal = err?.message || String(err);
       }
-      return jsonResponse({ users_processed, foods_updated, foods_unmatched, users_failed, ...(fatal ? { error: fatal } : {}) });
+      const result = { users_processed, foods_updated, foods_unmatched, errors, processed, remaining, complete: !fatal && remaining === 0, ...(fatal ? { error: fatal } : {}) };
+      console.log("sync-libraries returning: " + JSON.stringify(result));
+      return jsonResponse(result);
     }
 
     // ---- Update one custom food from a specific USDA match ----
