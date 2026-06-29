@@ -938,6 +938,22 @@
   }
   .ab-track { flex: 1; height: 6px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
   .ab-fill { height: 100%; border-radius: 99px; }
+  /* Insights summary cards */
+  .insight-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }
+  .insight-card h3 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+  .ng-warn { font-size: 13px; line-height: 1.55; color: var(--text); }
+  .ng-ok { font-size: 13px; color: var(--protein); font-weight: 600; }
+  .lp-sub { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .log-heatmap { display: flex; flex-wrap: wrap; gap: 5px; }
+  .log-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border); }
+  .log-dot.on { background: var(--protein); border-color: var(--protein); }
+  .wow-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .wow-metric { font-size: 13px; font-weight: 700; padding: 6px 10px; border-radius: 8px; background: var(--surface2); font-family: var(--mono); white-space: nowrap; }
+  .wow-good { color: var(--protein); }
+  .wow-bad { color: var(--danger); }
+  .wow-up { color: var(--cal); }
+  .wow-down { color: var(--carbs); }
+  .wow-flat { color: var(--muted); }
   .ab-val { font-size: 11px; font-family: var(--mono); color: var(--muted); width: 46px; text-align: right; flex-shrink: 0; }
   .period-btn {
     flex: 1; background: var(--surface); border: 1px solid var(--border);
@@ -5830,26 +5846,117 @@ function maintenanceCard() {
   </div>`;
 }
 
+// ---- Insights summary cards ----
+// Macros averaging below 70% of goal over the logged days in the period.
+function nutrientGapsCard(total, loggedDays) {
+  if (loggedDays === 0) return '';
+  const checks = [
+    ['protein', 'Protein', goals.protein],
+    ['carbs', 'Carbs', goals.carbs],
+    ['fat', 'Fat', goals.fat],
+    ['fiber', 'Fiber', goals.fiber || defaultGoals.fiber],
+  ];
+  const gaps = checks
+    .filter(([k, , g]) => g > 0 && (total[k] / loggedDays) < 0.7 * g)
+    .map(([k, label, g]) => `${label} (avg ${Math.round(total[k] / loggedDays)}g vs ${g}g goal)`);
+  const body = gaps.length
+    ? `<div class="ng-warn">⚠️ Consistently low: ${gaps.join(', ')}</div>`
+    : `<div class="ng-ok">✓ All macros on track this period.</div>`;
+  return `<div class="insight-card"><h3>🎯 Nutrient gaps</h3>${body}</div>`;
+}
+
+// Calendar heatmap of logging consistency (green = logged, grey = no entries).
+function loggingPatternCard(days) {
+  const loggedCount = days.filter(d => d.logged).length;
+  const dots = [...days].reverse().map(d => {   // oldest → newest, left to right
+    const lbl = new Date(d.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    return `<span class="log-dot ${d.logged ? 'on' : ''}" title="${lbl}${d.logged ? '' : ' · no entries'}"></span>`;
+  }).join('');
+  return `<div class="insight-card">
+    <h3>📅 Logging pattern</h3>
+    <div class="lp-sub">Logged ${loggedCount} of ${days.length} day${days.length !== 1 ? 's' : ''}</div>
+    <div class="log-heatmap">${dots}</div>
+  </div>`;
+}
+
+// This week's averages vs last week's (fixed 7-day windows, independent of period).
+function weekOverWeekCard() {
+  const food = (start) => {
+    let cal = 0, pro = 0, n = 0;
+    for (let i = start; i < start + 7; i++) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      let de = [];
+      try { de = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.log + dateKey(d)) || '[]'); } catch (e) {}
+      if (de.length) { n++; de.forEach(e => { cal += e.cal || 0; pro += e.protein || 0; }); }
+    }
+    return n ? { cal: cal / n, protein: pro / n } : null;
+  };
+  const weight = (start) => {
+    let sum = 0, n = 0;
+    for (let i = start; i < start + 7; i++) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const w = weightLog[dateKey(d)];
+      if (w) { sum += toDisplayWeight(w.val, w.unit || 'lbs'); n++; }
+    }
+    return n ? sum / n : null;
+  };
+  const tW = food(0), lW = food(7), tWt = weight(0), lWt = weight(7);
+  const obj = goals.objective || 'maintain';
+  const cwGoodDown = obj === 'lose' ? true : obj === 'gain' ? false : null;   // null = neutral
+  const metrics = [];
+  if (tW && lW) {
+    metrics.push(wowMetric('Protein', tW.protein - lW.protein, 'g', 0, false));   // more is good
+    metrics.push(wowMetric('Calories', tW.cal - lW.cal, '', 0, cwGoodDown));
+  }
+  if (tWt != null && lWt != null) {
+    metrics.push(wowMetric('Weight', tWt - lWt, ' ' + weightUnit, 1, cwGoodDown));
+  }
+  const body = metrics.length
+    ? `<div class="wow-row">${metrics.join('')}</div>`
+    : `<div class="lp-sub" style="margin:0">Log another week to compare trends.</div>`;
+  return `<div class="insight-card"><h3>📊 Week over week</h3><div class="lp-sub">This week vs last week</div>${body}</div>`;
+}
+
+function wowMetric(label, delta, suffix, decimals, goodWhenDown) {
+  const eps = decimals ? 0.1 : 1;
+  const flat = Math.abs(delta) < eps;
+  const up = delta > 0;
+  const arrow = flat ? '→' : up ? '↑' : '↓';
+  let cls = 'wow-flat';
+  if (!flat && (goodWhenDown === true || goodWhenDown === false)) {
+    cls = (goodWhenDown ? !up : up) ? 'wow-good' : 'wow-bad';
+  } else if (!flat) {
+    cls = up ? 'wow-up' : 'wow-down';
+  }
+  const val = flat ? 'no change' : `${Math.abs(delta).toFixed(decimals)}${suffix}`;
+  return `<span class="wow-metric ${cls}">${label} ${arrow} ${val}</span>`;
+}
+
 async function renderAnalysis() {
   await ensureHistory();
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - analysisPeriod);
-  const entries = [];
-  for (let i = 0; i < analysisPeriod; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = STORAGE_KEYS.log + dateKey(d);
-    const raw = window.localStorage.getItem(key);
-    if (raw) JSON.parse(raw).forEach(e => entries.push(e));
-  }
   const el = document.getElementById('analysisContent');
+
+  // Per-day buckets over the selected period (index 0 = today).
+  const days = [];
+  const total = { cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
+  let loggedDays = 0, anyEntries = 0;
+  for (let i = 0; i < analysisPeriod; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    let de = [];
+    try { de = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.log + dateKey(d)) || '[]'); } catch (e) {}
+    const t = de.reduce((a, e) => { a.cal += e.cal || 0; a.protein += e.protein || 0; a.carbs += e.carbs || 0; a.fat += e.fat || 0; a.fiber += e.fiber || 0; return a; }, { cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 });
+    days.push({ date: dateKey(d), logged: de.length > 0, cal: t.cal, protein: t.protein, carbs: t.carbs, fat: t.fat, fiber: t.fiber });
+    if (de.length) { loggedDays++; anyEntries += de.length; total.cal += t.cal; total.protein += t.protein; total.carbs += t.carbs; total.fat += t.fat; total.fiber += t.fiber; }
+  }
+
   const ex = gatherExerciseSummary(analysisPeriod);
-  if (entries.length === 0 && !ex) {
+  if (anyEntries === 0 && !ex) {
     el.innerHTML = '';
     document.getElementById('analysisEmpty').style.display = 'block';
     return;
   }
   document.getElementById('analysisEmpty').style.display = 'none';
+
   // Exercise insight section — only when workouts were logged in the window.
   function exerciseSection(e) {
     const top = e.top.slice(0, 5);
@@ -5865,53 +5972,12 @@ async function renderAnalysis() {
         </div>`;
       }).join('')}</div>`;
   }
-  // If only exercise is logged (no food yet), show just the exercise section.
-  if (entries.length === 0) {
-    el.innerHTML = exerciseSection(ex);
-    return;
-  }
-  const foodMap = {};
-  entries.forEach(e => {
-    const key = e.name;
-    if (!foodMap[key]) foodMap[key] = { name: e.name, emoji: e.emoji || '🍽️', cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, count: 0 };
-    foodMap[key].cal += e.cal || 0;
-    foodMap[key].protein += e.protein || 0;
-    foodMap[key].carbs += e.carbs || 0;
-    foodMap[key].fat += e.fat || 0;
-    foodMap[key].fiber += e.fiber || 0;
-    foodMap[key].sugar += e.sugar || 0;
-    foodMap[key].count += 1;
-  });
-  const foods = Object.values(foodMap);
-  function section(title, sorted, fn, color, unit) {
-    return `<div class="analysis-section"><h3>${title}</h3>${sorted.slice(0, 5).map(f => `
-      <div class="analysis-bar-row">
-        <span class="ab-name">${f.emoji} ${f.name}</span>
-        <div class="ab-track"><div class="ab-fill" style="width:${(fn(f)/fn(sorted[0])*100).toFixed(1)}%;background:${color}"></div></div>
-        <span class="ab-val">${Math.round(fn(f))}${unit}</span>
-      </div>`).join('')}</div>`;
-  }
-  const byProtein = [...foods].sort((a,b)=>b.protein-a.protein);
-  const byCalories = [...foods].sort((a,b)=>b.cal-a.cal);
-  const byLowCal = [...foods].sort((a,b)=>a.cal-b.cal).filter(f=>f.cal>0);
-  const byFat = [...foods].sort((a,b)=>b.fat-a.fat);
-  const byFiber = [...foods].sort((a,b)=>b.fiber-a.fiber).filter(f=>f.fiber>0);
-  const bySugar = [...foods].sort((a,b)=>b.sugar-a.sugar).filter(f=>f.sugar>0);
-  const byCount = [...foods].sort((a,b)=>b.count-a.count);
+
   el.innerHTML =
     maintenanceCard() +
-    section('💪 Highest Protein', byProtein, f=>f.protein, 'var(--protein)', 'g') +
-    section('🔥 Highest Calories', byCalories, f=>f.cal, 'var(--cal)', '') +
-    section('🥗 Lowest Calorie', byLowCal, f=>f.cal, '#34d399', '') +
-    section('🧈 Highest Fat', byFat, f=>f.fat, 'var(--fat)', 'g') +
-    (byFiber.length ? section('🌾 Highest Fiber', byFiber, f=>f.fiber, '#fb923c', 'g') : '') +
-    (bySugar.length ? section('🍬 Highest Added Sugar', bySugar, f=>f.sugar, 'var(--sugar)', 'g') : '') +
-    `<div class="analysis-section"><h3>🔁 Most Logged</h3>${byCount.slice(0,5).map(f => `
-      <div class="analysis-bar-row">
-        <span class="ab-name">${f.emoji} ${f.name}</span>
-        <div class="ab-track"><div class="ab-fill" style="width:${(f.count/byCount[0].count*100).toFixed(1)}%;background:#a78bfa"></div></div>
-        <span class="ab-val">${f.count}×</span>
-      </div>`).join('')}</div>` +
+    nutrientGapsCard(total, loggedDays) +
+    loggingPatternCard(days) +
+    weekOverWeekCard() +
     (ex ? exerciseSection(ex) : '');
 }
 
