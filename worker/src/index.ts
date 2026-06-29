@@ -417,15 +417,18 @@ async function usdaGetById(env: Env, fdcId: string): Promise<FoodResult | null> 
 }
 
 async function cacheUsdaFoods(db: D1Database, foods: FoodResult[]) {
-  for (const f of foods) {
-    if (!f.fdc_id) continue;
-    try {
-      await db.prepare(
+  // One batched round-trip instead of an INSERT subrequest per result (the loop
+  // version exhausted the per-invocation subrequest cap during bulk sync → 1101).
+  const stmts = foods
+    .filter((f) => f.fdc_id)
+    .map((f) =>
+      db.prepare(
         `INSERT OR IGNORE INTO foods_cache (fdc_id, name, brand, category, cal, protein, carbs, fat, fiber, sugar_added, serving_qty, serving_unit, serving_grams, source)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 100, 'g', 100, 'usda')`
-      ).bind(f.fdc_id, f.name, f.brand, f.category, f.cal, f.protein, f.carbs, f.fat, f.fiber, f.sugar_added).run();
-    } catch (e) { console.error("foods_cache insert failed", e); }
-  }
+      ).bind(f.fdc_id, f.name, f.brand, f.category, f.cal, f.protein, f.carbs, f.fat, f.fiber, f.sugar_added)
+    );
+  if (!stmts.length) return;
+  try { await db.batch(stmts); } catch (e) { console.error("foods_cache batch failed", e); }
 }
 
 // AI estimate for a named food (Tier 3 fallback). Never cached into foods_cache.
@@ -540,10 +543,12 @@ async function searchFoods(
 async function verifyLibrary(
   env: Env, db: D1Database, userId: string
 ): Promise<{ updated: number; no_match: number; total: number }> {
+  // Only unverified foods (skip already-'usda' rows so repeated runs stay cheap).
   const foods = ((await db
     .prepare(
       `SELECT id, name, source FROM custom_foods
        WHERE user_id = ?
+         AND (source IS NULL OR source != 'usda')
          AND (ingredients IS NULL OR ingredients = '')
          AND (recipe_items IS NULL OR recipe_items = '')`
     )
@@ -551,25 +556,31 @@ async function verifyLibrary(
     .all()).results || []) as any[];
   let updated = 0, no_match = 0;
   for (const food of foods) {
-    const { results } = await searchFoods(env, db, userId, food.name, false);
-    const top = results[0];
-    const fname = String(food.name).toLowerCase();
-    const tn = top ? String(top.name).toLowerCase() : "";
-    const matched = top && top.fdc_id && (tn.includes(fname) || fname.includes(tn));
-    if (matched) {
-      await db
-        .prepare(
-          `UPDATE custom_foods SET cal=?, protein=?, carbs=?, fat=?, fiber=?, sugar=?, serving='100 g', serving_grams=100, source='usda', fdc_id=?, verified_at=datetime('now')
-           WHERE id=? AND user_id=?`
-        )
-        .bind(top.cal, top.protein, top.carbs, top.fat, top.fiber, top.sugar_added, top.fdc_id, food.id, userId)
-        .run();
-      updated++;
-    } else {
-      await db
-        .prepare("UPDATE custom_foods SET source='ai' WHERE id=? AND user_id=? AND (source IS NULL OR source='')")
-        .bind(food.id, userId)
-        .run();
+    // Per-food guard: one failure (network / subrequest cap) never aborts the sweep.
+    try {
+      const { results } = await searchFoods(env, db, userId, food.name, false);
+      const top = results[0];
+      const fname = String(food.name).toLowerCase();
+      const tn = top ? String(top.name).toLowerCase() : "";
+      const matched = top && top.fdc_id && (tn.includes(fname) || fname.includes(tn));
+      if (matched) {
+        await db
+          .prepare(
+            `UPDATE custom_foods SET cal=?, protein=?, carbs=?, fat=?, fiber=?, sugar=?, serving='100 g', serving_grams=100, source='usda', fdc_id=?, verified_at=datetime('now')
+             WHERE id=? AND user_id=?`
+          )
+          .bind(top.cal, top.protein, top.carbs, top.fat, top.fiber, top.sugar_added, top.fdc_id, food.id, userId)
+          .run();
+        updated++;
+      } else {
+        await db
+          .prepare("UPDATE custom_foods SET source='ai' WHERE id=? AND user_id=? AND (source IS NULL OR source='')")
+          .bind(food.id, userId)
+          .run();
+        no_match++;
+      }
+    } catch (e) {
+      console.error("verifyLibrary food failed", food.id, e);
       no_match++;
     }
   }
@@ -725,27 +736,46 @@ export default {
 
     // ---- Verify the whole custom-food library against USDA (recipes excluded) ----
     if (segments[1] === "foods" && segments[2] === "verify-library" && segments.length === 3 && request.method === "POST") {
-      return jsonResponse(await verifyLibrary(env, db, userEmail));
+      try {
+        return jsonResponse(await verifyLibrary(env, db, userEmail));
+      } catch (err: any) {
+        console.error("verify-library failed", err);
+        return jsonResponse({ error: err?.message || String(err) }, 500);
+      }
     }
 
     // ---- Admin: one-time bulk sync of all users' custom-food libraries ----
     if (segments[1] === "admin" && segments[2] === "sync-libraries" && request.method === "GET") {
       if (!isAdmin(userEmail, env)) return jsonResponse({ error: "Forbidden" }, 403);
-      const users = ((await db
-        .prepare(
-          `SELECT DISTINCT user_id FROM custom_foods
-           WHERE source IN ('user', 'ai')
-             AND (ingredients IS NULL OR ingredients = '')
-             AND (recipe_items IS NULL OR recipe_items = '')`
-        )
-        .all()).results || []) as any[];
-      let foods_updated = 0, foods_unmatched = 0;
-      for (const u of users) {
-        const r = await verifyLibrary(env, db, u.user_id);
-        foods_updated += r.updated;
-        foods_unmatched += r.no_match;
+      // Always return JSON (never throw → no Error 1101). Accumulate so a mid-sweep
+      // failure still reports progress.
+      let users_processed = 0, foods_updated = 0, foods_unmatched = 0, users_failed = 0;
+      let fatal: any = null;
+      try {
+        const users = ((await db
+          .prepare(
+            `SELECT DISTINCT user_id FROM custom_foods
+             WHERE source IN ('user', 'ai')
+               AND (ingredients IS NULL OR ingredients = '')
+               AND (recipe_items IS NULL OR recipe_items = '')`
+          )
+          .all()).results || []) as any[];
+        for (const u of users) {
+          try {
+            const r = await verifyLibrary(env, db, u.user_id);
+            foods_updated += r.updated;
+            foods_unmatched += r.no_match;
+            users_processed++;
+          } catch (e) {
+            console.error("sync user failed", u.user_id, e);
+            users_failed++;
+          }
+        }
+      } catch (err: any) {
+        console.error("sync-libraries fatal", err);
+        fatal = err?.message || String(err);
       }
-      return jsonResponse({ users_processed: users.length, foods_updated, foods_unmatched });
+      return jsonResponse({ users_processed, foods_updated, foods_unmatched, users_failed, ...(fatal ? { error: fatal } : {}) });
     }
 
     // ---- Update one custom food from a specific USDA match ----
