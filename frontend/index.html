@@ -2548,7 +2548,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v2.1';
+const APP_VERSION = 'v2.2';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -6213,7 +6213,7 @@ function maintenanceConfidence(span, weighIns, loggedDays) {
     items: [
       { label: `${span} day span`, good: spanScore >= 1 },
       { label: `${weighIns} weigh-in${weighIns !== 1 ? 's' : ''}`, good: wiScore >= 1 },
-      { label: `${loggedDays} food logs`, good: fdScore >= 1 }
+      { label: `${loggedDays} days logged`, good: fdScore >= 1 }
     ]
   };
 }
