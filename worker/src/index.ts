@@ -128,7 +128,7 @@ function getPathSegments(url: URL) {
 
 // Admin allowlist — comma-separated ADMIN_EMAILS env var, defaulting to the owner.
 function adminEmails(env: Env): string[] {
-  const raw = env.ADMIN_EMAILS && env.ADMIN_EMAILS.trim() ? env.ADMIN_EMAILS : "ks4zeus@yahoo.com";
+  const raw = env.ADMIN_EMAILS && env.ADMIN_EMAILS.trim() ? env.ADMIN_EMAILS : "ks4zeus@yahoo.com,kru@travelkru.com";
   return raw.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
 }
 function isAdmin(email: string, env: Env): boolean {
