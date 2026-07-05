@@ -1546,8 +1546,9 @@
 
   /* Client detail */
   .cd-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; gap: 12px; }
-  .cd-name { font-size: 18px; font-weight: 700; }
-  .cd-sub  { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  /* Name/email truncate so a long value can never overlap or push out the Export/Close buttons. */
+  .cd-name { font-size: 18px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cd-sub  { font-size: 12px; color: var(--muted); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cd-date-nav { display: flex; align-items: center; justify-content: space-between; background: var(--surface2); border-radius: 10px; padding: 8px 14px; margin-bottom: 14px; font-size: 14px; font-weight: 600; }
   .cd-date-nav button { background: none; border: none; color: var(--text); font-size: 20px; cursor: pointer; padding: 0 8px; }
   .cd-date-nav button:disabled { opacity: 0.3; cursor: default; }
@@ -2061,7 +2062,7 @@
         <div class="modal">
           <div class="modal-handle"></div>
           <div class="cd-header">
-            <div style="min-width:0">
+            <div style="min-width:0;flex:1">
               <div class="cd-name" id="cdName"></div>
               <div class="cd-sub" id="cdSub"></div>
             </div>
@@ -2666,7 +2667,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v2.4';
+const APP_VERSION = 'v2.5';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
