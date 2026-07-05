@@ -5412,7 +5412,7 @@ function mtRow(t) {
         <div class="qa-macros">${items.length} item${items.length !== 1 ? 's' : ''} · ${Math.round(cal)} cal</div>
       </div>
       <button class="mt-del" onclick="deleteMealTemplate('${t.id}')" title="Remove meal">✕</button>
-      <button class="mt-add" onclick="logMealTemplate('${t.id}')" title="Log all items">＋</button>
+      <button class="mt-add" onclick="logMealTemplate('${t.id}')" title="Log meal">＋</button>
     </div>`;
 }
 
@@ -5421,21 +5421,30 @@ async function logMealTemplate(id) {
   if (!t) return;
   const items = templateItems(t);
   if (!items.length) return;
-  for (const it of items) {
-    const entry = {
-      name: it.name, emoji: it.emoji || '🍽️',
-      cal: Number(it.cal) || 0, protein: Number(it.protein) || 0, carbs: Number(it.carbs) || 0,
-      fiber: Number(it.fiber) || 0, sugar: Number(it.sugar) || 0, fat: Number(it.fat) || 0,
-      source: 'Meal · ' + t.name, ts: Date.now(), date: todayKey()
-    };
-    const saved = await saveFoodEntry(entry);
-    log.push(saved);
-  }
+  // Log the whole template as ONE combined entry (summed macros), not one row per
+  // ingredient. Recipe and individual-food logging are unaffected.
+  const total = items.reduce((s, it) => ({
+    cal:     s.cal     + (Number(it.cal) || 0),
+    protein: s.protein + (Number(it.protein) || 0),
+    carbs:   s.carbs   + (Number(it.carbs) || 0),
+    fat:     s.fat     + (Number(it.fat) || 0),
+    fiber:   s.fiber   + (Number(it.fiber) || 0),
+    sugar:   s.sugar   + (Number(it.sugar) || 0),
+  }), { cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0 });
+  const entry = {
+    name: t.name,
+    emoji: t.emoji || '🍽️',
+    cal: total.cal, protein: total.protein, carbs: total.carbs,
+    fat: total.fat, fiber: total.fiber, sugar: total.sugar,
+    source: 'Meal template', ts: Date.now(), date: todayKey()
+  };
+  const saved = await saveFoodEntry(entry);
+  log.push(saved);
   saveLog();
   renderLog();
   updateTotals();
   const fb = document.getElementById('qaFeedback');
-  if (fb) fb.textContent = `✓ Added ${t.name} (${items.length} item${items.length !== 1 ? 's' : ''})`;
+  if (fb) fb.textContent = `✓ Added ${t.name}`;
 }
 
 async function deleteMealTemplate(id) {
