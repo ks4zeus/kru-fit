@@ -2192,8 +2192,16 @@
       </div>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:12px">💾 Saved foods appear in your custom library for quick re-add.</div>
-    <button class="btn-primary" onclick="saveCustomFood(false)" style="background:#7c3aed;color:#fff">Save to Library</button>
-    <button class="btn-primary" onclick="saveCustomFood(true)" style="margin-top:8px">Log Now + Save</button>
+    <!-- Single-food actions: Log Now (no save) + Log Now + Save -->
+    <div id="cfSingleActions">
+      <button class="btn-primary" onclick="saveCustomFood(true, false)">Log Now</button>
+      <button class="btn-primary" onclick="saveCustomFood(true, true)" style="margin-top:8px;background:#7c3aed;color:#fff">Log Now + Save</button>
+    </div>
+    <!-- Recipe/batch actions (unchanged) -->
+    <div id="cfRecipeActions" style="display:none">
+      <button class="btn-primary" onclick="saveCustomFood(false)" style="background:#7c3aed;color:#fff">Save to Library</button>
+      <button class="btn-primary" onclick="saveCustomFood(true)" style="margin-top:8px">Log Now + Save</button>
+    </div>
     <div id="cfLibrarySection" class="cf-lib-section" style="display:none">
       <div class="cf-lib-head">📚 Your Library</div>
       <button class="cf-sync-btn" id="cfSyncBtn" onclick="syncWithUsda()">🔄 Sync with USDA</button>
@@ -3563,7 +3571,7 @@ function findMealTemplate(id) {
   return mealTemplates.find(t => String(t.id) === String(id));
 }
 
-async function saveCustomFood(logNow) {
+async function saveCustomFood(logNow, saveToLibrary = true) {
   stopDictation();
   const name = document.getElementById('cfName').value.trim();
   if (!name) {
@@ -3604,16 +3612,19 @@ async function saveCustomFood(logNow) {
     source: isRecipe ? 'user' : cfFormSource,
     fdc_id: isRecipe ? null : cfFormFdcId
   };
-  if (editingCustomFoodId != null) {
-    // Editing an existing item → update in place (no duplicate).
-    if (currentUser) await apiRequest(`/custom-foods/${encodeURIComponent(editingCustomFoodId)}`, { method: 'PUT', body: JSON.stringify(food) });
-    customFoods = customFoods.map(f => String(f.id) === String(editingCustomFoodId) ? { ...f, ...food } : f);
-  } else {
-    const result = await apiRequest('/custom-foods', { method: 'POST', body: JSON.stringify(food) });
-    const saved = result.ok ? result.body : { id: Date.now(), ...food };
-    customFoods = [saved, ...customFoods.filter(item => item.name.toLowerCase() !== name.toLowerCase())];
+  // "Log Now" (single food) logs without touching the library; every other action saves.
+  if (saveToLibrary) {
+    if (editingCustomFoodId != null) {
+      // Editing an existing item → update in place (no duplicate).
+      if (currentUser) await apiRequest(`/custom-foods/${encodeURIComponent(editingCustomFoodId)}`, { method: 'PUT', body: JSON.stringify(food) });
+      customFoods = customFoods.map(f => String(f.id) === String(editingCustomFoodId) ? { ...f, ...food } : f);
+    } else {
+      const result = await apiRequest('/custom-foods', { method: 'POST', body: JSON.stringify(food) });
+      const saved = result.ok ? result.body : { id: Date.now(), ...food };
+      customFoods = [saved, ...customFoods.filter(item => item.name.toLowerCase() !== name.toLowerCase())];
+    }
+    saveLocal(STORAGE_KEYS.customFoods, customFoods);
   }
-  saveLocal(STORAGE_KEYS.customFoods, customFoods);
   if (logNow) {
     const entry = {
       name: food.name, emoji: food.emoji, cal: food.cal, protein: food.protein,
@@ -5037,6 +5048,9 @@ function toggleRecipeMode() {
   document.getElementById('cfDesc').placeholder = on
     ? '1 tbsp olive oil\na pinch of salt\n1 tsp cinnamon'
     : 'e.g. 2 scrambled eggs with cheddar and a slice of buttered sourdough toast';
+  // Single mode: Log Now / Log Now + Save. Recipe mode keeps Save to Library / Log Now + Save.
+  document.getElementById('cfSingleActions').style.display = on ? 'none' : '';
+  document.getElementById('cfRecipeActions').style.display = on ? '' : 'none';
   // USDA search is for single foods; recipe mode uses the freeform AI builder instead.
   document.getElementById('cfSearchWrap').style.display = on ? 'none' : '';
   document.getElementById('cfEstimateBtn').textContent = on ? '✨ Estimate macros' : '✨ Estimate with AI';
