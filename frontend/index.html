@@ -5040,7 +5040,7 @@ function toggleRecipeMode() {
   // USDA search is for single foods; recipe mode uses the freeform AI builder instead.
   document.getElementById('cfSearchWrap').style.display = on ? 'none' : '';
   document.getElementById('cfEstimateBtn').textContent = on ? '✨ Estimate macros' : '✨ Estimate with AI';
-  revealAiEstimate(false);   // single mode: hidden until a search returns nothing; recipe: shown
+  revealAiEstimate(true);   // AI section is always visible on open (single mode and recipe mode)
   if (on) { renderRecipeItems(); recomputeRecipe(); }
 }
 
@@ -5798,6 +5798,7 @@ function backToSearchResults() {
 // ---- Custom-food modal: USDA-first prefill ----
 function onCfSearchInput() {
   clearTimeout(cfSearchTimer);
+  revealAiEstimate(true);   // editing the search un-picks any prior result → AI section available again
   const q = document.getElementById('cfSearchInput').value.trim();
   if (q.length < 2) { document.getElementById('cfSearchResults').innerHTML = ''; document.getElementById('cfSearchSpinner').style.display = 'none'; return; }
   cfSearchTimer = setTimeout(() => runCfSearch(q), 400);
@@ -5812,10 +5813,8 @@ async function runCfSearch(q) {
   cfLastResults = data.results || [];
   if (!cfLastResults.length) {
     list.innerHTML = '<div class="fs-empty">No database match.</div>';
-    revealAiEstimate(true);   // surface "Can't find it? Estimate with AI"
-    return;
+    return;   // AI section is already visible — nothing to toggle
   }
-  revealAiEstimate(false);
   const note = data.note ? `<div class="fs-note">${escapeHtml(data.note)}</div>` : '';
   list.innerHTML = note + foodResultRows(cfLastResults, 'cfPickResult');
 }
@@ -5836,9 +5835,12 @@ function cfPickResult(i) {
   else { badge.className = 'cf-prefill-badge ok'; badge.textContent = '✓ USDA verified data'; }
   badge.style.display = 'block';
   document.getElementById('cfSearchResults').innerHTML = '';
+  revealAiEstimate(false);   // macros now come from the picked result — hide the AI describe box
   hideCfEstimatedFor();
 }
-// Secondary AI estimate is shown only when a search came up empty (or in recipe mode).
+// Show/hide the AI "describe it & estimate" section. It's visible by default in the
+// custom-food modal and hidden only after a DB/USDA result is picked. Recipe mode
+// always shows it (the freeform builder relies on it).
 function revealAiEstimate(show) {
   const isRecipe = document.getElementById('cfIsRecipe').checked;
   document.getElementById('cfAiSection').style.display = (show || isRecipe) ? '' : 'none';
