@@ -1594,6 +1594,93 @@
   .invite-card strong { color: #F4D06F; }
   .invite-sub { font-size: 13px; }
   .invite-note { font-size: 11px; margin-top: 12px; opacity: 0.7; }
+
+  /* ---- Client-detail header actions + Export sheet ---- */
+  .cd-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .cd-export-btn {
+    background: rgba(244,208,111,0.14); color: #F4D06F; border: 1px solid rgba(244,208,111,0.4);
+    border-radius: 10px; padding: 8px 14px; font-size: 13px; font-weight: 700;
+    font-family: var(--font); cursor: pointer; white-space: nowrap;
+  }
+  .cd-export-btn:hover { background: rgba(244,208,111,0.22); }
+  .export-field { margin-bottom: 14px; }
+  .export-field label { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; font-weight: 700; }
+  .export-field select { width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 10px; padding: 11px 12px; font-size: 14px; font-family: var(--font); outline: none; }
+  .export-field select:focus { border-color: #F4D06F; }
+  .export-note { font-size: 11px; color: var(--muted); line-height: 1.5; margin: 12px 0 4px; font-style: italic; }
+  /* Desktop-only placeholder shown in the right pane before a client is picked. */
+  .cd-placeholder { display: none; }
+
+  /* ===== Desktop-responsive Clients tab (this tab only; others stay mobile-width) =====
+     Widening keys off body:has(#tabContentTrainer.active) so the shell only grows
+     while the Clients tab is showing — every other tab keeps the 480px column. */
+  @media (min-width: 768px) {
+    body:has(#tabContentTrainer.active) { max-width: 880px; }
+    body:has(#tabContentTrainer.active) .trainer-metrics { gap: 12px; }
+    /* Roster: 2-column card grid. */
+    body:has(#tabContentTrainer.active) #clientRoster {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start;
+    }
+    body:has(#tabContentTrainer.active) #clientRoster .client-card { margin-bottom: 0; }
+  }
+
+  @media (min-width: 1024px) {
+    body:has(#tabContentTrainer.active) { max-width: 1200px; }
+    /* Persistent split: roster (fixed 300px) on the left, detail pane on the right. */
+    .trainer-split { display: flex; gap: 22px; align-items: flex-start; }
+    .trainer-roster-col { width: 300px; flex-shrink: 0; }
+    /* Only 300px wide now, so the cards go back to a single column. */
+    body:has(#tabContentTrainer.active) .trainer-roster-col #clientRoster { display: block; }
+    body:has(#tabContentTrainer.active) .trainer-roster-col .client-card { margin-bottom: 10px; }
+
+    /* Detail: no longer a fixed slide-up overlay — it becomes the right pane.
+       display:block (not .open-driven) so the placeholder is always visible here. */
+    #clientDetailModal {
+      display: block; position: static; inset: auto; z-index: auto;
+      background: none; flex: 1; min-width: 0;
+    }
+    #clientDetailModal .modal {
+      display: none;                 /* hidden until a client is selected */
+      position: sticky; top: 16px;
+      max-width: none; width: 100%; max-height: calc(100vh - 32px); overflow-y: auto;
+      border: 1px solid var(--border); border-radius: 14px; animation: none;
+    }
+    #clientDetailModal.cd-active .modal { display: block; }
+    #clientDetailModal .modal-handle { display: none; }
+    /* Placeholder occupies the pane until a client is chosen. */
+    #clientDetailModal .cd-placeholder {
+      display: flex; align-items: center; justify-content: center; text-align: center;
+      position: sticky; top: 16px; min-height: 280px; padding: 40px 28px;
+      color: var(--muted); font-size: 14px; line-height: 1.6;
+      background: var(--surface); border: 1px dashed var(--border); border-radius: 14px;
+    }
+    #clientDetailModal.cd-active .cd-placeholder { display: none; }
+  }
+
+  /* ===== Print report (PDF via window.print) ===== */
+  #printReport { display: none; }
+  @media print {
+    /* Hide the entire app; reveal only the generated report. */
+    body > *:not(#printReport) { display: none !important; }
+    body { max-width: none !important; margin: 0 !important; padding: 0 !important; background: #fff !important; color: #000 !important; }
+    #printReport {
+      display: block !important; background: #fff; color: #000; padding: 0;
+      font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 1.5;
+    }
+    #printReport h1 { font-size: 24px; margin: 0 0 2px; letter-spacing: -0.5px; }
+    #printReport h2 { font-size: 15px; margin: 22px 0 8px; border-bottom: 1.5px solid #000; padding-bottom: 3px; }
+    #printReport img { width: 100%; max-width: 600px; display: block; margin: 8px 0 16px; }
+    #printReport table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; }
+    #printReport th, #printReport td { border: 1px solid #999; padding: 5px 8px; text-align: left; font-size: 11px; }
+    #printReport th { background: #eee; }
+    #printReport .pr-head-meta { font-size: 12px; color: #333; margin: 1px 0; }
+    #printReport .pr-nochart { border: 1px dashed #999; padding: 22px; text-align: center; color: #555; margin: 8px 0 16px; }
+    #printReport .pr-note { margin: 5px 0; }
+    #printReport .pr-note-date { color: #555; font-size: 10px; }
+    #printReport .pr-footer { margin-top: 26px; border-top: 1.5px solid #000; padding-top: 8px; font-size: 10px; color: #555; }
+    #printReport ul { margin: 4px 0 12px 18px; }
+    @page { margin: 1.4cm; }
+  }
 </style>
 </head>
 <body>
@@ -1949,19 +2036,65 @@
       <button class="btn-primary" onclick="openInviteModal()" style="width:auto;padding:10px 18px;font-size:13px;flex-shrink:0">+ Invite client</button>
     </div>
     <div class="trainer-metrics" id="trainerMetrics"></div>
-    <div class="section-head" style="padding:0 0 10px">
-      <h2>Clients</h2>
-      <select id="rosterFilter" onchange="filterRoster()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 10px;font-size:12px">
-        <option value="all">All clients</option>
-        <option value="attention">Needs attention</option>
-        <option value="active">Logged today</option>
-        <option value="inactive">Not logged today</option>
-      </select>
-    </div>
-    <div id="clientRoster"></div>
-    <div id="trainerEmpty" class="hist-empty" style="display:none">
-      <div class="he-icon">👥</div>
-      <p>No clients yet.<br>Invite your first client to get started.</p>
+    <!-- Split pane: roster (left) + client detail (right) at ≥1024px; stacked below. -->
+    <div class="trainer-split">
+      <div class="trainer-roster-col">
+        <div class="section-head" style="padding:0 0 10px">
+          <h2>Clients</h2>
+          <select id="rosterFilter" onchange="filterRoster()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 10px;font-size:12px">
+            <option value="all">All clients</option>
+            <option value="attention">Needs attention</option>
+            <option value="active">Logged today</option>
+            <option value="inactive">Not logged today</option>
+          </select>
+        </div>
+        <div id="clientRoster"></div>
+        <div id="trainerEmpty" class="hist-empty" style="display:none">
+          <div class="he-icon">👥</div>
+          <p>No clients yet.<br>Invite your first client to get started.</p>
+        </div>
+      </div>
+      <!-- Client detail: slide-up modal on mobile, persistent right pane on desktop
+           (CSS-driven; see the .trainer-split / #clientDetailModal @media rules). -->
+      <div class="modal-bg" id="clientDetailModal">
+        <div class="cd-placeholder">👈 Select a client to see their nutrition detail.</div>
+        <div class="modal">
+          <div class="modal-handle"></div>
+          <div class="cd-header">
+            <div style="min-width:0">
+              <div class="cd-name" id="cdName"></div>
+              <div class="cd-sub" id="cdSub"></div>
+            </div>
+            <div class="cd-header-actions">
+              <button class="cd-export-btn" onclick="openExportSheet()">Export</button>
+              <button class="btn-cancel" onclick="closeClientDetail()" style="width:auto;padding:8px 16px;margin:0;flex-shrink:0">Close</button>
+            </div>
+          </div>
+          <div class="cd-summary" id="cdSummary"></div>
+          <div class="cd-date-nav">
+            <button onclick="cdChangeDate(-1)">‹</button>
+            <span id="cdDateLabel"></span>
+            <button onclick="cdChangeDate(1)" id="cdNextBtn">›</button>
+          </div>
+          <div class="cd-macro-summary" id="cdMacroSummary"></div>
+          <div class="section-head" style="padding:10px 0 8px"><h2>This week</h2></div>
+          <div class="chart-card" style="margin:0 0 8px"><div class="cd-chart-label">Calories / day</div><canvas id="cdCalChart" height="120"></canvas></div>
+          <div class="chart-card" style="margin:0 0 8px"><div class="cd-chart-label">Protein / day</div><canvas id="cdProteinChart" height="120"></canvas></div>
+          <div class="cd-week-strip" id="cdWeekStrip"></div>
+          <div class="section-head" style="padding:10px 0 8px"><h2>Food log</h2></div>
+          <div id="cdFoodLog"></div>
+          <div class="section-head" style="padding:10px 0 8px"><h2>Coach notes</h2></div>
+          <div class="cd-note-wrap">
+            <textarea id="cdNoteInput" placeholder="Write a note for this client…" rows="3"></textarea>
+            <button class="btn-primary" onclick="addCoachNote()" style="margin-top:8px">Add note</button>
+          </div>
+          <div id="cdNotesList" style="margin-top:12px"></div>
+          <div class="section-head" style="padding:10px 0 8px"><h2>Weight</h2></div>
+          <div class="chart-card" style="margin:0 0 12px"><canvas id="cdWeightChart" height="140"></canvas></div>
+          <div class="section-head" style="padding:10px 0 8px"><h2>🛒 Grocery list</h2></div>
+          <div id="cdGroceryPanel"></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -2492,39 +2625,24 @@
   </div>
 </div>
 
-<div class="modal-bg" id="clientDetailModal">
-  <div class="modal">
+<!-- Export options sheet (slide-up on both mobile and desktop). -->
+<div class="modal-bg" id="exportSheet">
+  <div class="modal" style="max-width:420px">
     <div class="modal-handle"></div>
-    <div class="cd-header">
-      <div style="min-width:0">
-        <div class="cd-name" id="cdName"></div>
-        <div class="cd-sub" id="cdSub"></div>
-      </div>
-      <button class="btn-cancel" onclick="closeClientDetail()" style="width:auto;padding:8px 16px;margin:0;flex-shrink:0">Close</button>
+    <div class="modal-title">Export client report</div>
+    <div class="export-field">
+      <label for="exportRange">Date range (CSV)</label>
+      <select id="exportRange">
+        <option value="1">Today</option>
+        <option value="7" selected>Last 7 days</option>
+        <option value="14">Last 14 days</option>
+        <option value="30">Last 30 days</option>
+      </select>
     </div>
-    <div class="cd-summary" id="cdSummary"></div>
-    <div class="cd-date-nav">
-      <button onclick="cdChangeDate(-1)">‹</button>
-      <span id="cdDateLabel"></span>
-      <button onclick="cdChangeDate(1)" id="cdNextBtn">›</button>
-    </div>
-    <div class="cd-macro-summary" id="cdMacroSummary"></div>
-    <div class="section-head" style="padding:10px 0 8px"><h2>This week</h2></div>
-    <div class="chart-card" style="margin:0 0 8px"><div class="cd-chart-label">Calories / day</div><canvas id="cdCalChart" height="120"></canvas></div>
-    <div class="chart-card" style="margin:0 0 8px"><div class="cd-chart-label">Protein / day</div><canvas id="cdProteinChart" height="120"></canvas></div>
-    <div class="cd-week-strip" id="cdWeekStrip"></div>
-    <div class="section-head" style="padding:10px 0 8px"><h2>Food log</h2></div>
-    <div id="cdFoodLog"></div>
-    <div class="section-head" style="padding:10px 0 8px"><h2>Coach notes</h2></div>
-    <div class="cd-note-wrap">
-      <textarea id="cdNoteInput" placeholder="Write a note for this client…" rows="3"></textarea>
-      <button class="btn-primary" onclick="addCoachNote()" style="margin-top:8px">Add note</button>
-    </div>
-    <div id="cdNotesList" style="margin-top:12px"></div>
-    <div class="section-head" style="padding:10px 0 8px"><h2>Weight</h2></div>
-    <div class="chart-card" style="margin:0 0 12px"><canvas id="cdWeightChart" height="140"></canvas></div>
-    <div class="section-head" style="padding:10px 0 8px"><h2>🛒 Grocery list</h2></div>
-    <div id="cdGroceryPanel"></div>
+    <button class="btn-primary" onclick="exportCSV()">⬇︎ Download CSV</button>
+    <button class="btn-primary blue" style="margin-top:8px" onclick="exportPDF()">🖨 Download PDF</button>
+    <p class="export-note">PDF opens your browser's print dialog — choose "Save as PDF". The report always covers the current 7-day week shown in the detail.</p>
+    <button class="btn-cancel" onclick="closeExportSheet()">Cancel</button>
   </div>
 </div>
 
@@ -6834,6 +6952,7 @@ window.addEventListener('appinstalled', () => {
 let trainerClients = [];
 let selectedClientId = null;
 let cdCurrentDate = todayKey();
+let cdLastData = null;   // most recent client-detail payload, reused by CSV/PDF export
 let pendingInviteToken = null;
 
 const CD_QUICK_ITEMS = [
@@ -7000,12 +7119,15 @@ function openClientByIndex(i) {
 async function openClientDetail(clientId) {
   selectedClientId = clientId;
   cdCurrentDate = todayKey();
-  document.getElementById('clientDetailModal').classList.add('open');
+  // 'open' drives the mobile slide-up; 'cd-active' reveals the desktop right pane.
+  document.getElementById('clientDetailModal').classList.add('open', 'cd-active');
   await loadClientDetail();
 }
 function closeClientDetail() {
-  document.getElementById('clientDetailModal').classList.remove('open');
+  document.getElementById('clientDetailModal').classList.remove('open', 'cd-active');
   selectedClientId = null;
+  cdLastData = null;
+  closeExportSheet();
 }
 
 async function loadClientDetail() {
@@ -7015,6 +7137,7 @@ async function loadClientDetail() {
     return;
   }
   const data = res.body;
+  cdLastData = data;   // keep for CSV/PDF export
 
   document.getElementById('cdName').textContent = data.user.name || data.user.id;
   document.getElementById('cdSub').textContent = data.user.id;
@@ -7054,6 +7177,10 @@ async function loadClientDetail() {
     calData.push(rec ? Math.round(rec.cal) : null);
     proData.push(rec ? Math.round(rec.protein) : null);
   }
+  // Taller 7-day charts on desktop (width auto-fits the wider parent on redraw).
+  const bigCharts = window.matchMedia('(min-width: 1024px)').matches;
+  setCanvasLogicalHeight('cdCalChart', bigCharts ? 200 : 120);
+  setCanvasLogicalHeight('cdProteinChart', bigCharts ? 200 : 120);
   drawBarChart('cdCalChart', labels7, [{ label: 'Calories', data: calData, color: '#f5a623' }], g.cal);
   drawBarChart('cdProteinChart', labels7, [{ label: 'Protein', data: proData, color: '#4ade80' }], g.protein);
 
@@ -7196,6 +7323,199 @@ async function trainerAddGrocery(item, note) {
 async function trainerDeleteGrocery(id) {
   await apiRequest(`/trainer/grocery/${id}`, { method: 'DELETE' });
   await loadClientDetail();
+}
+
+// ================= Client report export (CSV + PDF) =================
+// Force canvasSetup() to re-cache a canvas's logical height from a new attribute.
+function setCanvasLogicalHeight(id, h) {
+  const c = document.getElementById(id);
+  if (!c) return;
+  c.setAttribute('height', String(h));
+  delete c.dataset.h;
+}
+
+function openExportSheet() {
+  if (!selectedClientId || !cdLastData) return;
+  document.getElementById('exportSheet').classList.add('open');
+}
+function closeExportSheet() {
+  const el = document.getElementById('exportSheet');
+  if (el) el.classList.remove('open');
+}
+
+// ---- CSV ----
+function round1(v) { return Math.round((Number(v) || 0) * 10) / 10; }
+function csvCell(v) {
+  const s = String(v == null ? '' : v);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function slugify(s) {
+  return String(s).trim().replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'client';
+}
+function downloadBlob(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// One row per food-log entry over the chosen range, then a per-logged-day average row.
+// "Today" reuses the already-loaded detail; wider ranges hit /trainer/clients/:id/log.
+async function exportCSV() {
+  if (!selectedClientId || !cdLastData) return;
+  const days = parseInt(document.getElementById('exportRange').value, 10) || 7;
+  const clientName = (cdLastData.user && (cdLastData.user.name || cdLastData.user.id)) || 'client';
+  const end = cdCurrentDate;
+
+  let entries, start;
+  if (days === 1) {
+    entries = (cdLastData.today.entries || []).map(e => ({ ...e, date: end }));
+    start = end;
+  } else {
+    const res = await apiRequest(`/trainer/clients/${encodeURIComponent(selectedClientId)}/log?days=${days}&date=${end}`);
+    if (!res.ok) { alert('Could not load the log for export — check your connection and try again.'); return; }
+    entries = res.body.entries || [];
+    start = res.body.start;
+  }
+
+  const header = ['Date', 'Food Name', 'Calories', 'Protein(g)', 'Carbs(g)', 'Fat(g)', 'Fiber(g)', 'Added Sugar(g)', 'Serving', 'Time Logged'];
+  const rows = entries.map(e => [
+    e.date,
+    e.name || '',
+    Math.round(e.cal || 0),
+    round1(e.protein), round1(e.carbs), round1(e.fat), round1(e.fiber), round1(e.sugar),
+    e.serving || '',
+    e.ts ? new Date(e.ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '',
+  ]);
+
+  // Summary: averages over distinct logged days (a meaningful daily average, not
+  // a per-entry one). Blank spacer row keeps it visually separate.
+  const loggedDays = new Set(entries.map(e => e.date)).size || 1;
+  const sum = entries.reduce((a, e) => ({
+    cal: a.cal + (e.cal || 0), protein: a.protein + (e.protein || 0), carbs: a.carbs + (e.carbs || 0),
+    fat: a.fat + (e.fat || 0), fiber: a.fiber + (e.fiber || 0), sugar: a.sugar + (e.sugar || 0),
+  }), { cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0 });
+  rows.push([]);
+  rows.push([
+    'AVERAGE / logged day', `${loggedDays} day${loggedDays !== 1 ? 's' : ''} logged`,
+    Math.round(sum.cal / loggedDays), round1(sum.protein / loggedDays), round1(sum.carbs / loggedDays),
+    round1(sum.fat / loggedDays), round1(sum.fiber / loggedDays), round1(sum.sugar / loggedDays), '', '',
+  ]);
+
+  const csv = [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
+  const rangeSlug = days === 1 ? end : `${start}_to_${end}`;
+  downloadBlob(csv, `${slugify(clientName)}_nutrition_${rangeSlug}.csv`, 'text/csv;charset=utf-8;');
+  closeExportSheet();
+}
+
+// ---- PDF (via window.print + a print-only #printReport) ----
+// Snapshot a chart canvas as a PNG data URI, or fall back to a "No data" note.
+function chartImgOrNote(id, hasData) {
+  const c = document.getElementById(id);
+  if (!hasData || !c || !c.width || !c.height) return '<div class="pr-nochart">No data available</div>';
+  let png = null;
+  try { png = c.toDataURL('image/png'); } catch (e) { png = null; }
+  return png ? `<img src="${png}" alt="chart">` : '<div class="pr-nochart">No data available</div>';
+}
+
+function exportPDF() {
+  if (!selectedClientId || !cdLastData) return;
+  const data = cdLastData;
+  const clientName = (data.user && (data.user.name || data.user.id)) || 'Client';
+  const orgName = (currentUser && currentUser.org && currentUser.org.name) || 'Kru Fit';
+  const end = cdCurrentDate;
+  const weekStart = (() => { const d = new Date(end + 'T12:00:00'); d.setDate(d.getDate() - 6); return dateKey(d); })();
+  const fmtD = (k) => new Date(k + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const rangeLabel = `${fmtD(weekStart)} – ${fmtD(end)}`;
+
+  // Section 1 — weekly averages (goal vs actual).
+  const wa = data.week_avg || {}, g = data.goals || {};
+  const avgRow = (label, actual, goal, unit) =>
+    `<tr><td>${label}</td><td>${goal != null ? Math.round(goal) + unit : '—'}</td><td>${actual != null ? Math.round(actual) + unit : '—'}</td></tr>`;
+  const s1 = `
+    <table>
+      <thead><tr><th>Metric</th><th>Goal</th><th>Actual (avg/day)</th></tr></thead>
+      <tbody>
+        ${avgRow('Calories', wa.cal, g.cal, '')}
+        ${avgRow('Protein', wa.protein, g.protein, 'g')}
+        ${avgRow('Carbs', wa.carbs, g.carbs, 'g')}
+        ${avgRow('Fat', wa.fat, g.fat, 'g')}
+        ${avgRow('Fiber', wa.fiber, g.fiber, 'g')}
+      </tbody>
+    </table>
+    <p class="pr-note-date">Averaged over ${wa.days_logged || 0} logged day${(wa.days_logged || 0) !== 1 ? 's' : ''} this week.</p>`;
+
+  // Section 2 — daily breakdown + the 7-day calorie/protein chart images.
+  const byDate = {};
+  (data.log_7d || []).forEach(d => { byDate[d.date] = d; });
+  let dailyRows = '';
+  for (let i = 6; i >= 0; i--) {
+    const dd = new Date(end + 'T12:00:00'); dd.setDate(dd.getDate() - i);
+    const key = dateKey(dd);
+    const rec = byDate[key];
+    const label = dd.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    dailyRows += rec
+      ? `<tr><td>${label}</td><td>${Math.round(rec.cal || 0)}</td><td>${Math.round(rec.protein || 0)}g</td><td>${Math.round(rec.carbs || 0)}g</td><td>${Math.round(rec.fat || 0)}g</td><td>${Math.round(rec.fiber || 0)}g</td></tr>`
+      : `<tr><td>${label}</td><td colspan="5" style="color:#777">No entries</td></tr>`;
+  }
+  const hasMacro = (data.log_7d || []).length > 0;
+  const s2 = `
+    <table>
+      <thead><tr><th>Day</th><th>Calories</th><th>Protein</th><th>Carbs</th><th>Fat</th><th>Fiber</th></tr></thead>
+      <tbody>${dailyRows}</tbody>
+    </table>
+    <p class="pr-note-date">Calories / day</p>
+    ${chartImgOrNote('cdCalChart', hasMacro)}
+    <p class="pr-note-date">Protein / day</p>
+    ${chartImgOrNote('cdProteinChart', hasMacro)}`;
+
+  // Section 3 — weight trend (chart image + text summary over the week window).
+  const wWin = (data.weight_30d || []).filter(x => x.date >= weekStart && x.date <= end);
+  const hasWeight = (data.weight_30d || []).length > 0;
+  let weightSummary;
+  if (wWin.length >= 2) {
+    const first = toDisplayWeight(wWin[0].val, wWin[0].unit);
+    const last = toDisplayWeight(wWin[wWin.length - 1].val, wWin[wWin.length - 1].unit);
+    const change = Math.round((last - first) * 10) / 10;
+    const arrow = change < 0 ? '▼' : change > 0 ? '▲' : '→';
+    weightSummary = `<p class="pr-note">Started week at ${first.toFixed(1)} ${weightUnit}, ended at ${last.toFixed(1)} ${weightUnit}, change: ${arrow}${Math.abs(change).toFixed(1)} ${weightUnit}</p>`;
+  } else if (wWin.length === 1) {
+    weightSummary = `<p class="pr-note">One weigh-in this week: ${toDisplayWeight(wWin[0].val, wWin[0].unit).toFixed(1)} ${weightUnit}.</p>`;
+  } else {
+    weightSummary = `<p class="pr-note">No weigh-ins recorded this week.</p>`;
+  }
+  const s3 = `${chartImgOrNote('cdWeightChart', hasWeight)}${weightSummary}`;
+
+  // Section 4 — coach notes within the period.
+  const notes = (data.coach_notes || []).filter(n => (n.date || '') >= weekStart && (n.date || '') <= end);
+  const s4 = notes.length
+    ? notes.map(n => `<p class="pr-note"><span class="pr-note-date">${escapeHtml(noteDate(n.date))}</span><br>${escapeHtml(n.note)}</p>`).join('')
+    : '<p class="pr-note pr-note-date">No coach notes for this period.</p>';
+
+  // Section 5 — current trainer-suggested pending grocery items.
+  const gItems = (data.grocery && data.grocery.trainer_items) || [];
+  const s5 = gItems.length
+    ? '<ul>' + gItems.map(it => `<li>${escapeHtml(it.item)}${it.note ? ' — ' + escapeHtml(it.note) : ''}</li>`).join('') + '</ul>'
+    : '<p class="pr-note pr-note-date">No pending trainer-suggested items.</p>';
+
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  document.getElementById('printReport').innerHTML = `
+    <h1>Kru Fit</h1>
+    <div class="pr-head-meta"><strong>${escapeHtml(clientName)}</strong></div>
+    <div class="pr-head-meta">${rangeLabel}</div>
+    <div class="pr-head-meta">${escapeHtml(orgName)}</div>
+    <h2>1 · Weekly averages</h2>${s1}
+    <h2>2 · Daily breakdown</h2>${s2}
+    <h2>3 · Weight trend</h2>${s3}
+    <h2>4 · Coach notes</h2>${s4}
+    <h2>5 · Grocery list</h2>${s5}
+    <div class="pr-footer">Generated by Kru Fit · krufit.uk · ${today}</div>`;
+
+  closeExportSheet();
+  // Give the injected data-URI images a tick to decode before the print dialog opens.
+  setTimeout(() => window.print(), 150);
 }
 
 // ---- Invite modal ----
@@ -7384,5 +7704,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   checkWeighReminder();
 });
 </script>
+<!-- Print-only report target: populated by exportPDF(), shown only via @media print. -->
+<div id="printReport" aria-hidden="true"></div>
 </body>
 </html>

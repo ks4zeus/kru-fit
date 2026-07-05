@@ -1754,7 +1754,7 @@ export default {
 
       const log7d = ((await db
         .prepare(
-          `SELECT date, SUM(cal) AS cal, SUM(protein) AS protein, SUM(carbs) AS carbs, SUM(fat) AS fat
+          `SELECT date, SUM(cal) AS cal, SUM(protein) AS protein, SUM(carbs) AS carbs, SUM(fat) AS fat, SUM(fiber) AS fiber, SUM(sugar) AS sugar
            FROM food_log WHERE user_id = ? AND date >= date(?, '-6 days') AND date <= ?
            GROUP BY date ORDER BY date ASC`
         )
@@ -1805,7 +1805,7 @@ export default {
       // Weekly averages over the same 7-day window as log_7d (averaged over logged days).
       const waRow = await db
         .prepare(
-          `SELECT COUNT(DISTINCT date) AS days, SUM(cal) AS cal, SUM(protein) AS protein, SUM(carbs) AS carbs, SUM(fat) AS fat
+          `SELECT COUNT(DISTINCT date) AS days, SUM(cal) AS cal, SUM(protein) AS protein, SUM(carbs) AS carbs, SUM(fat) AS fat, SUM(fiber) AS fiber
            FROM food_log WHERE user_id = ? AND date >= date(?, '-6 days') AND date <= ?`
         )
         .bind(clientId, date, date)
@@ -1817,6 +1817,7 @@ export default {
         protein: wd ? Math.round((waRow.protein || 0) / wd) : 0,
         carbs: wd ? Math.round((waRow.carbs || 0) / wd) : 0,
         fat: wd ? Math.round((waRow.fat || 0) / wd) : 0,
+        fiber: wd ? Math.round((waRow.fiber || 0) / wd) : 0,
       };
 
       return jsonResponse({
@@ -1832,6 +1833,48 @@ export default {
         member_since,
         streak,
         week_avg,
+      });
+    }
+
+    // ---- Trainer: per-entry food log across a date range (?days=N) for CSV export ----
+    // Returns one row per food_log entry over the last N days (N ∈ {1,7,14,30}),
+    // for ranges wider than the 7-day aggregate the detail endpoint already returns.
+    if (
+      segments[1] === "trainer" && segments[2] === "clients" &&
+      segments.length === 5 && segments[4] === "log" && request.method === "GET"
+    ) {
+      const orgId = await ownedOrgId(db, userEmail);
+      if (!orgId) return jsonResponse({ error: "Not a trainer" }, 403);
+      const clientId = decodeURIComponent(segments[3]);
+      if (!(await clientInOrg(db, orgId, clientId))) {
+        return jsonResponse({ error: "Client not in your roster" }, 403);
+      }
+      const end = (url.searchParams.get("date") || new Date().toISOString().slice(0, 10)).slice(0, 10);
+      const daysRaw = parseInt(url.searchParams.get("days") || "30", 10);
+      const days = [1, 7, 14, 30].includes(daysRaw) ? daysRaw : 30;
+      const start = new Date(new Date(end + "T00:00:00Z").getTime() - (days - 1) * 86400000)
+        .toISOString().slice(0, 10);
+
+      const entries = ((await db
+        .prepare(
+          `SELECT date, name, emoji, cal, protein, carbs, fat, fiber, sugar, serving, source, ts
+           FROM food_log WHERE user_id = ? AND date >= date(?, ?) AND date <= ?
+           ORDER BY date ASC, ts ASC, id ASC`
+        )
+        .bind(clientId, end, `-${days - 1} days`, end)
+        .all()).results || []) as any[];
+
+      const goalsRow = await db
+        .prepare("SELECT cal, protein, carbs, fat, fiber, sugar FROM goals WHERE user_id = ?")
+        .bind(clientId)
+        .first<any>();
+
+      return jsonResponse({
+        days,
+        start,
+        end,
+        goals: goalsRow || { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, sugar: 50 },
+        entries,
       });
     }
 
