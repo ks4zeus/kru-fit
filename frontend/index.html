@@ -1941,7 +1941,6 @@
     <div id="weightLogSection" style="display:none">
       <div class="section-head" style="padding:0 0 10px">
         <h2>Recent Entries</h2>
-        <button class="clear-btn" onclick="clearWeightConfirm()">Clear all</button>
       </div>
       <div id="weightEntryList"></div>
     </div>
@@ -2692,7 +2691,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v2.8';
+const APP_VERSION = 'v2.9';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -2846,7 +2845,7 @@ let histPeriod = 7;
 let analysisPeriod = 7;
 let macrosCombined = loadLocal(STORAGE_KEYS.macrosView, false) === true;
 let exercisePeriod = 30;
-let weightListExpanded = false;
+let weightListShown = 3;
 let exerciseDaysShown = 14;
 let workouts = [];
 let wkCalEdited = false;
@@ -3512,17 +3511,6 @@ async function deleteWeightEntry(dateKey) {
   }
   delete weightLog[dateKey];
   saveWeightLogToStorage();
-  renderWeightTab();
-}
-
-async function clearWeightConfirm() {
-  if (Object.keys(weightLog).length === 0) return;
-  if (!confirm('Clear all weight entries?')) return;
-  if (currentUser) {
-    await Promise.all(Object.keys(weightLog).map(date => apiRequest(`/weight/${encodeURIComponent(date)}`, { method: 'DELETE' })));
-  }
-  weightLog = {};
-  removeLocal(STORAGE_KEYS.weight);
   renderWeightTab();
 }
 
@@ -6270,9 +6258,7 @@ function renderWeightTab() {
     bfCard.style.display = 'none';
   }
   const allRecent = [...keys].reverse();
-  const WEIGHT_LIST_DEFAULT = 10;
-  const showAllWeight = weightListExpanded || allRecent.length <= WEIGHT_LIST_DEFAULT;
-  const visibleRecent = showAllWeight ? allRecent : allRecent.slice(0, WEIGHT_LIST_DEFAULT);
+  const visibleRecent = allRecent.slice(0, weightListShown);
   const rowsHtml = visibleRecent.map((k, i) => {
     const e = weightLog[k];
     const disp = toDisplayWeight(e.val, e.unit);
@@ -6303,16 +6289,14 @@ function renderWeightTab() {
     </div>`;
   }).join('');
   let weightToggleHtml = '';
-  if (allRecent.length > WEIGHT_LIST_DEFAULT) {
-    weightToggleHtml = weightListExpanded
-      ? `<button class="list-toggle-btn" onclick="toggleWeightList()">Show less</button>`
-      : `<button class="list-toggle-btn" onclick="toggleWeightList()">Show all ${allRecent.length} entries</button>`;
+  if (allRecent.length > weightListShown) {
+    weightToggleHtml = `<button class="list-toggle-btn" onclick="loadMoreWeight()">Load more</button>`;
   }
   document.getElementById('weightEntryList').innerHTML = rowsHtml + weightToggleHtml;
 }
 
-function toggleWeightList() {
-  weightListExpanded = !weightListExpanded;
+function loadMoreWeight() {
+  weightListShown += 5;
   renderWeightTab();
 }
 
