@@ -1077,6 +1077,12 @@
   .workout-row .wk-cals { font-family: var(--mono); font-weight: 700; color: var(--fiber); flex-shrink: 0; }
   .workout-row .wk-del { background: none; border: none; color: var(--muted); font-size: 14px; cursor: pointer; flex-shrink: 0; padding: 2px 4px; }
   .workout-row .wk-del:hover { color: var(--danger); }
+  .wk-date-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 16px 2px 8px; }
+  .wk-date-head:first-child { margin-top: 4px; }
+  .wk-date-head .wk-date-label { font-size: 13px; font-weight: 700; color: var(--text); }
+  .wk-date-head .wk-date-cal { font-size: 12px; font-family: var(--mono); color: var(--fiber); flex-shrink: 0; }
+  .list-toggle-btn { display: block; width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px; margin-top: 4px; color: var(--muted); font-size: 13px; font-family: var(--font); font-weight: 600; cursor: pointer; }
+  .list-toggle-btn:active { opacity: 0.7; }
   .hist-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
   .hist-stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
   .hist-stat .hs-val { font-size: 20px; font-weight: 700; font-family: var(--mono); line-height: 1; }
@@ -2686,7 +2692,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v2.7';
+const APP_VERSION = 'v2.8';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -2840,6 +2846,8 @@ let histPeriod = 7;
 let analysisPeriod = 7;
 let macrosCombined = loadLocal(STORAGE_KEYS.macrosView, false) === true;
 let exercisePeriod = 30;
+let weightListExpanded = false;
+let exerciseDaysShown = 14;
 let workouts = [];
 let wkCalEdited = false;
 let wkIntensity = 'moderate';
@@ -4726,15 +4734,19 @@ function renderExercise() {
     if (!sessions[k]) sessions[k] = { key: k, ts: w.ts || 0, date: w.date, items: [] };
     sessions[k].items.push(w);
   });
-  const sessionList = Object.values(sessions).sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 30);
-  document.getElementById('workoutList').innerHTML = sessionList.map(sess => {
-    const dateLabel = sess.date === todayKey() ? 'Today' : new Date(sess.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    const totMin = sess.items.reduce((s, w) => s + (w.minutes || 0), 0);
-    const totCal = sess.items.reduce((s, w) => s + (w.calories || 0), 0);
+  const allSessions = Object.values(sessions).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  // Rolling window: show sessions from the last `exerciseDaysShown` calendar days;
+  // "Load more" widens the window 14 days at a time.
+  const windowStart = new Date(); windowStart.setDate(windowStart.getDate() - (exerciseDaysShown - 1));
+  const windowStartKey = dateKey(windowStart);
+  const visibleSessions = allSessions.filter(s => s.date >= windowStartKey);
+  const hasOlder = allSessions.some(s => s.date < windowStartKey);
+
+  const sessionRow = sess => {
     if (sess.items.length === 1) {
       const w = sess.items[0];
       const meta = workoutMeta(w.name);
-      const parts = [dateLabel];
+      const parts = [];
       if (w.minutes) parts.push(Math.round(w.minutes) + ' min');
       if (w.distance) parts.push(fmtDist(w.distance));
       return `<div class="workout-row">
@@ -4747,18 +4759,41 @@ function renderExercise() {
         <button class="wk-del" onclick="deleteWorkoutSession('${sess.key}')" title="Remove">✕</button>
       </div>`;
     }
+    const totMin = sess.items.reduce((s, w) => s + (w.minutes || 0), 0);
+    const totCal = sess.items.reduce((s, w) => s + (w.calories || 0), 0);
     const nameList = sess.items.map(w => baseWorkoutName(w.name)).join(' + ');
     const detail = sess.items.map(w => `${workoutMeta(w.name).emoji} ${Math.round(w.minutes || 0)}m`).join(' · ');
     return `<div class="workout-row">
       <span class="wk-emoji">🏅</span>
       <div class="wk-main">
         <div class="wk-name">${cfEsc(nameList)}</div>
-        <div class="wk-sub">${dateLabel} · ${Math.round(totMin)} min · ${detail}</div>
+        <div class="wk-sub">${Math.round(totMin)} min · ${detail}</div>
       </div>
       <span class="wk-cals">${Math.round(totCal)} cal</span>
       <button class="wk-del" onclick="deleteWorkoutSession('${sess.key}')" title="Remove">✕</button>
     </div>`;
+  };
+
+  // Group the visible sessions by date, newest day first, with a per-day header.
+  const byDate = {};
+  visibleSessions.forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
+  const orderedDates = Object.keys(byDate).sort().reverse();
+  const groupsHtml = orderedDates.map(date => {
+    const daySessions = byDate[date];
+    const dayCal = daySessions.reduce((sum, sess) => sum + sess.items.reduce((a, w) => a + (w.calories || 0), 0), 0);
+    const header = `<div class="wk-date-head">
+      <span class="wk-date-label">${dayLabelFor(date)}</span>
+      <span class="wk-date-cal">${Math.round(dayCal)} cal burned</span>
+    </div>`;
+    return header + daySessions.map(sessionRow).join('');
   }).join('');
+  const loadMoreHtml = hasOlder ? `<button class="list-toggle-btn" onclick="loadMoreWorkouts()">Load more</button>` : '';
+  document.getElementById('workoutList').innerHTML = groupsHtml + loadMoreHtml;
+}
+
+function loadMoreWorkouts() {
+  exerciseDaysShown += 14;
+  renderExercise();
 }
 
 function calcStreak() {
@@ -6234,11 +6269,14 @@ function renderWeightTab() {
   } else {
     bfCard.style.display = 'none';
   }
-  const recent = [...keys].reverse().slice(0, 20);
-  document.getElementById('weightEntryList').innerHTML = recent.map((k, i) => {
+  const allRecent = [...keys].reverse();
+  const WEIGHT_LIST_DEFAULT = 10;
+  const showAllWeight = weightListExpanded || allRecent.length <= WEIGHT_LIST_DEFAULT;
+  const visibleRecent = showAllWeight ? allRecent : allRecent.slice(0, WEIGHT_LIST_DEFAULT);
+  const rowsHtml = visibleRecent.map((k, i) => {
     const e = weightLog[k];
     const disp = toDisplayWeight(e.val, e.unit);
-    const prevKey = recent[i + 1];
+    const prevKey = allRecent[i + 1];
     let delta = '';
     if (prevKey) {
       const prevDisp = toDisplayWeight(weightLog[prevKey].val, weightLog[prevKey].unit);
@@ -6264,6 +6302,18 @@ function renderWeightTab() {
       <button class="wer-del" onclick="deleteWeightEntry('${k}')">✕</button>
     </div>`;
   }).join('');
+  let weightToggleHtml = '';
+  if (allRecent.length > WEIGHT_LIST_DEFAULT) {
+    weightToggleHtml = weightListExpanded
+      ? `<button class="list-toggle-btn" onclick="toggleWeightList()">Show less</button>`
+      : `<button class="list-toggle-btn" onclick="toggleWeightList()">Show all ${allRecent.length} entries</button>`;
+  }
+  document.getElementById('weightEntryList').innerHTML = rowsHtml + weightToggleHtml;
+}
+
+function toggleWeightList() {
+  weightListExpanded = !weightListExpanded;
+  renderWeightTab();
 }
 
 // #rrggbb → "r,g,b" so an accent hex can drive rgba() gradient/fill stops.
