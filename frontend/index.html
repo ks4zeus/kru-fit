@@ -2675,7 +2675,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v2.5';
+const APP_VERSION = 'v2.6';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -3571,6 +3571,12 @@ function findMealTemplate(id) {
   return mealTemplates.find(t => String(t.id) === String(id));
 }
 
+// Re-entrancy guard: the log/save is async (a /food POST is in flight), and the
+// action buttons stay tappable while it runs. Without this, a double/ghost tap —
+// common right after an AI estimate on a slow connection — fires saveCustomFood
+// again before the first finishes and logs the same food two or three times.
+let cfSaving = false;
+
 async function saveCustomFood(logNow, saveToLibrary = true) {
   stopDictation();
   const name = document.getElementById('cfName').value.trim();
@@ -3580,6 +3586,9 @@ async function saveCustomFood(logNow, saveToLibrary = true) {
     err.classList.add('show');
     return;
   }
+  if (cfSaving) return;   // a submit is already in flight — ignore the duplicate tap
+  cfSaving = true;
+  try {
   const isRecipe = document.getElementById('cfIsRecipe').checked;
   // Serving + gram anchor. Recipe: "1 serving" with grams from the ingredient sum.
   // Single food: quantity + standard unit, grams from the unit lookup (mass only).
@@ -3657,6 +3666,9 @@ async function saveCustomFood(logNow, saveToLibrary = true) {
   fb.style.color = 'var(--protein)';
   fb.textContent = `✓ "${name}" saved to your library below.`;
   document.querySelector('#customFoodModal .modal').scrollTop = 0;
+  } finally {
+    cfSaving = false;   // release the guard whether we logged, saved, or threw
+  }
 }
 
 function updateTotals() {
@@ -3945,7 +3957,7 @@ async function startCamera() {
     video.srcObject = scannerStream;
     await video.play();
     if (!('BarcodeDetector' in window)) {
-      statusEl.textContent = 'Scanning not supported on this device — use manual entry.';
+      statusEl.textContent = 'Camera scan isn’t supported on this browser. Enter the barcode number below, or try opening in Chrome for camera scanning.';
       document.getElementById('manualSection').style.display = 'block';
       document.getElementById('scannerWrap').style.display = 'none';
       document.getElementById('scanBtn').style.display = 'none';
