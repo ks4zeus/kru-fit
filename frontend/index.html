@@ -1899,6 +1899,12 @@
         </div>
         <button class="btn-primary" id="weLogBtn" onclick="logWeight()" style="width:auto;padding:11px 20px;flex-shrink:0">Log</button>
       </div>
+      <div style="margin-top:12px">
+        <label for="bodyFatInput" style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">Body Fat % (optional)</label>
+        <div class="we-row">
+          <input type="number" id="bodyFatInput" placeholder="e.g. 24.5" step="0.1" min="3" max="60" inputmode="decimal">
+        </div>
+      </div>
       <div class="we-feedback" id="weFeedback"></div>
     </div>
     <div class="hist-period" style="margin-top:14px">
@@ -1911,6 +1917,10 @@
     <div class="chart-card" id="weightChartCard" style="display:none">
       <h3>⚖️ Weight Trend</h3>
       <canvas id="chartWeight" height="220"></canvas>
+    </div>
+    <div class="chart-card" id="bodyFatChartCard" style="display:none">
+      <h3>📉 Body Fat % Trend</h3>
+      <canvas id="chartBodyFat" height="220"></canvas>
     </div>
     <div class="trend-card" id="weightTrendCard" style="display:none">
       <div class="tc-line" id="weightTrendLine"></div>
@@ -2091,6 +2101,7 @@
           </div>
           <div id="cdNotesList" style="margin-top:12px"></div>
           <div class="section-head" style="padding:10px 0 8px"><h2>Weight</h2></div>
+          <div id="cdBodyFatStat" class="cd-week-strip" style="display:none;margin-bottom:8px"></div>
           <div class="chart-card" style="margin:0 0 12px"><canvas id="cdWeightChart" height="140"></canvas></div>
           <div class="section-head" style="padding:10px 0 8px"><h2>🛒 Grocery list</h2></div>
           <div id="cdGroceryPanel"></div>
@@ -2675,7 +2686,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v2.6';
+const APP_VERSION = 'v2.7';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -3456,7 +3467,7 @@ async function loadWeightLog() {
   if (result.ok) {
     weightLog = {};
     (result.body || []).forEach(entry => {
-      weightLog[entry.date] = { val: entry.val, unit: entry.unit || 'lbs', ts: entry.ts || Date.now() };
+      weightLog[entry.date] = { val: entry.val, unit: entry.unit || 'lbs', bf: entry.body_fat_pct ?? null, ts: entry.ts || Date.now() };
     });
     saveLocal(STORAGE_KEYS.weight, weightLog);
   } else {
@@ -3470,18 +3481,20 @@ function saveWeightLogToStorage() {
   saveLocal(STORAGE_KEYS.weight, weightLog);
 }
 
-async function saveWeightEntry(date, val, unit) {
+async function saveWeightEntry(date, val, unit, bf = null) {
   if (!date || !val) return;
-  const entry = { date, val, unit };
+  // Only send a body fat % if it's a plausible number; blank means "not recorded".
+  const bfVal = (bf != null && !isNaN(bf) && bf >= 3 && bf <= 60) ? bf : null;
+  const entry = { date, val, unit, body_fat_pct: bfVal };
   if (currentUser) {
     const result = await apiRequest('/weight', { method: 'POST', body: JSON.stringify(entry) });
     if (result.ok) {
-      weightLog[date] = { val: result.body.val, unit: result.body.unit || unit, ts: Date.now() };
+      weightLog[date] = { val: result.body.val, unit: result.body.unit || unit, bf: result.body.body_fat_pct ?? null, ts: Date.now() };
       saveWeightLogToStorage();
       return;
     }
   }
-  weightLog[date] = { val, unit, ts: Date.now() };
+  weightLog[date] = { val, unit, bf: bfVal, ts: Date.now() };
   saveWeightLogToStorage();
 }
 
@@ -4937,13 +4950,17 @@ function setWeightPeriod(days, btn) {
 async function logWeight() {
   const val = parseFloat(document.getElementById('weightInput').value);
   if (!val || val <= 0) return;
+  const bfRaw = parseFloat(document.getElementById('bodyFatInput').value);
+  const bf = (!isNaN(bfRaw) && bfRaw >= 3 && bfRaw <= 60) ? bfRaw : null;
   const key = todayKey();
-  await saveWeightEntry(key, val, weightUnit);
-  const prev = weightLog[key];
+  const prev = weightLog[key];   // capture before the save overwrites it
+  await saveWeightEntry(key, val, weightUnit, bf);
   const fb = document.getElementById('weFeedback');
-  fb.textContent = prev ? `Updated: ${val} ${weightUnit} (was ${prev.val} ${prev.unit})` : `Logged: ${val} ${weightUnit}`;
+  const bfNote = bf != null ? ` · ${bf}% BF` : '';
+  fb.textContent = prev ? `Updated: ${val} ${weightUnit}${bfNote} (was ${prev.val} ${prev.unit})` : `Logged: ${val} ${weightUnit}${bfNote}`;
   setTimeout(() => { fb.textContent = ''; }, 3000);
   document.getElementById('weightInput').value = '';
+  document.getElementById('bodyFatInput').value = '';
   renderWeightTab();
   checkWeighReminder();
 }
@@ -6128,6 +6145,7 @@ function renderWeightTab() {
   if (isEmpty) {
     document.getElementById('weightSummary').innerHTML = '';
     document.getElementById('weightTrendCard').style.display = 'none';
+    document.getElementById('bodyFatChartCard').style.display = 'none';
     return;
   }
   const allVals = keys.map(k => toDisplayWeight(weightLog[k].val, weightLog[k].unit));
@@ -6140,6 +6158,37 @@ function renderWeightTab() {
   const fmt = v => v.toFixed(1);
   const changeColor = change < 0 ? 'var(--protein)' : change > 0 ? 'var(--fat)' : 'var(--muted)';
   const changeSign = change > 0 ? '+' : '';
+  // ---- Body fat % + derived lean mass (only when at least one entry has it) ----
+  // Lean mass is shown in the current display unit; "good" trend is fat ▼ / lean ▲.
+  const AMBER = '#f5a623';
+  const bfKeys = keys.filter(k => weightLog[k].bf != null);
+  let bfCardsHtml = '';
+  if (bfKeys.length) {
+    const lastBfKey = bfKeys[bfKeys.length - 1];
+    const leanAt = k => toDisplayWeight(weightLog[k].val, weightLog[k].unit) * (1 - weightLog[k].bf / 100);
+    const curBf = weightLog[lastBfKey].bf;
+    const curLean = leanAt(lastBfKey);
+    const filteredBf = filteredKeys.filter(k => weightLog[k].bf != null);
+    const startBfKey = filteredBf.length ? filteredBf[0] : lastBfKey;
+    const bfChange = curBf - weightLog[startBfKey].bf;
+    const leanChange = curLean - leanAt(startBfKey);
+    const hasBfTrend = startBfKey !== lastBfKey;
+    const bfArrow = bfChange < 0 ? '▼' : bfChange > 0 ? '▲' : '→';
+    const bfArrowCol = bfChange < 0 ? 'var(--protein)' : bfChange > 0 ? AMBER : 'var(--muted)';
+    const leanArrow = leanChange > 0 ? '▲' : leanChange < 0 ? '▼' : '→';
+    const leanArrowCol = leanChange > 0 ? 'var(--protein)' : leanChange < 0 ? AMBER : 'var(--muted)';
+    bfCardsHtml = `
+    <div class="hist-stat">
+      <div class="hs-val" style="color:#a78bfa">${fmt(curBf)}<span style="font-size:0.6em">%</span></div>
+      <div class="hs-label">Body Fat %</div>
+      <div class="hs-sub" style="color:${hasBfTrend ? bfArrowCol : 'var(--muted)'}">${hasBfTrend ? `${bfArrow}${fmt(Math.abs(bfChange))} over ${weightPeriod}d` : 'first entry'}</div>
+    </div>
+    <div class="hist-stat">
+      <div class="hs-val" style="color:var(--protein)">${fmt(curLean)}</div>
+      <div class="hs-label">Lean Mass</div>
+      <div class="hs-sub" style="color:${hasBfTrend ? leanArrowCol : 'var(--muted)'}">${hasBfTrend ? `${leanArrow}${fmt(Math.abs(leanChange))} ${weightUnit}` : weightUnit}</div>
+    </div>`;
+  }
   document.getElementById('weightSummary').innerHTML = `
     <div class="hist-stat">
       <div class="hs-val" style="color:#a78bfa">${fmt(current)}</div>
@@ -6160,7 +6209,7 @@ function renderWeightTab() {
       <div class="hs-val" style="color:var(--fat)">${fmt(maxW)}</div>
       <div class="hs-label">High</div>
       <div class="hs-sub">${weightUnit}</div>
-    </div>`;
+    </div>${bfCardsHtml}`;
   if (filteredKeys.length >= 1) {
     const labels = filteredKeys.map(k => new Date(k + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
     const vals = filteredKeys.map(k => parseFloat(toDisplayWeight(weightLog[k].val, weightLog[k].unit).toFixed(1)));
@@ -6170,6 +6219,20 @@ function renderWeightTab() {
     renderWeightTrend(filteredKeys, current);
   } else {
     document.getElementById('weightTrendCard').style.display = 'none';
+  }
+  // Body Fat % trend chart — only dates with a recorded % are plotted (gaps stay
+  // gaps, never zeros). Same period selector as the weight chart above.
+  const bfChartKeys = filteredKeys.filter(k => weightLog[k].bf != null);
+  const bfCard = document.getElementById('bodyFatChartCard');
+  if (bfChartKeys.length >= 1) {
+    bfCard.style.display = 'block';
+    const bfLabels = bfChartKeys.map(k => new Date(k + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    const bfVals = bfChartKeys.map(k => parseFloat(Number(weightLog[k].bf).toFixed(1)));
+    const bfMaW = Math.min(7, Math.max(2, Math.round(bfVals.length / 3)));
+    const bfMa = bfVals.length >= 3 ? movingAvg(bfVals, bfMaW) : null;
+    drawWeightChart('chartBodyFat', bfLabels, bfVals, '%', bfMa, '#a78bfa');
+  } else {
+    bfCard.style.display = 'none';
   }
   const recent = [...keys].reverse().slice(0, 20);
   document.getElementById('weightEntryList').innerHTML = recent.map((k, i) => {
@@ -6186,19 +6249,36 @@ function renderWeightTab() {
       delta = `<span class="wer-delta" style="background:${col};color:${textCol}">${sign}${diff.toFixed(1)}</span>`;
     }
     const dateLabel = k === todayKey() ? 'Today' : new Date(k + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    // Weight, optionally with body fat % and a derived lean-mass subline.
+    const bfText = e.bf != null ? ` · ${Number(e.bf).toFixed(1)}% body fat` : '';
+    const leanLine = e.bf != null
+      ? `<span style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px">≈ ${(disp * (1 - e.bf / 100)).toFixed(1)} ${weightUnit} lean mass</span>`
+      : '';
     return `<div class="weight-entry-row">
       <span class="wer-date">${dateLabel}</span>
       ${delta}
-      <span class="wer-val">${disp.toFixed(1)} ${weightUnit}</span>
+      <span class="wer-valwrap" style="display:flex;flex-direction:column;align-items:flex-end">
+        <span class="wer-val">${disp.toFixed(1)} ${weightUnit}${bfText}</span>
+        ${leanLine}
+      </span>
       <button class="wer-del" onclick="deleteWeightEntry('${k}')">✕</button>
     </div>`;
   }).join('');
 }
 
-let _wchartState = null;
-function drawWeightChart(id, labels, vals, unit, trend) {
+// #rrggbb → "r,g,b" so an accent hex can drive rgba() gradient/fill stops.
+function hexToRgbTriplet(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return '167,139,250';   // fall back to the default purple
+  const n = parseInt(m[1], 16);
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+}
+// Reusable line chart. `accent` (a hex colour) themes the line, fill, dots and
+// tooltip so the same renderer serves weight (purple) and body-fat (purple) etc.
+function drawWeightChart(id, labels, vals, unit, trend, accent = '#a78bfa') {
   const canvas = document.getElementById(id);
   if (!canvas) return;
+  const rgb = hexToRgbTriplet(accent);
   const dpr = window.devicePixelRatio || 1;
   const cssW = canvas.parentElement.clientWidth - 28;
   if (!canvas.dataset.h) canvas.dataset.h = String(parseInt(canvas.getAttribute('height')) || 220);
@@ -6241,8 +6321,8 @@ function drawWeightChart(id, labels, vals, unit, trend) {
   ctx.textAlign = 'left';
   ctx.fillText(unit, pad.left, pad.top - 6);
   const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
-  grad.addColorStop(0, 'rgba(167,139,250,0.28)');
-  grad.addColorStop(1, 'rgba(167,139,250,0.02)');
+  grad.addColorStop(0, `rgba(${rgb},0.28)`);
+  grad.addColorStop(1, `rgba(${rgb},0.02)`);
   ctx.beginPath();
   ctx.moveTo(toX(0), toY(vals[0]));
   for (let i = 1; i < n; i++) ctx.lineTo(toX(i), toY(vals[i]));
@@ -6251,7 +6331,7 @@ function drawWeightChart(id, labels, vals, unit, trend) {
   ctx.closePath();
   ctx.fillStyle = grad;
   ctx.fill();
-  ctx.strokeStyle = '#a78bfa';
+  ctx.strokeStyle = accent;
   ctx.lineWidth = 2.5;
   ctx.lineJoin = 'round';
   ctx.beginPath();
@@ -6273,7 +6353,7 @@ function drawWeightChart(id, labels, vals, unit, trend) {
     ctx.fillText('— trend', pad.left + plotW, pad.top - 6);
   }
   vals.forEach((v, i) => {
-    ctx.fillStyle = '#a78bfa';
+    ctx.fillStyle = accent;
     ctx.beginPath(); ctx.arc(toX(i), toY(v), 4, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = c.surface;
     ctx.beginPath(); ctx.arc(toX(i), toY(v), 1.8, 0, Math.PI * 2); ctx.fill();
@@ -6286,7 +6366,9 @@ function drawWeightChart(id, labels, vals, unit, trend) {
     if (i % step !== 0 && i !== n - 1) return;
     ctx.fillText(lbl, toX(i), cssH - 6);
   });
-  _wchartState = { ctx, pad, plotW, plotH, toX, toY, labels, vals, unit, trend };
+  // Per-canvas state so the weight and body-fat charts (both on screen at once)
+  // don't clobber each other's tooltip data.
+  canvas._chartState = { ctx, pad, plotW, plotH, toX, toY, labels, vals, unit, trend, accent, rgb };
   canvas.onmousemove = (e) => {
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left - pad.left;
@@ -6294,18 +6376,19 @@ function drawWeightChart(id, labels, vals, unit, trend) {
     const idx = Math.min(n - 1, Math.round((x / plotW) * (n - 1)));
     drawWeightTooltip(canvas, idx);
   };
-  canvas.onmouseleave = () => drawWeightChart(id, labels, vals, unit, trend);
+  canvas.onmouseleave = () => drawWeightChart(id, labels, vals, unit, trend, accent);
 }
 
 function drawWeightTooltip(canvas, idx) {
-  const { ctx, pad, vals, toX, toY, labels, unit, trend } = _wchartState;
+  const st = canvas._chartState;
+  if (!st) return;
+  const { ctx, pad, plotW, plotH, vals, toX, toY, labels, unit, trend, accent, rgb } = st;
   const c = chartColors();
   const cssW = canvas.width / (window.devicePixelRatio || 1);
-  const cssH = canvas.height / (window.devicePixelRatio || 1);
-  drawWeightChart(canvas.id, labels, vals, unit, trend);
+  drawWeightChart(canvas.id, labels, vals, unit, trend, accent);
   const x = toX(idx);
   const y = toY(vals[idx]);
-  ctx.strokeStyle = 'rgba(167,139,250,0.4)';
+  ctx.strokeStyle = `rgba(${rgb},0.4)`;
   ctx.setLineDash([3, 3]);
   ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + plotH); ctx.stroke();
   ctx.setLineDash([]);
@@ -6315,7 +6398,7 @@ function drawWeightTooltip(canvas, idx) {
   const tx = Math.min(Math.max(x - width / 2, pad.left), cssW - pad.right - width);
   const ty = y - height - 10;
   ctx.fillStyle = c.surface;
-  ctx.strokeStyle = '#a78bfa';
+  ctx.strokeStyle = accent;
   ctx.lineWidth = 1;
   ctx.beginPath();
   if (ctx.roundRect) ctx.roundRect(tx, ty, width, height, 8);
@@ -6684,6 +6767,16 @@ function prefillCalc() {
     if (keys.length) {
       const last = weightLog[keys[keys.length - 1]];
       document.getElementById('calcWeight').value = toDisplayWeight(last.val, last.unit).toFixed(1);
+    }
+  }
+  // Katch-McArdle BMR uses body fat %. Pre-fill it from the most recent weigh-in
+  // that recorded one within the last 30 days (unless the field is already set).
+  if (!document.getElementById('calcBf').value) {
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffKey = dateKey(cutoff);
+    const bfKeys = Object.keys(weightLog || {}).filter(k => k >= cutoffKey && weightLog[k].bf != null).sort();
+    if (bfKeys.length) {
+      document.getElementById('calcBf').value = Number(weightLog[bfKeys[bfKeys.length - 1]].bf).toFixed(1);
     }
   }
   // Always-on explanation generated from the current saved goals (no Calculate needed).
@@ -7265,6 +7358,28 @@ async function loadClientDetail() {
     cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
   }
 
+  // Body fat % stat (current + trend, ▼ = losing fat = good) shown only when the
+  // client has recorded it at least once.
+  const bfStatEl = document.getElementById('cdBodyFatStat');
+  if (bfStatEl) {
+    const bfW = w.filter(x => x.body_fat_pct != null);
+    if (bfW.length) {
+      const last = bfW[bfW.length - 1];
+      let trendTxt = '';
+      if (bfW.length >= 2) {
+        const ch = Math.round((last.body_fat_pct - bfW[0].body_fat_pct) * 10) / 10;
+        const arrow = ch < 0 ? '▼' : ch > 0 ? '▲' : '→';
+        const col = ch < 0 ? 'var(--protein)' : ch > 0 ? '#f5a623' : 'var(--muted)';
+        trendTxt = ` · <span style="color:${col}">${arrow}${Math.abs(ch).toFixed(1)}%</span>`;
+      }
+      const leanTxt = last.lean_mass != null ? ` · ≈ ${toDisplayWeight(last.lean_mass, last.unit).toFixed(1)} ${weightUnit} lean` : '';
+      bfStatEl.innerHTML = `📉 Body fat: <strong>${Number(last.body_fat_pct).toFixed(1)}%</strong>${trendTxt}${leanTxt}`;
+      bfStatEl.style.display = '';
+    } else {
+      bfStatEl.style.display = 'none';
+    }
+  }
+
   renderCdGrocery(data.grocery || {});
 }
 
@@ -7418,7 +7533,11 @@ async function exportCSV() {
     start = res.body.start;
   }
 
-  const header = ['Date', 'Food Name', 'Calories', 'Protein(g)', 'Carbs(g)', 'Fat(g)', 'Fiber(g)', 'Added Sugar(g)', 'Serving', 'Time Logged'];
+  // Day → body fat % from the loaded weigh-ins, so each row can carry that day's %.
+  const bfByDate = {};
+  (cdLastData.weight_30d || []).forEach(x => { if (x.body_fat_pct != null) bfByDate[x.date] = x.body_fat_pct; });
+
+  const header = ['Date', 'Food Name', 'Calories', 'Protein(g)', 'Carbs(g)', 'Fat(g)', 'Fiber(g)', 'Added Sugar(g)', 'Serving', 'Time Logged', 'Body Fat(%)'];
   const rows = entries.map(e => [
     e.date,
     e.name || '',
@@ -7426,6 +7545,7 @@ async function exportCSV() {
     round1(e.protein), round1(e.carbs), round1(e.fat), round1(e.fiber), round1(e.sugar),
     e.serving || '',
     e.ts ? new Date(e.ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '',
+    bfByDate[e.date] != null ? round1(bfByDate[e.date]) : '',
   ]);
 
   // Summary: averages over distinct logged days (a meaningful daily average, not
@@ -7435,11 +7555,14 @@ async function exportCSV() {
     cal: a.cal + (e.cal || 0), protein: a.protein + (e.protein || 0), carbs: a.carbs + (e.carbs || 0),
     fat: a.fat + (e.fat || 0), fiber: a.fiber + (e.fiber || 0), sugar: a.sugar + (e.sugar || 0),
   }), { cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0 });
+  // Average body fat over the distinct days that recorded it (blank if none).
+  const bfDays = Object.keys(bfByDate).filter(d => d >= start && d <= end);
+  const bfAvg = bfDays.length ? round1(bfDays.reduce((a, d) => a + bfByDate[d], 0) / bfDays.length) : '';
   rows.push([]);
   rows.push([
     'AVERAGE / logged day', `${loggedDays} day${loggedDays !== 1 ? 's' : ''} logged`,
     Math.round(sum.cal / loggedDays), round1(sum.protein / loggedDays), round1(sum.carbs / loggedDays),
-    round1(sum.fat / loggedDays), round1(sum.fiber / loggedDays), round1(sum.sugar / loggedDays), '', '',
+    round1(sum.fat / loggedDays), round1(sum.fiber / loggedDays), round1(sum.sugar / loggedDays), '', '', bfAvg,
   ]);
 
   const csv = [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
@@ -7524,7 +7647,22 @@ function exportPDF() {
   } else {
     weightSummary = `<p class="pr-note">No weigh-ins recorded this week.</p>`;
   }
-  const s3 = `${chartImgOrNote('cdWeightChart', hasWeight)}${weightSummary}`;
+  // Current body fat % (latest recorded) + weekly change and derived lean mass.
+  const allBf = (data.weight_30d || []).filter(x => x.body_fat_pct != null);
+  let bfSummary = '';
+  if (allBf.length) {
+    const curBf = allBf[allBf.length - 1];
+    const bfWin = allBf.filter(x => x.date >= weekStart && x.date <= end);
+    let bfChange = '';
+    if (bfWin.length >= 2) {
+      const d = Math.round((bfWin[bfWin.length - 1].body_fat_pct - bfWin[0].body_fat_pct) * 10) / 10;
+      const arrow = d < 0 ? '▼' : d > 0 ? '▲' : '→';
+      bfChange = `, change: ${arrow}${Math.abs(d).toFixed(1)}%`;
+    }
+    const lean = curBf.lean_mass != null ? ` · lean mass ≈ ${toDisplayWeight(curBf.lean_mass, curBf.unit).toFixed(1)} ${weightUnit}` : '';
+    bfSummary = `<p class="pr-note">Current body fat: ${Number(curBf.body_fat_pct).toFixed(1)}%${bfChange}${lean}</p>`;
+  }
+  const s3 = `${chartImgOrNote('cdWeightChart', hasWeight)}${weightSummary}${bfSummary}`;
 
   // Section 4 — coach notes within the period.
   const notes = (data.coach_notes || []).filter(n => (n.date || '') >= weekStart && (n.date || '') <= end);

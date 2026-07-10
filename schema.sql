@@ -31,6 +31,7 @@ CREATE TABLE weight_log (
   date TEXT NOT NULL,
   val REAL NOT NULL,
   unit TEXT DEFAULT 'lbs',
+  body_fat_pct REAL,
   created_at TEXT DEFAULT (datetime('now')),
   UNIQUE(user_id, date)
 );

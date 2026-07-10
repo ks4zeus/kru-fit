@@ -22,6 +22,25 @@ async function parseJson(request: Request): Promise<any> {
   }
 }
 
+// Sanitize an incoming body-fat %: a finite number in the plausible 3–60 range,
+// else null (blank/absent/out-of-range all mean "not recorded").
+function normBodyFat(v: unknown): number | null {
+  const n = typeof v === "number" ? v : parseFloat(v as string);
+  return Number.isFinite(n) && n >= 3 && n <= 60 ? n : null;
+}
+
+// Lean mass in the weigh-in's own unit, derived from weight + body-fat %.
+// null when either input is missing; rounded to 0.1.
+function leanMass(val: number | null | undefined, bf: number | null | undefined): number | null {
+  if (val == null || bf == null) return null;
+  return Math.round(val * (1 - bf / 100) * 10) / 10;
+}
+
+// Attach the derived lean_mass to a weight_log row for API responses.
+function withLeanMass<T extends { val?: number; body_fat_pct?: number | null }>(row: T): T & { lean_mass: number | null } {
+  return { ...row, lean_mass: leanMass(row.val, row.body_fat_pct ?? null) };
+}
+
 // ---- Cloudflare Access authentication ----
 //
 // In production, set ACCESS_TEAM_DOMAIN (e.g. "myteam.cloudflareaccess.com") and
@@ -1000,7 +1019,8 @@ export default {
           )
           .bind(userEmail, `-${days} days`)
           .all();
-        return jsonResponse(results || []);
+        // Surface the derived lean mass so clients don't have to recompute it.
+        return jsonResponse((results || []).map((r) => withLeanMass(r as any)));
       }
 
       if (request.method === "POST") {
@@ -1008,17 +1028,19 @@ export default {
         if (!body?.date || body.val == null) {
           return jsonResponse({ error: "Missing required fields" }, 400);
         }
+        const unit = body.unit || "lbs";
+        const bodyFat = normBodyFat(body.body_fat_pct);
 
         await db
           .prepare(
-            `INSERT INTO weight_log (user_id, date, val, unit)
-             VALUES (?, ?, ?, ?)
-             ON CONFLICT(user_id, date) DO UPDATE SET val = excluded.val, unit = excluded.unit`
+            `INSERT INTO weight_log (user_id, date, val, unit, body_fat_pct)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(user_id, date) DO UPDATE SET val = excluded.val, unit = excluded.unit, body_fat_pct = excluded.body_fat_pct`
           )
-          .bind(userEmail, body.date, body.val, body.unit || "lbs")
+          .bind(userEmail, body.date, body.val, unit, bodyFat)
           .run();
 
-        return jsonResponse({ user_id: userEmail, date: body.date, val: body.val, unit: body.unit || "lbs" });
+        return jsonResponse(withLeanMass({ user_id: userEmail, date: body.date, val: body.val, unit, body_fat_pct: bodyFat }));
       }
 
       if (request.method === "DELETE") {
@@ -1762,9 +1784,9 @@ export default {
         .all()).results || []) as any[];
 
       const weight30d = (((await db
-        .prepare("SELECT date, val, unit FROM weight_log WHERE user_id = ? ORDER BY date DESC LIMIT 30")
+        .prepare("SELECT date, val, unit, body_fat_pct FROM weight_log WHERE user_id = ? ORDER BY date DESC LIMIT 30")
         .bind(clientId)
-        .all()).results || []) as any[]).reverse();
+        .all()).results || []) as any[]).reverse().map((r) => withLeanMass(r));
 
       const coachNotes = ((await db
         .prepare("SELECT id, date, note, dismissed_at, created_at FROM coach_notes WHERE org_id = ? AND client_id = ? ORDER BY created_at DESC")
