@@ -2167,7 +2167,7 @@
     <div class="form-grid">
       <div class="form-field full">
         <label>Food Name</label>
-        <input type="text" id="cfName" placeholder="e.g. Homemade Oatmeal">
+        <input type="text" id="cfName" placeholder="e.g. Homemade Oatmeal" oninput="cfClearUsdaBase()">
       </div>
       <div class="form-field full">
         <label>Emoji (optional)</label>
@@ -2691,7 +2691,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v2.9';
+const APP_VERSION = 'v3.0';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -2809,14 +2809,27 @@ let recipeItems = [];          // structured/scanned ingredients in the recipe b
 let recipeAiTotal = { cal: 0, protein: 0, carbs: 0, fiber: 0, sugar: 0, fat: 0 }; // TOTAL macros of the freeform (AI) portion
 let recipeServingGrams = null;   // per-serving grams of the recipe (sum of ingredient grams ÷ servings)
 
-// Live "≈ N g" for the custom-food serving: mass units convert exactly; volume/
-// count have no fixed grams until logged/edited, so the anchor stays empty.
+// When the serving qty/unit changes, recompute grams via the food's density and —
+// for a USDA pick (per-100g base known) — rescale every macro field from that base.
+// Volume uses the food's real density (falling back to water density if USDA lacked
+// it); count units with no known each_grams leave grams blank.
 function onCfServingInput() {
-  const qty = parseFloat(document.getElementById('cfServingQty').value);
+  const qty = parseFloat(document.getElementById('cfServingQty').value) || 1;
   const unit = document.getElementById('cfServingUnit').value;
-  const g = servingToGrams(qty, unit, null);
-  document.getElementById('cfServingGrams').value = (g > 0) ? Math.round(g) : '';
-  document.getElementById('cfServingHint').textContent = (g > 0) ? `≈ ${Math.round(g)} g` : '';
+  const grams = servingToGrams(qty, unit, null, cfCurrentDensity);
+  const hint = document.getElementById('cfServingHint');
+  if (grams > 0 && cfBasePer100g) {
+    const factor = grams / 100;
+    const r1 = v => Math.round((v || 0) * factor * 10) / 10;   // 1-decimal for macros
+    document.getElementById('cfCal').value = Math.round((cfBasePer100g.cal || 0) * factor);
+    document.getElementById('cfProtein').value = r1(cfBasePer100g.protein);
+    document.getElementById('cfCarbs').value = r1(cfBasePer100g.carbs);
+    document.getElementById('cfFat').value = r1(cfBasePer100g.fat);
+    document.getElementById('cfFiber').value = r1(cfBasePer100g.fiber);
+    document.getElementById('cfSugar').value = r1(cfBasePer100g.sugar_added);
+  }
+  document.getElementById('cfServingGrams').value = (grams > 0) ? Math.round(grams) : '';
+  if (hint) hint.textContent = (grams > 0) ? `≈ ${Math.round(grams)} g` : '';
 }
 // Reset the custom-food serving picker (also (re)builds its unit dropdown).
 function resetCfServing(qty, unit, grams) {
@@ -3272,32 +3285,71 @@ function servingUnitOf(s) {
   return canonUnit((s || '').replace(/^(\d+(?:\.\d+)?)?\s*[½¼¾⅓⅔⅛]?\s*/, '').trim());
 }
 
-// Grams in (qty, unit) for THIS food, using the entry's reference serving as the
-// density/weight anchor. Mass units are universal; volume/count need the anchor.
-// Returns null when it can't be determined.
-function servingToGrams(qty, unit, ref) {
-  if (!(qty > 0)) return null;
-  const info = unitInfo(unit);
-  if (!info) return null;
-  const [dim, factor] = info;
-  if (dim === 'mass') return qty * factor;            // g/oz/lb → grams (fixed)
-  if (!ref || !(ref.grams > 0) || !(ref.qty > 0)) return null;
-  const refInfo = unitInfo(ref.unit);
-  if (!refInfo || refInfo[0] !== dim) return null;    // anchor must be the same dimension
-  const gramsPerBase = ref.grams / (ref.qty * refInfo[1]);
-  return qty * factor * gramsPerBase;
+// Grams in 1 of a volume/count unit for THIS food, from USDA food-specific density
+// (cup_grams/tbsp_grams/tsp_grams/each_grams). No fallback — returns null when the
+// food's real density for that unit is unknown, so callers can decide (fall back to
+// water density, or offer an AI re-estimate) rather than silently guessing.
+function densityGramsPerUnit(unit, density) {
+  if (!density) return null;
+  const u = (unit || '').trim().toLowerCase();
+  const pick = k => (density[k] > 0 ? density[k] : null);
+  if (['cup', 'cups'].includes(u)) return pick('cup_grams');
+  if (['tbsp', 'tablespoon', 'tablespoons'].includes(u)) return pick('tbsp_grams');
+  if (['tsp', 'teaspoon', 'teaspoons'].includes(u)) return pick('tsp_grams');
+  if (['each', 'piece', 'item', 'slice', 'ea'].includes(u)) return pick('each_grams');
+  return null;
 }
 
-// Scale factor from the reference serving to (newQty, newUnit). Same family →
-// exact ratio (no anchor needed). Cross-family → via grams (needs the anchor).
+// Grams in (qty, unit) for THIS food. Resolution order for volume/count units:
+//   1. food-specific density from USDA (density.{cup,tbsp,tsp,each}_grams)
+//   2. a same-dimension reference serving (anchor {qty,unit,grams}) — legacy path
+//   3. water-density fallback (1 mL = 1 g; 1 cup = 240 g) for volume; null for count
+// Mass units are always exact. Both `anchor` and `density` may carry cup_grams etc.
+function servingToGrams(qty, unit, anchor, density) {
+  if (!(qty > 0)) return null;
+  const u = (unit || '').trim().toLowerCase();
+  // Mass & water-based volume — accurate without any density.
+  if (['g', 'gram', 'grams'].includes(u)) return qty;
+  if (u === 'mg') return qty * 0.001;
+  if (u === 'kg') return qty * 1000;
+  if (['oz', 'ounce', 'ounces'].includes(u)) return qty * 28.3495;
+  if (['lb', 'lbs', 'pound', 'pounds'].includes(u)) return qty * 453.592;
+  if (['ml', 'milliliter', 'milliliters'].includes(u)) return qty;
+  if (['l', 'liter', 'litre'].includes(u)) return qty * 1000;
+  if (['fl oz', 'floz'].includes(u)) return qty * 29.5735;
+  // Volume/count — real per-food density first, then a same-dimension anchor.
+  const perUnit = densityGramsPerUnit(u, density) || densityGramsPerUnit(u, anchor);
+  if (perUnit > 0) return qty * perUnit;
+  const info = unitInfo(u);
+  if (info && info[0] === 'vol') {
+    // Legacy: derive density from a same-dimension reference serving {qty,unit,grams}.
+    if (anchor && anchor.grams > 0 && anchor.qty > 0) {
+      const refInfo = unitInfo((anchor.unit || '').trim().toLowerCase());
+      if (refInfo && refInfo[0] === 'vol') return qty * info[1] * (anchor.grams / (anchor.qty * refInfo[1]));
+    }
+    return qty * info[1];   // water-density fallback (cup 240, tbsp 14.79, tsp 4.93…)
+  }
+  return null;              // count unit with no known each_grams
+}
+
+// Scale factor from the reference serving to (newQty, newUnit). Same family → exact
+// ratio (density cancels). Cross-family → via grams: mass targets are exact; volume/
+// count targets need the food's REAL density (carried on `ref` as cup_grams etc.),
+// otherwise null so the caller offers an AI re-estimate instead of a water guess.
 function rescaleFactor(ref, newQty, newUnit) {
   if (!ref || !(newQty > 0) || !(ref.qty > 0)) return null;
   const ru = unitInfo(ref.unit), nu = unitInfo(newUnit);
   if (ru && nu && ru[0] === nu[0]) return (newQty * nu[1]) / (ref.qty * ru[1]);
   if ((ref.unit || '').trim().toLowerCase() === (newUnit || '').trim().toLowerCase()) return newQty / ref.qty;
-  const newG = servingToGrams(newQty, newUnit, ref);
-  if (newG != null && ref.grams > 0) return newG / ref.grams;
-  return null;
+  if (!(ref.grams > 0)) return null;
+  let newG = null;
+  if (nu && nu[0] === 'mass') {
+    newG = servingToGrams(newQty, newUnit, ref, ref);          // mass target — exact
+  } else {
+    const perUnit = densityGramsPerUnit(newUnit, ref);          // volume/count — density only
+    if (perUnit > 0) newG = newQty * perUnit;
+  }
+  return newG != null ? newG / ref.grams : null;
 }
 
 // Scale factor between two servings. Same convertible family → real conversion;
@@ -3327,7 +3379,7 @@ function onEditServingInput() {
     document.getElementById('eeFiber').value = Math.round(editEntryBase.fiber * f);
     document.getElementById('eeSugar').value = Math.round((editEntryBase.sugar || 0) * f);
     document.getElementById('eeFat').value = Math.round(editEntryBase.fat * f);
-    const g = editEntryBase.grams > 0 ? editEntryBase.grams * f : servingToGrams(newQty, newUnit, editEntryBase);
+    const g = editEntryBase.grams > 0 ? editEntryBase.grams * f : servingToGrams(newQty, newUnit, editEntryBase, editEntryBase);
     editEntryCurrentGrams = g > 0 ? Math.round(g) : null;
     if (hint) hint.textContent = editEntryCurrentGrams ? `≈ ${editEntryCurrentGrams} g` : '';
     box.style.display = 'none';
@@ -3405,6 +3457,9 @@ function openEditEntry(index) {
   if (refGrams == null) { const ci = unitInfo(sUnit); if (ci && ci[0] === 'mass') refGrams = sQty * ci[1]; }
   editEntryBase = {
     qty: sQty, unit: sUnit, grams: refGrams,
+    // Preserve the food's USDA density so a cross-family change (e.g. g → cup) can
+    // rescale by real grams instead of falling back to AI.
+    cup_grams: e.cup_grams ?? null, tbsp_grams: e.tbsp_grams ?? null, tsp_grams: e.tsp_grams ?? null, each_grams: e.each_grams ?? null,
     cal: e.cal || 0, protein: e.protein || 0, carbs: e.carbs || 0, fiber: e.fiber || 0, sugar: e.sugar || 0, fat: e.fat || 0
   };
   editEntryCurrentGrams = refGrams;
@@ -3450,7 +3505,7 @@ async function saveEntryEdit() {
   if (e.id && currentUser) {
     await apiRequest(`/food/${e.id}`, {
       method: 'PUT',
-      body: JSON.stringify({ name: e.name, emoji: e.emoji, cal: e.cal, protein: e.protein, carbs: e.carbs, fat: e.fat, fiber: e.fiber, sugar: e.sugar, serving: e.serving, serving_grams: e.serving_grams })
+      body: JSON.stringify({ name: e.name, emoji: e.emoji, cal: e.cal, protein: e.protein, carbs: e.carbs, fat: e.fat, fiber: e.fiber, sugar: e.sugar, serving: e.serving, serving_grams: e.serving_grams, cup_grams: e.cup_grams ?? null, tbsp_grams: e.tbsp_grams ?? null, tsp_grams: e.tsp_grams ?? null, each_grams: e.each_grams ?? null })
     });
   }
   closeEditEntry();
@@ -3648,7 +3703,10 @@ async function saveCustomFood(logNow, saveToLibrary = true) {
       name: food.name, emoji: food.emoji, cal: food.cal, protein: food.protein,
       carbs: food.carbs, fiber: food.fiber, sugar: food.sugar, fat: food.fat,
       source: isRecipe ? 'Recipe · 1 serving' : `Custom · ${food.serving}`, serving: isRecipe ? '1 serving' : food.serving,
-      serving_grams: food.serving_grams ?? null, ts: Date.now(), date: todayKey()
+      serving_grams: food.serving_grams ?? null,
+      cup_grams: cfCurrentDensity?.cup_grams ?? null, tbsp_grams: cfCurrentDensity?.tbsp_grams ?? null,
+      tsp_grams: cfCurrentDensity?.tsp_grams ?? null, each_grams: cfCurrentDensity?.each_grams ?? null,
+      ts: Date.now(), date: todayKey()
     };
     const saved = await saveFoodEntry(entry);
     log.push(saved);
@@ -5075,6 +5133,7 @@ function openCustomFoodModal() {
   document.getElementById('cfSearchResults').innerHTML = '';
   document.getElementById('cfPrefillBadge').style.display = 'none';
   cfLastResults = []; cfFormSource = 'user'; cfFormFdcId = null;
+  cfClearUsdaBase();
   attachCfMacroListeners();
   toggleRecipeMode();
   document.getElementById('cfAiFeedback').textContent = '';
@@ -5221,6 +5280,7 @@ function isRecipeFood(f) {
 
 function closeCustomFoodModal() {
   stopDictation();
+  cfClearUsdaBase();
   document.getElementById('customFoodModal').classList.remove('open');
 }
 
@@ -5541,7 +5601,9 @@ async function quickLog(i) {
     name: f.name, emoji: f.emoji || '🍽️',
     cal: f.cal * qty, protein: f.protein * qty, carbs: f.carbs * qty,
     fiber: (f.fiber || 0) * qty, sugar: (f.sugar || 0) * qty, fat: f.fat * qty,
-    source, serving, serving_grams: grams, ts: Date.now(), date: todayKey()
+    source, serving, serving_grams: grams,
+    cup_grams: f.cup_grams ?? null, tbsp_grams: f.tbsp_grams ?? null, tsp_grams: f.tsp_grams ?? null, each_grams: f.each_grams ?? null,
+    ts: Date.now(), date: todayKey()
   };
   const saved = await saveFoodEntry(entry);
   log.push(saved);
@@ -5714,8 +5776,13 @@ let fsResults = [], fsSelected = null, fsTimer = null;   // Search-modal state
 let cfLastResults = [], cfSearchTimer = null;            // Custom-food search state
 // Provenance of the data currently in the custom-food form ('user'/'usda'/'ai').
 let cfFormSource = 'user', cfFormFdcId = null, cfMacroListenersOn = false;
-// Hand-editing the macros means it's no longer verified USDA/AI data.
+// Per-100g macros + food-specific density of the currently-picked USDA food, so the
+// serving picker can rescale accurately. Null for AI/manual foods (no per-100g base).
+let cfBasePer100g = null, cfCurrentDensity = null;
+function cfClearUsdaBase() { cfBasePer100g = null; cfCurrentDensity = null; }
+// Hand-editing the macros or the name means it's no longer the verified USDA pick.
 function cfInvalidateSource() {
+  cfClearUsdaBase();
   if (cfFormSource !== 'user') {
     cfFormSource = 'user'; cfFormFdcId = null;
     const b = document.getElementById('cfPrefillBadge'); if (b) b.style.display = 'none';
@@ -5901,6 +5968,10 @@ function cfPickResult(i) {
   set('cfCal', r.cal); set('cfProtein', r.protein); set('cfCarbs', r.carbs);
   set('cfFat', r.fat); set('cfFiber', r.fiber); set('cfSugar', r.sugar_added);
   const usda = (r.source === 'usda' || r.source === 'cache');
+  // USDA/cache data is per-100g — remember it as the base + the food's density so the
+  // serving picker rescales macros accurately. AI/manual foods have no per-100g base.
+  cfBasePer100g = usda ? { cal: r.cal || 0, protein: r.protein || 0, carbs: r.carbs || 0, fat: r.fat || 0, fiber: r.fiber || 0, sugar_added: r.sugar_added || 0 } : null;
+  cfCurrentDensity = usda ? { cup_grams: r.cup_grams ?? null, tbsp_grams: r.tbsp_grams ?? null, tsp_grams: r.tsp_grams ?? null, each_grams: r.each_grams ?? null } : null;
   resetCfServing(usda ? 100 : (r.serving_qty || 1), usda ? 'g' : canonUnit(r.serving_unit), r.serving_grams);
   // Remember provenance so the saved row is tagged at creation (no Sync needed).
   cfFormSource = usda ? 'usda' : 'ai';

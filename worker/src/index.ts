@@ -330,7 +330,30 @@ interface FoodResult {
   cal: number; protein: number; carbs: number; fat: number; fiber: number; sugar_added: number;
   serving_qty: number; serving_unit: string; serving_grams: number | null;
   source: string;
+  // Food-specific household-measure weights (grams per 1 unit), from USDA foodMeasures.
+  // null when USDA didn't publish that measure for this food.
+  cup_grams?: number | null; tbsp_grams?: number | null; tsp_grams?: number | null; each_grams?: number | null;
   data_type?: string | null;   // USDA dataType (Foundation / SR Legacy / Survey (FNDDS) / Branded); null for cache rows
+}
+
+// USDA foodMeasures come as { disseminationText: "1 cup", gramWeight: 81, ... }.
+// Pull the leading amount out of the text so we can normalize to grams-per-1-unit.
+function measureAmount(text: string): number {
+  const m = /^\s*(\d+(?:\.\d+)?)/.exec(text || "");
+  const n = m ? parseFloat(m[1]) : 1;
+  return n > 0 ? n : 1;
+}
+// Find the first foodMeasures entry whose text/unit contains any keyword, returning
+// its gram weight normalized to a single unit (81g for "1 cup", 20.25g for "0.25 cup").
+function findMeasureGrams(measures: any[], keywords: string[]): number | null {
+  for (const m of measures || []) {
+    const g = Number(m?.gramWeight);
+    if (!(g > 0)) continue;
+    const text = String(m?.disseminationText || m?.modifier || "");
+    const hay = `${text} ${m?.measureUnitName || ""} ${m?.measureUnitAbbreviation || ""} ${m?.measureUnit?.name || ""} ${m?.measureUnit?.abbreviation || ""}`.toLowerCase();
+    if (keywords.some((k) => hay.includes(k))) return g / measureAmount(text);
+  }
+  return null;
 }
 
 // Map a USDA food (search or detail shape) to our FoodResult, reading nutrients by
@@ -344,6 +367,7 @@ function parseUsdaFood(f: any): FoodResult {
     const val = n.value ?? n.amount;
     if (id != null && val != null) byId[String(id)] = Number(val);
   }
+  const measures = f.foodMeasures || [];
   return {
     fdc_id: String(f.fdcId),
     name: f.description || "Unknown",
@@ -356,6 +380,11 @@ function parseUsdaFood(f: any): FoodResult {
     fiber: byId["1079"] || 0,
     sugar_added: byId["1235"] || 0,
     serving_qty: 100, serving_unit: "g", serving_grams: 100, source: "usda",
+    // Food-specific household portions (oz stays a fixed mass, so it isn't stored).
+    cup_grams: findMeasureGrams(measures, ["cup"]),
+    tbsp_grams: findMeasureGrams(measures, ["tbsp", "tablespoon"]),
+    tsp_grams: findMeasureGrams(measures, ["tsp", "teaspoon"]),
+    each_grams: findMeasureGrams(measures, ["piece", "each", "item"]),
     data_type: f.dataType || null,
   };
 }
@@ -405,6 +434,7 @@ function rowToResult(r: any): FoodResult {
     fdc_id: r.fdc_id, name: r.name, brand: r.brand, category: r.category,
     cal: r.cal, protein: r.protein, carbs: r.carbs, fat: r.fat, fiber: r.fiber, sugar_added: r.sugar_added,
     serving_qty: r.serving_qty ?? 100, serving_unit: r.serving_unit || "g", serving_grams: r.serving_grams ?? 100,
+    cup_grams: r.cup_grams ?? null, tbsp_grams: r.tbsp_grams ?? null, tsp_grams: r.tsp_grams ?? null, each_grams: r.each_grams ?? null,
     source: r.source || "usda",
   };
 }
@@ -446,9 +476,14 @@ async function cacheUsdaFoods(db: D1Database, foods: FoodResult[]) {
     .filter((f) => f.fdc_id)
     .map((f) =>
       db.prepare(
-        `INSERT OR IGNORE INTO foods_cache (fdc_id, name, brand, category, cal, protein, carbs, fat, fiber, sugar_added, serving_qty, serving_unit, serving_grams, source)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 100, 'g', 100, 'usda')`
-      ).bind(f.fdc_id, f.name, f.brand, f.category, f.cal, f.protein, f.carbs, f.fat, f.fiber, f.sugar_added)
+        `INSERT INTO foods_cache (fdc_id, name, brand, category, cal, protein, carbs, fat, fiber, sugar_added, serving_qty, serving_unit, serving_grams, source, cup_grams, tbsp_grams, tsp_grams, each_grams)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 100, 'g', 100, 'usda', ?, ?, ?, ?)
+         ON CONFLICT(fdc_id) DO UPDATE SET
+           cup_grams = COALESCE(excluded.cup_grams, foods_cache.cup_grams),
+           tbsp_grams = COALESCE(excluded.tbsp_grams, foods_cache.tbsp_grams),
+           tsp_grams = COALESCE(excluded.tsp_grams, foods_cache.tsp_grams),
+           each_grams = COALESCE(excluded.each_grams, foods_cache.each_grams)`
+      ).bind(f.fdc_id, f.name, f.brand, f.category, f.cal, f.protein, f.carbs, f.fat, f.fiber, f.sugar_added, f.cup_grams ?? null, f.tbsp_grams ?? null, f.tsp_grams ?? null, f.each_grams ?? null)
     );
   if (!stmts.length) return;
   try { await db.batch(stmts); } catch (e) { console.error("foods_cache batch failed", e); }
@@ -875,8 +910,8 @@ export default {
 
         const inserted = await db
           .prepare(
-            `INSERT INTO food_log (user_id, date, name, emoji, cal, protein, carbs, fat, fiber, sugar, source, serving, serving_grams, ts)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO food_log (user_id, date, name, emoji, cal, protein, carbs, fat, fiber, sugar, source, serving, serving_grams, ts, cup_grams, tbsp_grams, tsp_grams, each_grams)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             userEmail,
@@ -892,7 +927,11 @@ export default {
             body.source || null,
             body.serving || null,
             body.serving_grams ?? null,
-            body.ts ?? null
+            body.ts ?? null,
+            body.cup_grams ?? null,
+            body.tbsp_grams ?? null,
+            body.tsp_grams ?? null,
+            body.each_grams ?? null
           )
           .run();
 
@@ -910,7 +949,7 @@ export default {
         }
         await db
           .prepare(
-            `UPDATE food_log SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, sugar = ?, serving = ?, serving_grams = ?
+            `UPDATE food_log SET name = ?, emoji = ?, cal = ?, protein = ?, carbs = ?, fat = ?, fiber = ?, sugar = ?, serving = ?, serving_grams = ?, cup_grams = ?, tbsp_grams = ?, tsp_grams = ?, each_grams = ?
              WHERE id = ? AND user_id = ?`
           )
           .bind(
@@ -924,6 +963,10 @@ export default {
             body.sugar ?? 0,
             body.serving ?? null,
             body.serving_grams ?? null,
+            body.cup_grams ?? null,
+            body.tbsp_grams ?? null,
+            body.tsp_grams ?? null,
+            body.each_grams ?? null,
             id,
             userEmail
           )

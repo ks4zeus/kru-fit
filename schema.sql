@@ -21,6 +21,10 @@ CREATE TABLE food_log (
   source TEXT,
   serving TEXT,              -- editable serving: quantity + standard unit (e.g. "1 cup")
   serving_grams REAL,        -- gram weight of the serving (conversion anchor; null if unknown)
+  cup_grams REAL,            -- USDA food-specific density: grams per 1 cup (null if unknown)
+  tbsp_grams REAL,           -- grams per 1 tablespoon
+  tsp_grams REAL,            -- grams per 1 teaspoon
+  each_grams REAL,           -- grams per 1 piece/item (count units)
   ts INTEGER,
   created_at TEXT DEFAULT (datetime('now'))
 );
@@ -83,6 +87,10 @@ CREATE TABLE foods_cache (
   serving_qty REAL DEFAULT 100,
   serving_unit TEXT DEFAULT 'g',
   serving_grams REAL DEFAULT 100,
+  cup_grams REAL,             -- USDA food-specific density: grams per 1 cup (null if unknown)
+  tbsp_grams REAL,            -- grams per 1 tablespoon
+  tsp_grams REAL,             -- grams per 1 teaspoon
+  each_grams REAL,            -- grams per 1 piece/item (count units)
   source TEXT DEFAULT 'usda',
   cached_at TEXT DEFAULT (datetime('now'))
 );
