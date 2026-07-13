@@ -445,11 +445,22 @@
     display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   }
   .day-arrow:disabled { opacity: 0.3; cursor: default; }
+  .day-arrow { font-size: 18px; line-height: 1; }
   .day-label { font-size: 14px; font-weight: 600; min-width: 150px; text-align: center; }
-  .entry-add-today {
-    align-self: center; flex-shrink: 0; background: var(--protein); color: #0a1a12;
-    border: none; border-radius: 8px; font-weight: 700; font-size: 16px; line-height: 1;
-    padding: 6px 11px; cursor: pointer;
+  .day-today-btn {
+    background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+    font-size: 12px; font-weight: 600; font-family: var(--font);
+    padding: 6px 12px; border-radius: 9px; cursor: pointer; flex-shrink: 0;
+  }
+  .day-today-btn:active { opacity: 0.7; }
+  .past-day-banner {
+    margin: 8px 20px 0; padding: 8px 12px; border-radius: 9px;
+    background: rgba(245, 166, 35, 0.12); border: 1px solid rgba(245, 166, 35, 0.3);
+    color: #f5a623; font-size: 12px; text-align: center;
+  }
+  /* Comfortable 44px tap targets for the date arrows on touch devices. */
+  @media (pointer: coarse) {
+    .day-arrow { width: 44px; height: 44px; font-size: 20px; }
   }
   .entry-thumb {
     width: 44px;
@@ -1720,10 +1731,12 @@
     <button class="wr-x" onclick="dismissWeighReminder()" title="Dismiss">✕</button>
   </div>
   <div class="day-nav">
-    <button class="day-arrow" id="dayPrev" onclick="changeViewDate(-1)" title="Previous day">◀</button>
+    <button class="day-arrow" id="dayPrev" onclick="changeViewDate(-1)" title="Previous day" aria-label="Previous day">‹</button>
     <span class="day-label" id="dayLabel">Today</span>
-    <button class="day-arrow" id="dayNext" onclick="changeViewDate(1)" title="Next day">▶</button>
+    <button class="day-arrow" id="dayNext" onclick="changeViewDate(1)" title="Next day" aria-label="Next day">›</button>
+    <button class="day-today-btn" id="dayTodayBtn" onclick="goToday()" style="display:none">Today</button>
   </div>
+  <div class="past-day-banner" id="pastDayBanner" style="display:none"></div>
   <div class="trainer-banner" id="trainerBanner" style="display:none">
     <div>👤 Connected to <strong id="tbOrg"></strong></div>
     <div class="tb-sub" id="tbTrainer"></div>
@@ -2691,7 +2704,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v3.0';
+const APP_VERSION = 'v3.1';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -2937,11 +2950,14 @@ function todayKey() {
   return dateKey(new Date());
 }
 
-// ---- Day navigation: review the last 7 days and pull a meal into today ----
+// ---- Day navigation: view AND log to any of the last 7 days ----
+// viewDate is the selected date for the whole Today tab (food log, water, ring,
+// macros). It defaults to today and every Today-tab read/write is scoped to it.
 let viewDate = todayKey();
 
+// The active log is always the currently-viewed date's entries (loaded into `log`).
 function activeEntries() {
-  return viewDate === todayKey() ? log : loadLocal(STORAGE_KEYS.log + viewDate, []);
+  return log;
 }
 
 function minViewKey() {
@@ -2956,23 +2972,55 @@ function dayLabelFor(key) {
   return new Date(key + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
+// Longer label for the date-nav header: "Today" / full "Weekday, Mon D" for past days.
+function dayNavLabel(key) {
+  if (key === todayKey()) return 'Today';
+  return new Date(key + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+}
+
 function changeViewDate(delta) {
   const d = new Date(viewDate + 'T12:00:00');
   d.setDate(d.getDate() + delta);
   const key = dateKey(d);
-  if (key > todayKey() || key < minViewKey()) return;
+  if (key > todayKey() || key < minViewKey()) return;   // no future, max 7 days back
   viewDate = key;
   loadViewDate();
 }
 
+// "Today" shortcut — jump back to the current date from a past day.
+function goToday() {
+  if (viewDate === todayKey()) return;
+  viewDate = todayKey();
+  loadViewDate();
+}
+
+// Load a specific date's food entries into `log` (server first, cache fallback).
+async function loadDayLog(date) {
+  const result = await apiRequest(`/food?date=${encodeURIComponent(date)}`);
+  if (result.ok) {
+    log = result.body || [];
+    saveLocal(STORAGE_KEYS.log + date, log);
+  } else {
+    log = loadLocal(STORAGE_KEYS.log + date, []);
+  }
+}
+
 async function loadViewDate() {
   const isToday = viewDate === todayKey();
-  document.getElementById('dayLabel').textContent = dayLabelFor(viewDate);
+  document.getElementById('dayLabel').textContent = dayNavLabel(viewDate);
   document.getElementById('dayNext').disabled = viewDate >= todayKey();
   document.getElementById('dayPrev').disabled = viewDate <= minViewKey();
+  const todayBtn = document.getElementById('dayTodayBtn');
+  if (todayBtn) todayBtn.style.display = isToday ? 'none' : '';
+  const banner = document.getElementById('pastDayBanner');
+  if (banner) {
+    banner.style.display = isToday ? 'none' : '';
+    if (!isToday) banner.textContent = `Viewing ${dayNavLabel(viewDate)} — entries will be logged to this date`;
+  }
   document.getElementById('logHeading').textContent = isToday ? "Today's Log" : dayLabelFor(viewDate) + ' · Log';
-  document.querySelectorAll('.today-only').forEach(el => { el.style.display = isToday ? '' : 'none'; });
-  if (!isToday) await ensureHistory();
+  // Past days within the 7-day window are fully loggable — load that date's data.
+  await loadDayLog(viewDate);
+  await loadWater();
   renderLog();
   updateTotals();
   loadCoachNoteToday();
@@ -3004,22 +3052,6 @@ async function loadCoachNoteToday() {
 async function dismissCoachNote(id) {
   const res = await apiRequest('/coach-notes/' + id + '/dismiss', { method: 'PUT' });
   if (res.ok) loadCoachNoteToday();
-}
-
-// Copy a past entry into today's log.
-async function addPastToToday(i, btn) {
-  const e = activeEntries()[i];
-  if (!e) return;
-  if (btn) { btn.textContent = '✓'; btn.disabled = true; }
-  const entry = {
-    name: e.name, emoji: e.emoji || '🍽️',
-    cal: e.cal || 0, protein: e.protein || 0, carbs: e.carbs || 0, fiber: e.fiber || 0, fat: e.fat || 0,
-    source: e.source || 'Re-added', ts: Date.now(), date: todayKey()
-  };
-  const saved = await saveFoodEntry(entry);
-  log.push(saved);
-  saveLocal(STORAGE_KEYS.log + todayKey(), log);
-  setTimeout(() => { if (btn) { btn.textContent = '＋'; btn.disabled = false; } }, 1200);
 }
 
 function setUserEmail(text) {
@@ -3171,14 +3203,7 @@ async function persistGoals() {
 }
 
 async function loadTodayLog() {
-  const date = todayKey();
-  const result = await apiRequest(`/food?date=${encodeURIComponent(date)}`);
-  if (result.ok) {
-    log = result.body || [];
-    saveLocal(STORAGE_KEYS.log + date, log);
-  } else {
-    log = loadLocal(STORAGE_KEYS.log + date, []);
-  }
+  await loadDayLog(todayKey());
   renderLog();
   updateTotals();
 }
@@ -3214,13 +3239,13 @@ async function clearFoodByDateRemote(date) {
 }
 
 function saveLog() {
-  saveLocal(STORAGE_KEYS.log + todayKey(), log);
+  saveLocal(STORAGE_KEYS.log + viewDate, log);
 }
 
 async function deleteEntry(index) {
   const entry = log[index];
   if (entry?.id) {
-    await deleteFoodById(entry.id, todayKey());
+    await deleteFoodById(entry.id, viewDate);
   }
   log.splice(index, 1);
   saveLog();
@@ -3513,8 +3538,9 @@ async function saveEntryEdit() {
 
 async function clearLog() {
   if (log.length === 0) return;
-  if (!confirm('Clear today\'s log?')) return;
-  const date = todayKey();
+  const label = viewDate === todayKey() ? "today's" : `${dayNavLabel(viewDate)}'s`;
+  if (!confirm(`Clear ${label} log?`)) return;
+  const date = viewDate;
   if (currentUser) {
     await clearFoodByDateRemote(date);
   }
@@ -3575,7 +3601,7 @@ function toDisplayWeight(val, fromUnit) {
 }
 
 async function loadWater() {
-  const date = todayKey();
+  const date = viewDate;
   const result = await apiRequest(`/water?date=${encodeURIComponent(date)}`);
   if (result.ok) {
     waterEntry = { date, oz: result.body?.oz || 0 };
@@ -3588,7 +3614,7 @@ async function loadWater() {
 }
 
 async function saveWater(oz) {
-  const date = todayKey();
+  const date = viewDate;
   if (currentUser) {
     const result = await apiRequest('/water', { method: 'POST', body: JSON.stringify({ date, oz }) });
     if (result.ok) {
@@ -3706,7 +3732,7 @@ async function saveCustomFood(logNow, saveToLibrary = true) {
       serving_grams: food.serving_grams ?? null,
       cup_grams: cfCurrentDensity?.cup_grams ?? null, tbsp_grams: cfCurrentDensity?.tbsp_grams ?? null,
       tsp_grams: cfCurrentDensity?.tsp_grams ?? null, each_grams: cfCurrentDensity?.each_grams ?? null,
-      ts: Date.now(), date: todayKey()
+      ts: Date.now(), date: viewDate
     };
     const saved = await saveFoodEntry(entry);
     log.push(saved);
@@ -3781,19 +3807,22 @@ function renderLog() {
   const isToday = viewDate === todayKey();
   const entries = activeEntries();
   if (entries.length === 0) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🍽️</div><p>${isToday ? 'No food logged yet.<br>Tap Photo, Barcode, or Custom to add.' : 'Nothing logged this day.'}</p></div>`;
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🍽️</div><p>No food logged${isToday ? ' yet' : ' this day'}.<br>Tap Photo, Barcode, or Custom to add.</p></div>`;
     return;
   }
+  // Entries within the 7-day window are editable/deletable; older days are read-only
+  // (unreachable via nav, but guarded for safety).
+  const editable = viewDate >= minViewKey();
   el.innerHTML = entries.map((e, i) => {
     const timeStr = e.ts ? new Date(e.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
     const netCarbs = Math.max(0, (e.carbs || 0) - (e.fiber || 0));
     const carbDisplay = showNet
       ? `<span class="entry-macro netcarb" title="Net carbs">NC: ${Math.round(netCarbs)}g</span>`
       : `<span class="entry-macro" style="color:var(--carbs)">C: ${Math.round(e.carbs||0)}g</span>`;
-    const rowAttr = isToday ? `onclick="openEditEntry(${i})" title="Tap to edit"` : '';
-    const action = isToday
+    const rowAttr = editable ? `onclick="openEditEntry(${i})" title="Tap to edit"` : '';
+    const action = editable
       ? `<button class="entry-del" onclick="event.stopPropagation(); deleteEntry(${i})" title="Remove">✕</button>`
-      : `<button class="entry-add-today" onclick="event.stopPropagation(); addPastToToday(${i}, this)" title="Add to today">＋</button>`;
+      : '';
     return `
     <div class="log-entry" ${rowAttr}>
       <div class="entry-thumb">${displayEmoji(e.name, e.emoji)}</div>
@@ -3933,7 +3962,7 @@ async function addPhotoEntry() {
     serving: `${fmtQty((photoResult.serving_qty > 0 ? photoResult.serving_qty : 1) * p)} ${canonUnit(photoResult.serving_unit)}`,
     serving_grams: (photoResult.serving_grams > 0) ? Math.round(photoResult.serving_grams * p) : null,
     ts: Date.now(),
-    date: todayKey()
+    date: viewDate
   };
   const saved = await saveFoodEntry(entry);
   log.push(saved);
@@ -4276,7 +4305,7 @@ async function addBarcodeEntry() {
     serving: `${amount} ${unitLabel} (${Math.round(grams)} g)`,
     serving_grams: grams > 0 ? Math.round(grams) : null,
     ts: Date.now(),
-    date: todayKey()
+    date: viewDate
   };
   const saved = await saveFoodEntry(entry);
   log.push(saved);
@@ -5095,7 +5124,7 @@ async function addWater(delta) {
 }
 
 async function loadWater() {
-  const date = todayKey();
+  const date = viewDate;
   const result = await apiRequest(`/water?date=${encodeURIComponent(date)}`);
   if (result.ok) {
     waterEntry = { date, oz: result.body?.oz || 0 };
@@ -5364,7 +5393,7 @@ async function logCustomFood(id) {
     source: isRecipe ? `Recipe · ${qty} serving${qty !== 1 ? 's' : ''}` : `Custom · ${qty !== 1 ? qty + '× ' : ''}${f.serving || '1 serving'}`,
     serving: isRecipe ? `${qty} serving${qty !== 1 ? 's' : ''}` : `${qty !== 1 ? qty + '× ' : ''}${f.serving || '1 serving'}`,
     serving_grams: (f.serving_grams != null) ? Math.round(Number(f.serving_grams) * qty) : null,
-    ts: Date.now(), date: todayKey()
+    ts: Date.now(), date: viewDate
   };
   const saved = await saveFoodEntry(entry);
   log.push(saved);
@@ -5562,7 +5591,7 @@ async function logMealTemplate(id) {
     emoji: t.emoji || '🍽️',
     cal: total.cal, protein: total.protein, carbs: total.carbs,
     fat: total.fat, fiber: total.fiber, sugar: total.sugar,
-    source: 'Meal template', ts: Date.now(), date: todayKey()
+    source: 'Meal template', ts: Date.now(), date: viewDate
   };
   const saved = await saveFoodEntry(entry);
   log.push(saved);
@@ -5603,7 +5632,7 @@ async function quickLog(i) {
     fiber: (f.fiber || 0) * qty, sugar: (f.sugar || 0) * qty, fat: f.fat * qty,
     source, serving, serving_grams: grams,
     cup_grams: f.cup_grams ?? null, tbsp_grams: f.tbsp_grams ?? null, tsp_grams: f.tsp_grams ?? null, each_grams: f.each_grams ?? null,
-    ts: Date.now(), date: todayKey()
+    ts: Date.now(), date: viewDate
   };
   const saved = await saveFoodEntry(entry);
   log.push(saved);
@@ -5636,7 +5665,7 @@ async function quickAiEstimate() {
     source: 'AI estimate',
     serving: `${fmtQty(r.serving_qty > 0 ? r.serving_qty : 1)} ${canonUnit(r.serving_unit)}`,
     serving_grams: (r.serving_grams > 0) ? Math.round(r.serving_grams) : null,
-    ts: Date.now(), date: todayKey()
+    ts: Date.now(), date: viewDate
   };
   const saved = await saveFoodEntry(entry);
   log.push(saved);
@@ -5924,7 +5953,7 @@ async function logSearchResult() {
     source: (r.source === 'ai' ? 'AI estimate' : 'USDA') + ` · ${fmtQty(qty)} ${unit}`,
     serving: `${fmtQty(qty)} ${unit}`,
     serving_grams: s.grams != null ? Math.round(s.grams) : null,
-    ts: Date.now(), date: todayKey()
+    ts: Date.now(), date: viewDate
   };
   const saved = await saveFoodEntry(entry);
   log.push(saved); saveLog(); renderLog(); updateTotals();
