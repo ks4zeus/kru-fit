@@ -999,6 +999,195 @@ export default {
     }
 
     if (segments[1] === "workouts") {
+      // ===== Detailed workout tracking (exercises / sets / history / templates) =====
+      const safeParse = (s: any): any[] => { try { return typeof s === "string" ? (JSON.parse(s) || []) : (s || []); } catch { return []; } };
+      const epley = (wt: number, reps: number) => wt * (1 + reps / 30);
+      // Fetch all sets for a list of exercise ids in one query, grouped by exercise_id.
+      const setsByExercise = async (exIds: number[]): Promise<Record<string, any[]>> => {
+        const byEx: Record<string, any[]> = {};
+        if (!exIds.length) return byEx;
+        const ph = exIds.map(() => "?").join(",");
+        const { results } = await db
+          .prepare(`SELECT * FROM workout_sets WHERE user_id = ? AND exercise_id IN (${ph}) ORDER BY exercise_id ASC, set_number ASC`)
+          .bind(userEmail, ...exIds).all();
+        for (const s of (results || []) as any[]) (byEx[s.exercise_id] = byEx[s.exercise_id] || []).push(s);
+        return byEx;
+      };
+
+      // ---- /workouts/exercises ----
+      if (segments[2] === "exercises") {
+        if (request.method === "GET" && segments.length === 3) {
+          const wid = Number(url.searchParams.get("workout_id"));
+          if (!Number.isFinite(wid)) return jsonResponse({ error: "workout_id required" }, 400);
+          const { results: exs } = await db
+            .prepare("SELECT * FROM workout_exercises WHERE user_id = ? AND workout_id = ? ORDER BY order_index ASC, id ASC")
+            .bind(userEmail, wid).all();
+          const exList = (exs || []) as any[];
+          const byEx = await setsByExercise(exList.map((e) => e.id));
+          return jsonResponse(exList.map((e) => ({ ...e, sets: byEx[e.id] || [] })));
+        }
+        if (request.method === "POST" && segments.length === 3) {
+          const b = await parseJson(request);
+          if (!b?.workout_id || !b?.exercise_name) return jsonResponse({ error: "workout_id and exercise_name required" }, 400);
+          const ins = await db
+            .prepare("INSERT INTO workout_exercises (user_id, workout_id, exercise_name, exercise_type, order_index) VALUES (?, ?, ?, ?, ?)")
+            .bind(userEmail, b.workout_id, b.exercise_name, b.exercise_type || "strength", b.order_index ?? 0).run();
+          return jsonResponse({ id: ins.meta?.last_row_id, ...b, sets: [] });
+        }
+        const exId = Number(segments[3]);
+        if (request.method === "PUT" && Number.isFinite(exId)) {
+          const b = await parseJson(request);
+          await db
+            .prepare("UPDATE workout_exercises SET exercise_name = COALESCE(?, exercise_name), exercise_type = COALESCE(?, exercise_type), order_index = COALESCE(?, order_index) WHERE id = ? AND user_id = ?")
+            .bind(b?.exercise_name ?? null, b?.exercise_type ?? null, b?.order_index ?? null, exId, userEmail).run();
+          return jsonResponse({ id: exId, ...b });
+        }
+        if (request.method === "DELETE" && Number.isFinite(exId)) {
+          await db.prepare("DELETE FROM workout_sets WHERE user_id = ? AND exercise_id = ?").bind(userEmail, exId).run();
+          await db.prepare("DELETE FROM workout_exercises WHERE id = ? AND user_id = ?").bind(exId, userEmail).run();
+          return jsonResponse({ success: true });
+        }
+      }
+
+      // ---- /workouts/sets ----
+      if (segments[2] === "sets") {
+        if (request.method === "POST" && segments.length === 3) {
+          const b = await parseJson(request);
+          if (!b?.exercise_id) return jsonResponse({ error: "exercise_id required" }, 400);
+          const ins = await db
+            .prepare("INSERT INTO workout_sets (user_id, exercise_id, set_number, reps, weight, weight_unit, distance, distance_unit, duration_seconds, completed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(userEmail, b.exercise_id, b.set_number ?? 1, b.reps ?? null, b.weight ?? null, b.weight_unit || "lbs", b.distance ?? null, b.distance_unit || "mi", b.duration_seconds ?? null, b.completed ?? 1).run();
+          return jsonResponse({ id: ins.meta?.last_row_id, ...b });
+        }
+        const setId = Number(segments[3]);
+        if (request.method === "PUT" && Number.isFinite(setId)) {
+          const b = await parseJson(request);
+          await db
+            .prepare("UPDATE workout_sets SET reps = COALESCE(?, reps), weight = COALESCE(?, weight), weight_unit = COALESCE(?, weight_unit), distance = COALESCE(?, distance), duration_seconds = COALESCE(?, duration_seconds), completed = COALESCE(?, completed) WHERE id = ? AND user_id = ?")
+            .bind(b?.reps ?? null, b?.weight ?? null, b?.weight_unit ?? null, b?.distance ?? null, b?.duration_seconds ?? null, b?.completed ?? null, setId, userEmail).run();
+          return jsonResponse({ id: setId, ...b });
+        }
+        if (request.method === "DELETE" && Number.isFinite(setId)) {
+          await db.prepare("DELETE FROM workout_sets WHERE id = ? AND user_id = ?").bind(setId, userEmail).run();
+          return jsonResponse({ success: true });
+        }
+      }
+
+      // ---- /workouts/history/:exercise_name  (last 5 sessions with all sets) ----
+      if (segments[2] === "history" && segments[3] && request.method === "GET") {
+        const name = decodeURIComponent(segments[3]);
+        const { results: rows } = await db
+          .prepare(`SELECT we.id AS exercise_id, we.workout_id, w.date, w.ts
+                    FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
+                    WHERE we.user_id = ? AND LOWER(we.exercise_name) = LOWER(?)
+                    ORDER BY w.date DESC, w.ts DESC, we.id DESC LIMIT 5`)
+          .bind(userEmail, name).all();
+        const sessions = (rows || []) as any[];
+        const byEx = await setsByExercise(sessions.map((s) => s.exercise_id));
+        return jsonResponse(sessions.map((s) => ({ workout_id: s.workout_id, exercise_id: s.exercise_id, date: s.date, sets: byEx[s.exercise_id] || [] })));
+      }
+
+      // ---- /workouts/exercise-history/:exercise_name?days=90  (progress charts) ----
+      if (segments[2] === "exercise-history" && segments[3] && request.method === "GET") {
+        const name = decodeURIComponent(segments[3]);
+        const days = Number(url.searchParams.get("days")) || 90;
+        const { results: rows } = await db
+          .prepare(`SELECT we.id AS exercise_id, we.workout_id, w.date, w.ts
+                    FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
+                    WHERE we.user_id = ? AND LOWER(we.exercise_name) = LOWER(?) AND w.date >= date('now', ?)
+                    ORDER BY w.date ASC, w.ts ASC`)
+          .bind(userEmail, name, `-${days} days`).all();
+        const sessions = (rows || []) as any[];
+        const byEx = await setsByExercise(sessions.map((s) => s.exercise_id));
+        const out = sessions.map((s) => {
+          const setsArr = byEx[s.exercise_id] || [];
+          const done = setsArr.filter((x) => x.completed && x.weight != null && x.reps != null);
+          const max_weight = done.length ? Math.max(...done.map((x) => x.weight)) : null;
+          const total_volume = setsArr.filter((x) => x.completed).reduce((t, x) => t + (Number(x.reps) || 0) * (Number(x.weight) || 0), 0);
+          const e1rm = done.length ? Math.max(...done.map((x) => epley(x.weight, x.reps))) : null;
+          return { date: s.date, workout_id: s.workout_id, sets: setsArr, max_weight, total_volume, estimated_1rm: e1rm != null ? Math.round(e1rm * 10) / 10 : null };
+        });
+        const prRow = await db
+          .prepare(`SELECT ws.weight, ws.reps, w.date
+                    FROM workout_sets ws JOIN workout_exercises we ON we.id = ws.exercise_id JOIN workouts w ON w.id = we.workout_id
+                    WHERE ws.user_id = ? AND LOWER(we.exercise_name) = LOWER(?) AND ws.completed = 1 AND ws.weight IS NOT NULL
+                    ORDER BY ws.weight DESC, ws.reps DESC LIMIT 1`)
+          .bind(userEmail, name).first<any>();
+        return jsonResponse({ sessions: out, pr: prRow ? { weight: prRow.weight, reps: prRow.reps, date: prRow.date } : null });
+      }
+
+      // ---- /workouts/templates ----
+      if (segments[2] === "templates") {
+        if (request.method === "GET" && segments.length === 3) {
+          const { results } = await db
+            .prepare("SELECT * FROM workout_templates WHERE user_id = ? ORDER BY updated_at DESC")
+            .bind(userEmail).all();
+          return jsonResponse((results || []).map((t: any) => ({ ...t, exercises: safeParse(t.exercises) })));
+        }
+        if (request.method === "POST" && segments.length === 3) {
+          const b = await parseJson(request);
+          if (!b?.name) return jsonResponse({ error: "name required" }, 400);
+          const ins = await db
+            .prepare("INSERT INTO workout_templates (user_id, name, exercises) VALUES (?, ?, ?)")
+            .bind(userEmail, b.name, JSON.stringify(b.exercises || [])).run();
+          return jsonResponse({ id: ins.meta?.last_row_id, name: b.name, exercises: b.exercises || [] });
+        }
+        const tid = Number(segments[3]);
+        if (request.method === "PUT" && Number.isFinite(tid) && segments.length === 4) {
+          const b = await parseJson(request);
+          await db
+            .prepare("UPDATE workout_templates SET name = COALESCE(?, name), exercises = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?")
+            .bind(b?.name ?? null, JSON.stringify(b?.exercises || []), tid, userEmail).run();
+          return jsonResponse({ id: tid, name: b?.name, exercises: b?.exercises || [] });
+        }
+        if (request.method === "DELETE" && Number.isFinite(tid) && segments.length === 4) {
+          await db.prepare("DELETE FROM workout_templates WHERE id = ? AND user_id = ?").bind(tid, userEmail).run();
+          return jsonResponse({ success: true });
+        }
+        // POST /workouts/templates/:id/start — create a session pre-filled from history/defaults.
+        if (request.method === "POST" && Number.isFinite(tid) && segments[4] === "start") {
+          const b = await parseJson(request).catch(() => ({} as any));
+          const tpl = await db.prepare("SELECT * FROM workout_templates WHERE id = ? AND user_id = ?").bind(tid, userEmail).first<any>();
+          if (!tpl) return jsonResponse({ error: "Template not found" }, 404);
+          const tplExs = safeParse(tpl.exercises);
+          const date = b?.date || new Date().toISOString().slice(0, 10);
+          const ts = b?.ts ?? Date.now();
+          const name = b?.name || tpl.name;
+          const wIns = await db.prepare("INSERT INTO workouts (user_id, date, name, minutes, calories, distance, ts) VALUES (?, ?, ?, 0, 0, NULL, ?)")
+            .bind(userEmail, date, name, ts).run();
+          const workoutId = wIns.meta?.last_row_id;
+          const outExs: any[] = [];
+          for (let i = 0; i < tplExs.length; i++) {
+            const te = tplExs[i];
+            const exIns = await db.prepare("INSERT INTO workout_exercises (user_id, workout_id, exercise_name, exercise_type, order_index) VALUES (?, ?, ?, ?, ?)")
+              .bind(userEmail, workoutId, te.exercise_name, te.exercise_type || "strength", i).run();
+            const exerciseId = exIns.meta?.last_row_id as number;
+            // Pre-fill from the most recent prior session of this exercise, else template defaults.
+            const lastEx = await db.prepare(`SELECT we.id FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
+                    WHERE we.user_id = ? AND LOWER(we.exercise_name) = LOWER(?) AND we.id != ?
+                    ORDER BY w.date DESC, w.ts DESC, we.id DESC LIMIT 1`).bind(userEmail, te.exercise_name, exerciseId).first<any>();
+            let prefill: any[] = [];
+            if (lastEx) {
+              const { results: lastSets } = await db.prepare("SELECT reps, weight, weight_unit, distance, distance_unit, duration_seconds FROM workout_sets WHERE user_id = ? AND exercise_id = ? ORDER BY set_number ASC")
+                .bind(userEmail, lastEx.id).all();
+              prefill = (lastSets || []).map((s: any, idx: number) => ({ set_number: idx + 1, reps: s.reps, weight: s.weight, weight_unit: s.weight_unit, distance: s.distance, distance_unit: s.distance_unit, duration_seconds: s.duration_seconds }));
+            }
+            if (!prefill.length) {
+              const n = Math.max(1, Number(te.default_sets) || 1);
+              for (let k = 0; k < n; k++) prefill.push({ set_number: k + 1, reps: te.default_reps ?? null, weight: te.default_weight ?? null, weight_unit: te.default_weight_unit || "lbs" });
+            }
+            const outSets: any[] = [];
+            for (const s of prefill) {
+              const sIns = await db.prepare("INSERT INTO workout_sets (user_id, exercise_id, set_number, reps, weight, weight_unit, distance, distance_unit, duration_seconds, completed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)")
+                .bind(userEmail, exerciseId, s.set_number, s.reps ?? null, s.weight ?? null, s.weight_unit || "lbs", s.distance ?? null, s.distance_unit || "mi", s.duration_seconds ?? null).run();
+              outSets.push({ id: sIns.meta?.last_row_id, exercise_id: exerciseId, ...s, completed: 0 });
+            }
+            outExs.push({ id: exerciseId, workout_id: workoutId, exercise_name: te.exercise_name, exercise_type: te.exercise_type || "strength", order_index: i, sets: outSets });
+          }
+          return jsonResponse({ workout_id: workoutId, exercises: outExs });
+        }
+      }
+
       if (request.method === "GET" && segments[2] === "range") {
         const days = Number(url.searchParams.get("days")) || 365;
         const { results } = await db
@@ -1035,6 +1224,18 @@ export default {
         return jsonResponse({ id: inserted.meta?.last_row_id, ...body });
       }
 
+      // Finish/update a session (duration + calorie burn from the detailed tracker).
+      if (request.method === "PUT") {
+        const id = Number(segments[2]);
+        if (!Number.isFinite(id) || id <= 0) return jsonResponse({ error: "Invalid id" }, 400);
+        const body = await parseJson(request);
+        await db
+          .prepare("UPDATE workouts SET name = COALESCE(?, name), minutes = COALESCE(?, minutes), calories = COALESCE(?, calories) WHERE id = ? AND user_id = ?")
+          .bind(body?.name ?? null, body?.minutes ?? null, body?.calories ?? null, id, userEmail)
+          .run();
+        return jsonResponse({ id, ...body });
+      }
+
       if (request.method === "DELETE") {
         const idSegment = segments[2];
         if (!idSegment) {
@@ -1044,6 +1245,9 @@ export default {
         if (!Number.isFinite(id) || id <= 0) {
           return jsonResponse({ error: "Invalid id" }, 400);
         }
+        // Cascade: remove the session's detailed exercises + sets, then the session.
+        await db.prepare("DELETE FROM workout_sets WHERE user_id = ? AND exercise_id IN (SELECT id FROM workout_exercises WHERE user_id = ? AND workout_id = ?)").bind(userEmail, userEmail, id).run();
+        await db.prepare("DELETE FROM workout_exercises WHERE user_id = ? AND workout_id = ?").bind(userEmail, id).run();
         await db
           .prepare("DELETE FROM workouts WHERE id = ? AND user_id = ?")
           .bind(id, userEmail)

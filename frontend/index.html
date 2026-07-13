@@ -1094,6 +1094,77 @@
   .wk-date-head .wk-date-cal { font-size: 12px; font-family: var(--mono); color: var(--fiber); flex-shrink: 0; }
   .list-toggle-btn { display: block; width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px; margin-top: 4px; color: var(--muted); font-size: 13px; font-family: var(--font); font-weight: 600; cursor: pointer; }
   .list-toggle-btn:active { opacity: 0.7; }
+  /* ===== Detailed workout tracking ===== */
+  .wk-tpl-card { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; }
+  .wk-tpl-card .wk-tpl-main { flex: 1; min-width: 0; }
+  .wk-tpl-card .wk-tpl-name { font-size: 15px; font-weight: 700; }
+  .wk-tpl-card .wk-tpl-sub { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
+  .wk-tpl-card .wk-tpl-act { background: none; border: none; color: var(--muted); font-size: 15px; cursor: pointer; padding: 4px 6px; flex-shrink: 0; }
+  .wk-tpl-card .wk-tpl-act:hover { color: var(--text); }
+  .wk-tpl-empty { color: var(--muted); font-size: 13px; padding: 6px 2px 10px; }
+  .wk-build-link { display: inline-block; background: none; border: none; color: var(--accent, #f5a623); font-size: 13px; font-weight: 600; font-family: var(--font); cursor: pointer; padding: 6px 2px; }
+  /* Full-screen modal (session + progress) */
+  .wk-full-bg { align-items: stretch; justify-content: center; }
+  .wk-full { border-radius: 0; max-width: 560px; max-height: 100vh; height: 100vh; padding: 0 16px 32px; animation: none; }
+  .wk-sess-head { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 12px 0; background: var(--surface); border-bottom: 1px solid var(--border); margin: 0 -16px 14px; padding-left: 12px; padding-right: 12px; }
+  .wk-sess-x { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; flex-shrink: 0; width: 32px; height: 32px; }
+  .wk-sess-name { flex: 1; min-width: 0; background: transparent; border: none; color: var(--text); font-size: 16px; font-weight: 700; padding: 4px; }
+  .wk-sess-name-static { padding: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wk-sess-timer { font-family: var(--mono); font-size: 15px; color: var(--muted); flex-shrink: 0; }
+  .wk-sess-finish { background: var(--protein); color: #0a1a12; border: none; border-radius: 9px; font-weight: 700; font-size: 13px; padding: 8px 12px; cursor: pointer; flex-shrink: 0; }
+  .wk-ex-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-bottom: 12px; }
+  .wk-ex-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .wk-ex-name { flex: 1; min-width: 0; background: transparent; border: none; color: var(--text); font-size: 15px; font-weight: 700; padding: 2px; }
+  .wk-ex-move { background: none; border: none; color: var(--muted); font-size: 13px; cursor: pointer; padding: 2px 4px; flex-shrink: 0; }
+  .wk-ex-remove { background: none; border: none; color: var(--muted); font-size: 15px; cursor: pointer; padding: 2px 5px; flex-shrink: 0; }
+  .wk-ex-remove:hover { color: var(--danger); }
+  .wk-ex-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2px 7px; border-radius: 6px; background: var(--surface2); color: var(--muted); }
+  .wk-ex-badge.strength { background: rgba(245,166,35,.15); color: #f5a623; }
+  .wk-ex-badge.bodyweight { background: rgba(96,165,250,.15); color: #60a5fa; }
+  .wk-ex-badge.cardio { background: rgba(74,222,128,.15); color: #4ade80; }
+  .wk-ex-last { font-size: 12px; color: var(--muted); font-family: var(--mono); margin: 2px 0 8px; }
+  .wk-ex-progress { background: none; border: none; color: #60a5fa; font-size: 12px; font-weight: 600; cursor: pointer; font-family: var(--font); padding: 0; }
+  .wk-set-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+  .wk-set-row.done { background: rgba(74,222,128,.08); border-radius: 8px; padding: 6px; margin: 0 -6px; }
+  .wk-set-num { width: 20px; font-family: var(--mono); font-size: 13px; color: var(--muted); flex-shrink: 0; text-align: center; }
+  .wk-set-in { width: 62px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 14px; padding: 7px 8px; text-align: center; }
+  .wk-set-lbl { font-size: 11px; color: var(--muted); }
+  .wk-unit-tog { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); border-radius: 8px; font-size: 12px; font-weight: 700; padding: 6px 8px; cursor: pointer; flex-shrink: 0; }
+  .wk-set-check { margin-left: auto; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface2); color: var(--muted); font-size: 15px; cursor: pointer; flex-shrink: 0; }
+  .wk-set-check.done { background: var(--protein); color: #0a1a12; border-color: var(--protein); }
+  .wk-set-del { background: none; border: none; color: var(--muted); font-size: 13px; cursor: pointer; padding: 2px; flex-shrink: 0; }
+  .wk-add-set { background: none; border: 1px dashed var(--border); color: var(--muted); border-radius: 9px; font-size: 13px; font-weight: 600; font-family: var(--font); padding: 8px; width: 100%; margin-top: 8px; cursor: pointer; }
+  .wk-add-ex-wrap { margin-bottom: 40px; }
+  .wk-add-ex-btn { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 12px; font-size: 14px; font-weight: 600; font-family: var(--font); padding: 12px; width: 100%; cursor: pointer; }
+  .wk-add-ex-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-top: 8px; }
+  .wk-add-ex-panel input[type=text] { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 9px 10px; font-size: 14px; }
+  .wk-ac-list { margin: 4px 0; }
+  .wk-ac-item { padding: 8px 10px; font-size: 14px; cursor: pointer; border-radius: 8px; }
+  .wk-ac-item:hover, .wk-ac-item.active { background: var(--surface2); }
+  .wk-type-sel { display: flex; gap: 6px; margin: 10px 0; }
+  .wk-type-btn { flex: 1; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); border-radius: 8px; font-size: 12px; font-weight: 600; padding: 8px; cursor: pointer; }
+  .wk-type-btn.active { background: var(--accent, #f5a623); color: #0a1a12; border-color: transparent; }
+  .wk-finish-summary { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; margin-bottom: 14px; }
+  .wk-finish-summary .fs-cell { background: var(--surface2); border-radius: 10px; padding: 12px; text-align: center; }
+  .wk-finish-summary .fs-val { font-size: 20px; font-weight: 700; font-family: var(--mono); }
+  .wk-finish-summary .fs-lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .wk-finish-save { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .wk-save-opt { font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .wk-tpl-row { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 8px; }
+  .wk-tpl-row .tr-line1 { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .wk-tpl-row input.tr-name { flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 8px; font-size: 14px; }
+  .wk-tpl-row .tr-defaults { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .wk-tpl-row .tr-defaults input { width: 54px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 7px; font-size: 13px; text-align: center; }
+  .wk-tpl-row .tr-defaults select { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 7px; font-size: 13px; }
+  .wk-tpl-row .tr-mini-lbl { font-size: 11px; color: var(--muted); }
+  .wk-pr-banner { background: linear-gradient(135deg, rgba(245,166,35,.18), rgba(245,166,35,.06)); border: 1px solid rgba(245,166,35,.4); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; font-weight: 600; color: #f5a623; text-align: center; }
+  .wk-hist-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 8px; overflow: hidden; }
+  .wk-hist-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; cursor: pointer; }
+  .wk-hist-date { font-weight: 700; font-size: 14px; }
+  .wk-hist-sub { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  .wk-hist-sets { padding: 0 14px 12px; }
+  .wk-hist-set { font-size: 13px; font-family: var(--mono); color: var(--text); padding: 3px 0; }
+  .wk-hist-set.incomplete { color: var(--muted); }
   .hist-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
   .hist-stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
   .hist-stat .hs-val { font-size: 20px; font-weight: 700; font-family: var(--mono); line-height: 1; }
@@ -2002,6 +2073,11 @@
         <div class="we-feedback" id="wkFeedback"></div>
       </div>
     </div>
+    <button class="btn-primary" id="startWorkoutBtn" style="margin-top:12px;background:#f5a623;color:#0a1a12" onclick="startBlankWorkout()">🏋️ Start workout</button>
+    <div id="templatesSection" style="margin-top:18px">
+      <div class="section-head" style="padding:0 0 8px"><h2>Your Templates</h2></div>
+      <div id="templatesList"></div>
+    </div>
     <div class="hist-period" style="margin-top:14px">
       <button class="period-btn active" onclick="setExercisePeriod(7,this)">7 days</button>
       <button class="period-btn" onclick="setExercisePeriod(30,this)">30 days</button>
@@ -2700,11 +2776,100 @@
     </div>
   </div>
 </div>
+
+<!-- ===== Detailed workout: session (full-screen) ===== -->
+<div class="modal-bg wk-full-bg" id="sessionModal">
+  <div class="modal wk-full">
+    <div class="wk-sess-head">
+      <button class="wk-sess-x" onclick="closeSession()" title="Close">✕</button>
+      <input class="wk-sess-name" id="sessName" onchange="renameSession(this.value)" aria-label="Workout name">
+      <span class="wk-sess-timer" id="sessTimer">00:00</span>
+      <button class="wk-sess-finish" onclick="openFinishSheet()">Finish</button>
+    </div>
+    <div id="sessExercises"></div>
+    <div class="wk-add-ex-wrap">
+      <button class="wk-add-ex-btn" id="addExBtn" onclick="toggleAddExercise()">＋ Add exercise</button>
+      <div class="wk-add-ex-panel" id="addExPanel" style="display:none">
+        <input type="text" id="addExInput" placeholder="Exercise name…" autocomplete="off" oninput="onAddExInput()">
+        <div class="wk-ac-list" id="addExAc"></div>
+        <div class="wk-type-sel" id="addExType">
+          <button type="button" class="wk-type-btn active" data-type="strength" onclick="setAddExType('strength')">Strength</button>
+          <button type="button" class="wk-type-btn" data-type="bodyweight" onclick="setAddExType('bodyweight')">Bodyweight</button>
+          <button type="button" class="wk-type-btn" data-type="cardio" onclick="setAddExType('cardio')">Cardio</button>
+        </div>
+        <button class="btn-primary" onclick="confirmAddExercise()">Add exercise</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Finish summary sheet -->
+<div class="modal-bg" id="finishSheet">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Workout complete 💪</div>
+    <div id="finishSummary" class="wk-finish-summary"></div>
+    <div class="wk-finish-save">
+      <label class="wk-save-opt"><input type="radio" name="finishSave" value="none" checked onchange="onFinishSaveChange()"> Don't save as template</label>
+      <label class="wk-save-opt"><input type="radio" name="finishSave" value="new" onchange="onFinishSaveChange()"> Save as new template</label>
+      <label class="wk-save-opt"><input type="radio" name="finishSave" value="update" onchange="onFinishSaveChange()"> Update existing template</label>
+      <input type="text" id="finishTplName" placeholder="Template name" style="display:none;width:100%;margin-top:8px">
+      <select id="finishTplSelect" style="display:none;width:100%;margin-top:8px"></select>
+    </div>
+    <button class="btn-primary" onclick="saveAndCloseSession()">Save &amp; close</button>
+    <button class="btn-cancel" onclick="closeFinishSheet()">Back</button>
+  </div>
+</div>
+
+<!-- Template builder -->
+<div class="modal-bg" id="tplBuilderModal">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="tplBuilderTitle">Build template</div>
+    <datalist id="commonExList"></datalist>
+    <input type="text" id="tplName" placeholder="Template name" style="width:100%;margin-bottom:12px">
+    <div id="tplRows"></div>
+    <button class="wk-add-ex-btn" onclick="addBuilderRow()">＋ Add exercise</button>
+    <button class="btn-primary" style="margin-top:12px" onclick="saveTemplate()">Save template</button>
+    <button class="btn-cancel" onclick="closeTemplateBuilder()">Cancel</button>
+  </div>
+</div>
+
+<!-- Per-exercise progress (full-screen) -->
+<div class="modal-bg wk-full-bg" id="progressModal">
+  <div class="modal wk-full">
+    <div class="wk-sess-head">
+      <button class="wk-sess-x" onclick="closeProgress()">✕</button>
+      <span class="wk-sess-name wk-sess-name-static" id="progressName"></span>
+    </div>
+    <div class="hist-period" id="progressPeriods" style="margin-bottom:12px">
+      <button class="period-btn active" onclick="setProgressPeriod(30,this)">30d</button>
+      <button class="period-btn" onclick="setProgressPeriod(90,this)">90d</button>
+      <button class="period-btn" onclick="setProgressPeriod(180,this)">180d</button>
+      <button class="period-btn" onclick="setProgressPeriod(3650,this)">All</button>
+    </div>
+    <div id="progressPR"></div>
+    <div id="progressCharts"></div>
+    <div id="progressSessions"></div>
+  </div>
+</div>
+
+<!-- Past session detail (read-only) -->
+<div class="modal-bg" id="sessionDetailModal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="sdTitle">Workout</div>
+    <div id="sdBody"></div>
+    <button class="btn-primary" id="sdUseTemplate" style="margin-top:12px" onclick="useSessionAsTemplate()">Use as template</button>
+    <button class="btn-cancel" onclick="closeSessionDetail()">Close</button>
+  </div>
+</div>
+
 <script>
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v3.1';
+const APP_VERSION = 'v3.2';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -2787,6 +2952,30 @@ function displayEmoji(name, stored) {
 
 let currentUser = null;
 let goals = { ...defaultGoals };
+// ---- Detailed workout tracking state ----
+const COMMON_EXERCISES = [
+  'Bench Press', 'Squat', 'Deadlift', 'Overhead Press', 'Barbell Row',
+  'Incline Bench Press', 'Romanian Deadlift', 'Leg Press', 'Pull Up', 'Chin Up',
+  'Dumbbell Curl', 'Tricep Pushdown', 'Lateral Raise', 'Face Pull',
+  'Hip Thrust', 'Leg Curl', 'Leg Extension', 'Calf Raise', 'Chest Fly',
+  'Cable Row', 'Lat Pulldown', 'Shrug', 'Front Raise', 'Rear Delt Fly',
+  'Push Up', 'Dip', 'Sit Up', 'Crunch', 'Plank', 'Lunge',
+  'Glute Bridge', 'Mountain Climber', 'Burpee', 'Jump Squat',
+  'Running', 'Cycling', 'Rowing', 'Jump Rope', 'Stair Climber', 'Elliptical'
+];
+const CARDIO_EXERCISES = new Set(['Running', 'Cycling', 'Rowing', 'Jump Rope', 'Stair Climber', 'Elliptical']);
+const BODYWEIGHT_EXERCISES = new Set(['Pull Up', 'Chin Up', 'Push Up', 'Dip', 'Sit Up', 'Crunch', 'Plank', 'Mountain Climber', 'Burpee', 'Jump Squat', 'Glute Bridge']);
+function exerciseTypeFor(name) {
+  if (CARDIO_EXERCISES.has(name)) return 'cardio';
+  if (BODYWEIGHT_EXERCISES.has(name)) return 'bodyweight';
+  return 'strength';
+}
+let workoutTemplates = [];
+let workoutUnit = localStorage.getItem('krufit_workout_unit') || 'lbs';
+let sessionState = null;      // { workoutId, name, startTs, timer, exercises: [...] }
+let addExType = 'strength';
+let progressState = { name: null, period: 90 };
+let sessionDetailWorkoutId = null;
 let log = [];
 let weightLog = {};
 let waterEntry = { oz: 0, date: todayKey() };
@@ -4764,6 +4953,7 @@ function renderExercise() {
   populateActivities();
   onWorkoutInput();
   renderPendingSession();
+  renderTemplates();
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - exercisePeriod);
   const cutoffKey = dateKey(cutoff);
@@ -4824,14 +5014,14 @@ function renderExercise() {
       const parts = [];
       if (w.minutes) parts.push(Math.round(w.minutes) + ' min');
       if (w.distance) parts.push(fmtDist(w.distance));
-      return `<div class="workout-row">
+      return `<div class="workout-row" style="cursor:pointer" onclick="openSessionDetail(${Number(w.id) || 0})">
         <span class="wk-emoji">${meta.emoji}</span>
         <div class="wk-main">
           <div class="wk-name">${cfEsc(w.name)}</div>
           <div class="wk-sub">${parts.join(' · ')}</div>
         </div>
         <span class="wk-cals">${Math.round(w.calories || 0)} cal</span>
-        <button class="wk-del" onclick="deleteWorkoutSession('${sess.key}')" title="Remove">✕</button>
+        <button class="wk-del" onclick="event.stopPropagation(); deleteWorkoutSession('${sess.key}')" title="Remove">✕</button>
       </div>`;
     }
     const totMin = sess.items.reduce((s, w) => s + (w.minutes || 0), 0);
@@ -4869,6 +5059,538 @@ function renderExercise() {
 function loadMoreWorkouts() {
   exerciseDaysShown += 14;
   renderExercise();
+}
+
+// ===================== Detailed workout tracking =====================
+function fmtWeightNum(n) { const v = Math.round((Number(n) || 0) * 10) / 10; return Number.isInteger(v) ? String(v) : v.toFixed(1); }
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ---- Templates ----
+async function loadWorkoutTemplates() {
+  const res = await apiRequest('/workouts/templates');
+  workoutTemplates = (res.ok && res.body) ? res.body : [];
+  return workoutTemplates;
+}
+function templateLastUsed(t) {
+  // Most recent workouts row whose name matches the template name.
+  const matches = workouts.filter(w => (w.name || '') === t.name);
+  if (!matches.length) return null;
+  return matches.map(w => w.date).sort().reverse()[0];
+}
+function renderTemplates() {
+  const el = document.getElementById('templatesList');
+  if (!el) return;
+  const cards = workoutTemplates.map(t => {
+    const exs = Array.isArray(t.exercises) ? t.exercises : [];
+    const last = templateLastUsed(t);
+    const lastTxt = last ? 'last used ' + dayLabelFor(last) : 'not used yet';
+    return `<div class="wk-tpl-card" onclick="startTemplateWorkout(${Number(t.id)})">
+      <div class="wk-tpl-main">
+        <div class="wk-tpl-name">${cfEsc(t.name)}</div>
+        <div class="wk-tpl-sub">${exs.length} exercise${exs.length !== 1 ? 's' : ''} · ${lastTxt}</div>
+      </div>
+      <button class="wk-tpl-act" onclick="event.stopPropagation(); editTemplate(${Number(t.id)})" title="Edit">✏️</button>
+      <button class="wk-tpl-act" onclick="event.stopPropagation(); deleteTemplate(${Number(t.id)})" title="Delete">🗑</button>
+    </div>`;
+  }).join('');
+  const empty = workoutTemplates.length ? '' : `<div class="wk-tpl-empty">No templates yet — build one to reuse your routines.</div>`;
+  el.innerHTML = empty + cards + `<button class="wk-build-link" onclick="openTemplateBuilder()">＋ Build new template</button>`;
+}
+
+// ---- Session lifecycle ----
+async function startBlankWorkout() {
+  const name = 'Workout — ' + new Date(viewDateSafe() + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const ts = Date.now();
+  const res = await apiRequest('/workouts', { method: 'POST', body: JSON.stringify({ date: todayKey(), name, minutes: 0, calories: 0, ts }) });
+  const workoutId = res.ok ? res.body.id : ts;
+  sessionState = { workoutId, name, startTs: ts, exercises: [] };
+  openSessionModal();
+}
+function viewDateSafe() { return todayKey(); }
+
+async function startTemplateWorkout(templateId) {
+  const ts = Date.now();
+  const res = await apiRequest('/workouts/templates/' + templateId + '/start', { method: 'POST', body: JSON.stringify({ date: todayKey(), ts }) });
+  if (!res.ok || !res.body) { showToast('Could not start workout.'); return; }
+  const tpl = workoutTemplates.find(t => Number(t.id) === Number(templateId));
+  sessionState = {
+    workoutId: res.body.workout_id,
+    name: tpl ? tpl.name : 'Workout',
+    startTs: ts,
+    exercises: (res.body.exercises || []).map(e => ({ ...e, last: undefined }))
+  };
+  openSessionModal();
+  // Fetch "last session" labels (excluding this just-created session).
+  refreshLastLabels();
+}
+
+function openSessionModal() {
+  document.getElementById('sessName').value = sessionState.name;
+  document.getElementById('addExPanel').style.display = 'none';
+  renderSession();
+  openModal('sessionModal');
+  startSessionTimer();
+}
+function startSessionTimer() {
+  stopSessionTimer();
+  const tick = () => {
+    const s = Math.max(0, Math.floor((Date.now() - sessionState.startTs) / 1000));
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    const el = document.getElementById('sessTimer'); if (el) el.textContent = `${mm}:${ss}`;
+  };
+  tick();
+  sessionState.timer = setInterval(tick, 1000);
+}
+function stopSessionTimer() { if (sessionState && sessionState.timer) { clearInterval(sessionState.timer); sessionState.timer = null; } }
+
+async function refreshLastLabels() {
+  if (!sessionState) return;
+  for (const ex of sessionState.exercises) {
+    ex.last = await fetchLastLabel(ex.exercise_name, sessionState.workoutId);
+  }
+  if (sessionState) renderSession();
+}
+async function fetchLastLabel(name, excludeWorkoutId) {
+  const res = await apiRequest('/workouts/history/' + encodeURIComponent(name));
+  if (!res.ok || !Array.isArray(res.body)) return null;
+  const sess = res.body.find(s => Number(s.workout_id) !== Number(excludeWorkoutId));
+  if (!sess) return null;
+  const done = (sess.sets || []).filter(s => s.completed);
+  const use = done.length ? done : (sess.sets || []);
+  if (!use.length) return null;
+  const reps = use.map(s => s.reps), wts = use.map(s => s.weight);
+  const sameR = reps.every(r => r === reps[0]), sameW = wts.every(w => w === wts[0]);
+  if (sameR && sameW && wts[0] != null) return `Last: ${use.length}×${reps[0] ?? 0} @ ${fmtWeightNum(wts[0])} ${use[0].weight_unit || workoutUnit}`;
+  return 'Last: ' + use.map(s => `${s.reps ?? 0}×${s.weight != null ? fmtWeightNum(s.weight) : '–'}`).join(', ');
+}
+
+function renameSession(v) {
+  if (sessionState) sessionState.name = v.trim() || sessionState.name;
+}
+async function closeSession() {
+  stopSessionTimer();
+  // Discard a session that was started but has no exercises.
+  if (sessionState && sessionState.exercises.length === 0) {
+    await apiRequest('/workouts/' + sessionState.workoutId, { method: 'DELETE' });
+    workouts = workouts.filter(w => Number(w.id) !== Number(sessionState.workoutId));
+  }
+  sessionState = null;
+  closeModal('sessionModal');
+  await loadWorkouts();
+  renderExercise();
+}
+
+// ---- Session rendering ----
+function typeBadge(type) { return `<span class="wk-ex-badge ${type}">${type}</span>`; }
+function renderSession() {
+  const wrap = document.getElementById('sessExercises');
+  if (!wrap || !sessionState) return;
+  wrap.innerHTML = sessionState.exercises.map((ex, ei) => renderExerciseCard(ex, ei)).join('');
+}
+function renderExerciseCard(ex, ei) {
+  const isCardio = ex.exercise_type === 'cardio';
+  const setsHtml = (ex.sets || []).map((s, si) => {
+    const done = !!s.completed;
+    if (isCardio) {
+      return `<div class="wk-set-row ${done ? 'done' : ''}">
+        <span class="wk-set-num">${si + 1}</span>
+        <input class="wk-set-in" type="number" inputmode="numeric" placeholder="min" value="${s.duration_seconds != null ? Math.round(s.duration_seconds / 60) : ''}" onchange="updateSet(${ei},${si},'duration_min',this.value)">
+        <span class="wk-set-lbl">min</span>
+        <input class="wk-set-in" type="number" inputmode="decimal" placeholder="dist" value="${s.distance != null ? s.distance : ''}" onchange="updateSet(${ei},${si},'distance',this.value)">
+        <span class="wk-set-lbl">${s.distance_unit || 'mi'}</span>
+        <button class="wk-set-check ${done ? 'done' : ''}" onclick="toggleSetComplete(${ei},${si})">✓</button>
+        <button class="wk-set-del" onclick="removeSet(${ei},${si})" title="Remove set">✕</button>
+      </div>`;
+    }
+    return `<div class="wk-set-row ${done ? 'done' : ''}">
+      <span class="wk-set-num">${si + 1}</span>
+      <input class="wk-set-in" type="number" inputmode="numeric" placeholder="reps" value="${s.reps != null ? s.reps : ''}" onchange="updateSet(${ei},${si},'reps',this.value)">
+      <span class="wk-set-lbl">×</span>
+      <input class="wk-set-in" type="number" inputmode="decimal" placeholder="wt" value="${s.weight != null ? s.weight : ''}" onchange="updateSet(${ei},${si},'weight',this.value)">
+      <button class="wk-unit-tog" onclick="toggleSetUnit(${ei},${si})">${s.weight_unit || workoutUnit}</button>
+      <button class="wk-set-check ${done ? 'done' : ''}" onclick="toggleSetComplete(${ei},${si})">✓</button>
+      <button class="wk-set-del" onclick="removeSet(${ei},${si})" title="Remove set">✕</button>
+    </div>`;
+  }).join('');
+  return `<div class="wk-ex-card">
+    <div class="wk-ex-head">
+      <input class="wk-ex-name" value="${cfEsc(ex.exercise_name)}" onchange="renameExercise(${ei},this.value)">
+      <button class="wk-ex-move" onclick="moveExercise(${ei},-1)" title="Move up">▲</button>
+      <button class="wk-ex-move" onclick="moveExercise(${ei},1)" title="Move down">▼</button>
+      <button class="wk-ex-remove" onclick="removeExercise(${ei})" title="Remove exercise">✕</button>
+    </div>
+    <div class="wk-ex-head" style="gap:8px;margin-bottom:6px">
+      ${typeBadge(ex.exercise_type)}
+      <button class="wk-ex-progress" onclick="openProgress('${cfEsc(ex.exercise_name).replace(/'/g, "\\'")}')">📈 View progress</button>
+    </div>
+    ${ex.last ? `<div class="wk-ex-last">${cfEsc(ex.last)}</div>` : ''}
+    ${setsHtml}
+    <button class="wk-add-set" onclick="addSet(${ei})">＋ Add set</button>
+  </div>`;
+}
+
+// ---- Set / exercise mutations ----
+async function updateSet(ei, si, field, value) {
+  const ex = sessionState.exercises[ei]; if (!ex) return;
+  const s = ex.sets[si]; if (!s) return;
+  const body = {};
+  if (field === 'reps') { s.reps = value === '' ? null : Math.round(Number(value)); body.reps = s.reps; }
+  else if (field === 'weight') { s.weight = value === '' ? null : Number(value); body.weight = s.weight; }
+  else if (field === 'distance') { s.distance = value === '' ? null : Number(value); body.distance = s.distance; }
+  else if (field === 'duration_min') { s.duration_seconds = value === '' ? null : Math.round(Number(value) * 60); body.duration_seconds = s.duration_seconds; }
+  if (s.id) await apiRequest('/workouts/sets/' + s.id, { method: 'PUT', body: JSON.stringify(body) });
+}
+async function toggleSetUnit(ei, si) {
+  const s = sessionState.exercises[ei].sets[si];
+  s.weight_unit = (s.weight_unit || workoutUnit) === 'lbs' ? 'kg' : 'lbs';
+  workoutUnit = s.weight_unit;
+  localStorage.setItem('krufit_workout_unit', workoutUnit);
+  renderSession();
+  if (s.id) await apiRequest('/workouts/sets/' + s.id, { method: 'PUT', body: JSON.stringify({ weight_unit: s.weight_unit }) });
+}
+async function toggleSetComplete(ei, si) {
+  const s = sessionState.exercises[ei].sets[si];
+  s.completed = s.completed ? 0 : 1;
+  renderSession();
+  if (s.id) await apiRequest('/workouts/sets/' + s.id, { method: 'PUT', body: JSON.stringify({ completed: s.completed }) });
+}
+async function addSet(ei) {
+  const ex = sessionState.exercises[ei];
+  const last = ex.sets[ex.sets.length - 1];
+  const setNum = ex.sets.length + 1;
+  const draft = last
+    ? { set_number: setNum, reps: last.reps, weight: last.weight, weight_unit: last.weight_unit || workoutUnit, distance: last.distance, duration_seconds: last.duration_seconds, completed: 0 }
+    : { set_number: setNum, reps: null, weight: null, weight_unit: workoutUnit, completed: 0 };
+  const res = await apiRequest('/workouts/sets', { method: 'POST', body: JSON.stringify({ exercise_id: ex.id, ...draft }) });
+  draft.id = res.ok ? res.body.id : undefined;
+  ex.sets.push(draft);
+  renderSession();
+}
+async function removeSet(ei, si) {
+  const ex = sessionState.exercises[ei];
+  const s = ex.sets[si];
+  if (s.id) await apiRequest('/workouts/sets/' + s.id, { method: 'DELETE' });
+  ex.sets.splice(si, 1);
+  ex.sets.forEach((x, i) => x.set_number = i + 1);
+  renderSession();
+}
+async function renameExercise(ei, value) {
+  const ex = sessionState.exercises[ei];
+  ex.exercise_name = value.trim() || ex.exercise_name;
+  if (ex.id) await apiRequest('/workouts/exercises/' + ex.id, { method: 'PUT', body: JSON.stringify({ exercise_name: ex.exercise_name }) });
+  ex.last = await fetchLastLabel(ex.exercise_name, sessionState.workoutId);
+  renderSession();
+}
+async function removeExercise(ei) {
+  const ex = sessionState.exercises[ei];
+  if (ex.id) await apiRequest('/workouts/exercises/' + ex.id, { method: 'DELETE' });
+  sessionState.exercises.splice(ei, 1);
+  renderSession();
+}
+async function moveExercise(ei, dir) {
+  const arr = sessionState.exercises;
+  const ni = ei + dir;
+  if (ni < 0 || ni >= arr.length) return;
+  [arr[ei], arr[ni]] = [arr[ni], arr[ei]];
+  renderSession();
+  // Persist new order_index for both.
+  for (let i = 0; i < arr.length; i++) {
+    arr[i].order_index = i;
+    if (arr[i].id) apiRequest('/workouts/exercises/' + arr[i].id, { method: 'PUT', body: JSON.stringify({ order_index: i }) });
+  }
+}
+
+// ---- Add exercise (with autocomplete) ----
+function toggleAddExercise() {
+  const p = document.getElementById('addExPanel');
+  const show = p.style.display === 'none';
+  p.style.display = show ? '' : 'none';
+  if (show) { document.getElementById('addExInput').value = ''; document.getElementById('addExAc').innerHTML = ''; addExType = 'strength'; setAddExType('strength'); document.getElementById('addExInput').focus(); }
+}
+function onAddExInput() {
+  const q = document.getElementById('addExInput').value.trim().toLowerCase();
+  const ac = document.getElementById('addExAc');
+  if (!q) { ac.innerHTML = ''; return; }
+  const matches = COMMON_EXERCISES.filter(e => e.toLowerCase().includes(q)).slice(0, 5);
+  ac.innerHTML = matches.map(m => `<div class="wk-ac-item" onclick="pickAddExercise('${m.replace(/'/g, "\\'")}')">${m}</div>`).join('');
+}
+function pickAddExercise(name) {
+  document.getElementById('addExInput').value = name;
+  document.getElementById('addExAc').innerHTML = '';
+  setAddExType(exerciseTypeFor(name));
+}
+function setAddExType(type) {
+  addExType = type;
+  document.querySelectorAll('#addExType .wk-type-btn').forEach(b => b.classList.toggle('active', b.dataset.type === type));
+}
+async function confirmAddExercise() {
+  const name = document.getElementById('addExInput').value.trim();
+  if (!name) { showToast('Enter an exercise name.'); return; }
+  const orderIndex = sessionState.exercises.length;
+  const res = await apiRequest('/workouts/exercises', { method: 'POST', body: JSON.stringify({ workout_id: sessionState.workoutId, exercise_name: name, exercise_type: addExType, order_index: orderIndex }) });
+  const ex = { id: res.ok ? res.body.id : undefined, workout_id: sessionState.workoutId, exercise_name: name, exercise_type: addExType, order_index: orderIndex, sets: [], last: undefined };
+  sessionState.exercises.push(ex);
+  document.getElementById('addExPanel').style.display = 'none';
+  // Seed one set from the last session, else one blank set.
+  const label = await fetchLastLabel(name, sessionState.workoutId);
+  ex.last = label;
+  await addSet(sessionState.exercises.length - 1);
+  renderSession();
+}
+
+// ---- Finish ----
+function sessionStats() {
+  let exCount = sessionState.exercises.length, setsDone = 0, volume = 0;
+  sessionState.exercises.forEach(ex => ex.sets.forEach(s => {
+    if (s.completed) { setsDone++; volume += (Number(s.reps) || 0) * (Number(s.weight) || 0); }
+  }));
+  const minutes = Math.max(1, Math.round((Date.now() - sessionState.startTs) / 60000));
+  return { exCount, setsDone, volume, minutes };
+}
+function openFinishSheet() {
+  const st = sessionStats();
+  document.getElementById('finishSummary').innerHTML = `
+    <div class="fs-cell"><div class="fs-val">${st.exCount}</div><div class="fs-lbl">exercises</div></div>
+    <div class="fs-cell"><div class="fs-val">${st.setsDone}</div><div class="fs-lbl">sets done</div></div>
+    <div class="fs-cell"><div class="fs-val">${Math.round(st.volume).toLocaleString()}</div><div class="fs-lbl">volume (${workoutUnit})</div></div>
+    <div class="fs-cell"><div class="fs-val">${st.minutes}</div><div class="fs-lbl">minutes</div></div>`;
+  const sel = document.getElementById('finishTplSelect');
+  sel.innerHTML = workoutTemplates.map(t => `<option value="${t.id}">${cfEsc(t.name)}</option>`).join('');
+  document.getElementById('finishTplName').value = sessionState.name;
+  document.querySelector('input[name="finishSave"][value="none"]').checked = true;
+  onFinishSaveChange();
+  openModal('finishSheet');
+}
+function onFinishSaveChange() {
+  const v = document.querySelector('input[name="finishSave"]:checked').value;
+  document.getElementById('finishTplName').style.display = v === 'new' ? '' : 'none';
+  document.getElementById('finishTplSelect').style.display = v === 'update' ? '' : 'none';
+}
+function closeFinishSheet() { closeModal('finishSheet'); }
+function sessionToTemplateExercises() {
+  return sessionState.exercises.map(ex => {
+    const done = ex.sets.filter(s => s.completed);
+    const ref = done.length ? done : ex.sets;
+    const last = ref[ref.length - 1] || {};
+    return {
+      exercise_name: ex.exercise_name, exercise_type: ex.exercise_type,
+      default_sets: ref.length || 1, default_reps: last.reps ?? null,
+      default_weight: last.weight ?? null, default_weight_unit: last.weight_unit || workoutUnit
+    };
+  });
+}
+async function saveAndCloseSession() {
+  const st = sessionStats();
+  const calories = estimateWorkoutCals(5.0, st.minutes);
+  await apiRequest('/workouts/' + sessionState.workoutId, { method: 'PUT', body: JSON.stringify({ name: sessionState.name, minutes: st.minutes, calories }) });
+  const saveOpt = document.querySelector('input[name="finishSave"]:checked').value;
+  if (saveOpt === 'new') {
+    const name = document.getElementById('finishTplName').value.trim() || sessionState.name;
+    await apiRequest('/workouts/templates', { method: 'POST', body: JSON.stringify({ name, exercises: sessionToTemplateExercises() }) });
+  } else if (saveOpt === 'update') {
+    const id = document.getElementById('finishTplSelect').value;
+    const t = workoutTemplates.find(x => String(x.id) === String(id));
+    if (t) await apiRequest('/workouts/templates/' + id, { method: 'PUT', body: JSON.stringify({ name: t.name, exercises: sessionToTemplateExercises() }) });
+  }
+  stopSessionTimer();
+  sessionState = null;
+  closeModal('finishSheet');
+  closeModal('sessionModal');
+  await loadWorkouts();
+  await loadWorkoutTemplates();
+  renderExercise();
+  showToast('Workout saved 💪');
+}
+
+// ---- Template builder ----
+let builderRows = [];
+let builderEditId = null;
+function openTemplateBuilder(id) {
+  builderEditId = id || null;
+  document.getElementById('tplBuilderTitle').textContent = id ? 'Edit template' : 'Build template';
+  if (id) {
+    const t = workoutTemplates.find(x => Number(x.id) === Number(id));
+    document.getElementById('tplName').value = t ? t.name : '';
+    builderRows = t && Array.isArray(t.exercises) ? t.exercises.map(e => ({ ...e })) : [];
+  } else {
+    document.getElementById('tplName').value = '';
+    builderRows = [];
+  }
+  if (!builderRows.length) builderRows.push(newBuilderRow());
+  renderBuilderRows();
+  openModal('tplBuilderModal');
+}
+function editTemplate(id) { openTemplateBuilder(id); }
+function newBuilderRow() { return { exercise_name: '', exercise_type: 'strength', default_sets: 3, default_reps: 8, default_weight: '', default_weight_unit: workoutUnit }; }
+function addBuilderRow() { builderRows.push(newBuilderRow()); renderBuilderRows(); }
+function removeBuilderRow(i) { builderRows.splice(i, 1); renderBuilderRows(); }
+function moveBuilderRow(i, dir) { const ni = i + dir; if (ni < 0 || ni >= builderRows.length) return; [builderRows[i], builderRows[ni]] = [builderRows[ni], builderRows[i]]; renderBuilderRows(); }
+function updateBuilderRow(i, field, value) {
+  const r = builderRows[i]; if (!r) return;
+  if (field === 'exercise_name') { r.exercise_name = value; r.exercise_type = exerciseTypeFor(value.trim()); }
+  else if (field === 'default_sets' || field === 'default_reps') r[field] = value === '' ? null : Math.round(Number(value));
+  else if (field === 'default_weight') r[field] = value === '' ? null : Number(value);
+  else r[field] = value;
+  if (field === 'exercise_name') renderBuilderRows();
+}
+function renderBuilderRows() {
+  document.getElementById('tplRows').innerHTML = builderRows.map((r, i) => `
+    <div class="wk-tpl-row">
+      <div class="tr-line1">
+        <input class="tr-name" list="commonExList" placeholder="Exercise" value="${cfEsc(r.exercise_name || '')}" onchange="updateBuilderRow(${i},'exercise_name',this.value)">
+        <button class="wk-ex-move" onclick="moveBuilderRow(${i},-1)">▲</button>
+        <button class="wk-ex-move" onclick="moveBuilderRow(${i},1)">▼</button>
+        <button class="wk-ex-remove" onclick="removeBuilderRow(${i})">✕</button>
+      </div>
+      <div class="tr-defaults">
+        <select onchange="updateBuilderRow(${i},'exercise_type',this.value)">
+          ${['strength', 'bodyweight', 'cardio'].map(t => `<option value="${t}"${r.exercise_type === t ? ' selected' : ''}>${t}</option>`).join('')}
+        </select>
+        <span class="tr-mini-lbl">sets</span><input type="number" inputmode="numeric" value="${r.default_sets ?? ''}" onchange="updateBuilderRow(${i},'default_sets',this.value)">
+        <span class="tr-mini-lbl">reps</span><input type="number" inputmode="numeric" value="${r.default_reps ?? ''}" onchange="updateBuilderRow(${i},'default_reps',this.value)">
+        <span class="tr-mini-lbl">wt</span><input type="number" inputmode="decimal" value="${r.default_weight ?? ''}" onchange="updateBuilderRow(${i},'default_weight',this.value)">
+        <select onchange="updateBuilderRow(${i},'default_weight_unit',this.value)">
+          ${['lbs', 'kg'].map(u => `<option value="${u}"${(r.default_weight_unit || workoutUnit) === u ? ' selected' : ''}>${u}</option>`).join('')}
+        </select>
+      </div>
+    </div>`).join('');
+}
+async function saveTemplate() {
+  const name = document.getElementById('tplName').value.trim();
+  if (!name) { showToast('Enter a template name.'); return; }
+  const exercises = builderRows.filter(r => (r.exercise_name || '').trim());
+  if (!exercises.length) { showToast('Add at least one exercise.'); return; }
+  if (builderEditId) {
+    await apiRequest('/workouts/templates/' + builderEditId, { method: 'PUT', body: JSON.stringify({ name, exercises }) });
+  } else {
+    await apiRequest('/workouts/templates', { method: 'POST', body: JSON.stringify({ name, exercises }) });
+  }
+  closeModal('tplBuilderModal');
+  await loadWorkoutTemplates();
+  renderTemplates();
+  showToast('Template saved');
+}
+function closeTemplateBuilder() { closeModal('tplBuilderModal'); }
+async function deleteTemplate(id) {
+  if (!confirm('Delete this template?')) return;
+  await apiRequest('/workouts/templates/' + id, { method: 'DELETE' });
+  await loadWorkoutTemplates();
+  renderTemplates();
+}
+
+// ---- Per-exercise progress ----
+function openProgress(name) {
+  progressState = { name, period: 90 };
+  document.getElementById('progressName').textContent = name;
+  document.querySelectorAll('#progressPeriods .period-btn').forEach((b, i) => b.classList.toggle('active', i === 1));
+  openModal('progressModal');
+  renderProgress();
+}
+function closeProgress() { closeModal('progressModal'); }
+function setProgressPeriod(days, btn) {
+  progressState.period = days;
+  document.querySelectorAll('#progressPeriods .period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderProgress();
+}
+async function renderProgress() {
+  const name = progressState.name;
+  const res = await apiRequest('/workouts/exercise-history/' + encodeURIComponent(name) + '?days=' + progressState.period);
+  const data = (res.ok && res.body) ? res.body : { sessions: [], pr: null };
+  const sessions = data.sessions || [];
+  const isStrength = sessions.some(s => s.max_weight != null);
+  // PR banner
+  const prEl = document.getElementById('progressPR');
+  if (data.pr && data.pr.weight != null) {
+    const d = new Date(data.pr.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    prEl.innerHTML = `<div class="wk-pr-banner">🏆 PR: ${fmtWeightNum(data.pr.weight)} ${workoutUnit} × ${data.pr.reps ?? 0} reps — ${d}</div>`;
+  } else prEl.innerHTML = '';
+  // Charts
+  const charts = document.getElementById('progressCharts');
+  if (!sessions.length) {
+    charts.innerHTML = `<div class="hist-empty"><div class="he-icon">📈</div><p>No logged sets in this period.</p></div>`;
+    document.getElementById('progressSessions').innerHTML = '';
+    return;
+  }
+  const labels = sessions.map(s => new Date(s.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+  charts.innerHTML =
+    (isStrength ? `<div class="chart-card"><h3>🏋️ Max Weight (${workoutUnit})</h3><canvas id="chartMaxW" height="150"></canvas></div>` : '') +
+    `<div class="chart-card"><h3>📊 Total Volume (${workoutUnit})</h3><canvas id="chartVol" height="150"></canvas></div>` +
+    (isStrength ? `<div class="chart-card"><h3>💪 Est. 1RM (${workoutUnit})</h3><canvas id="chart1rm" height="150"></canvas></div>` : '');
+  if (isStrength) drawWeightChart('chartMaxW', labels, sessions.map(s => Math.round((s.max_weight || 0) * 10) / 10), workoutUnit, null, '#f5a623');
+  drawWeightChart('chartVol', labels, sessions.map(s => Math.round(s.total_volume || 0)), workoutUnit, null, '#60a5fa');
+  if (isStrength) drawWeightChart('chart1rm', labels, sessions.map(s => Math.round((s.estimated_1rm || 0) * 10) / 10), workoutUnit, null, '#4ade80');
+  // Session history (most recent first), PR badge on the all-time PR session.
+  const prDate = data.pr ? data.pr.date : null;
+  document.getElementById('progressSessions').innerHTML = '<h3 style="margin:16px 0 8px">History</h3>' + [...sessions].reverse().map((s, idx) => {
+    const d = new Date(s.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const isPr = prDate && s.date === prDate;
+    const sets = (s.sets || []).map(x => {
+      const desc = x.weight != null ? `${x.reps ?? 0} × ${fmtWeightNum(x.weight)} ${x.weight_unit || workoutUnit}` : (x.duration_seconds != null ? `${Math.round(x.duration_seconds / 60)} min${x.distance ? ' · ' + x.distance + ' ' + (x.distance_unit || 'mi') : ''}` : `${x.reps ?? 0} reps`);
+      return `<div class="wk-hist-set ${x.completed ? '' : 'incomplete'}">Set ${x.set_number}: ${desc} ${x.completed ? '✓' : ''}</div>`;
+    }).join('');
+    return `<div class="wk-hist-card">
+      <div class="wk-hist-head" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display==='none'?'block':'none'">
+        <span class="wk-hist-date">${isPr ? '🏆 ' : ''}${d}</span>
+        <span class="wk-hist-sub">${s.max_weight != null ? 'top ' + fmtWeightNum(s.max_weight) + ' ' + workoutUnit : Math.round(s.total_volume) + ' vol'}</span>
+      </div>
+      <div class="wk-hist-sets" style="display:${idx === 0 ? 'block' : 'none'}">${sets}</div>
+    </div>`;
+  }).join('');
+}
+
+// ---- Past session detail (read-only) ----
+async function openSessionDetail(workoutId) {
+  if (!workoutId) return;
+  sessionDetailWorkoutId = workoutId;
+  const w = workouts.find(x => Number(x.id) === Number(workoutId));
+  const res = await apiRequest('/workouts/exercises?workout_id=' + workoutId);
+  const exs = (res.ok && res.body) ? res.body : [];
+  document.getElementById('sdTitle').textContent = w ? w.name : 'Workout';
+  const editable = w ? (w.date >= minViewKey()) : false;
+  if (!exs.length) {
+    // Plain cardio/calorie log with no detailed exercises.
+    document.getElementById('sdBody').innerHTML = `<div class="wk-ex-last" style="font-size:13px">${w ? `${Math.round(w.minutes || 0)} min · ${Math.round(w.calories || 0)} cal${w.distance ? ' · ' + fmtDist(w.distance) : ''}` : 'No detail recorded.'}</div>`;
+    document.getElementById('sdUseTemplate').style.display = 'none';
+  } else {
+    document.getElementById('sdBody').innerHTML = exs.map(ex => {
+      const sets = (ex.sets || []).map(s => {
+        const desc = s.weight != null ? `${s.reps ?? 0} × ${fmtWeightNum(s.weight)} ${s.weight_unit || workoutUnit}` : (s.duration_seconds != null ? `${Math.round(s.duration_seconds / 60)} min${s.distance ? ' · ' + s.distance + ' ' + (s.distance_unit || 'mi') : ''}` : `${s.reps ?? 0} reps`);
+        return `<div class="wk-hist-set ${s.completed ? '' : 'incomplete'}">Set ${s.set_number}: ${desc} ${s.completed ? '✓' : '·'}</div>`;
+      }).join('');
+      return `<div class="wk-ex-card">
+        <div class="wk-ex-head" style="gap:8px"><strong style="flex:1">${cfEsc(ex.exercise_name)}</strong>${typeBadge(ex.exercise_type)}
+          <button class="wk-ex-progress" onclick="openProgress('${cfEsc(ex.exercise_name).replace(/'/g, "\\'")}')">📈</button></div>
+        ${sets || '<div class="wk-hist-set incomplete">No sets logged.</div>'}
+      </div>`;
+    }).join('');
+    document.getElementById('sdUseTemplate').style.display = '';
+    document.getElementById('sdUseTemplate')._exs = exs;
+  }
+  if (!editable && exs.length) {
+    document.getElementById('sdBody').innerHTML += `<div class="wk-ex-last" style="text-align:center;margin-top:6px">Read-only — sessions older than 7 days can't be edited.</div>`;
+  }
+  openModal('sessionDetailModal');
+}
+function closeSessionDetail() { closeModal('sessionDetailModal'); sessionDetailWorkoutId = null; }
+async function useSessionAsTemplate() {
+  const exs = document.getElementById('sdUseTemplate')._exs || [];
+  if (!exs.length) return;
+  builderEditId = null;
+  const w = workouts.find(x => Number(x.id) === Number(sessionDetailWorkoutId));
+  builderRows = exs.map(ex => {
+    const done = (ex.sets || []).filter(s => s.completed);
+    const ref = done.length ? done : (ex.sets || []);
+    const last = ref[ref.length - 1] || {};
+    return { exercise_name: ex.exercise_name, exercise_type: ex.exercise_type, default_sets: ref.length || 1, default_reps: last.reps ?? null, default_weight: last.weight ?? null, default_weight_unit: last.weight_unit || workoutUnit };
+  });
+  closeModal('sessionDetailModal');
+  document.getElementById('tplBuilderTitle').textContent = 'Build template';
+  document.getElementById('tplName').value = w ? w.name : '';
+  renderBuilderRows();
+  openModal('tplBuilderModal');
 }
 
 function calcStreak() {
@@ -8009,6 +8731,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadMealTemplates();
   await loadWeightLog();
   await loadWorkouts();
+  await loadWorkoutTemplates();
+  const exDl = document.getElementById('commonExList');
+  if (exDl) exDl.innerHTML = COMMON_EXERCISES.map(e => `<option value="${e}">`).join('');
   await syncHistoryCache(365);
   loadViewDate();
   checkWeighReminder();
