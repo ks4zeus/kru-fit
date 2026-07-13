@@ -1110,8 +1110,10 @@
   .wk-sess-x { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; flex-shrink: 0; width: 32px; height: 32px; }
   .wk-sess-name { flex: 1; min-width: 0; background: transparent; border: none; color: var(--text); font-size: 16px; font-weight: 700; padding: 4px; }
   .wk-sess-name-static { padding: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .wk-sess-timer { font-family: var(--mono); font-size: 15px; color: var(--muted); flex-shrink: 0; }
   .wk-sess-finish { background: var(--protein); color: #0a1a12; border: none; border-radius: 9px; font-weight: 700; font-size: 13px; padding: 8px 12px; cursor: pointer; flex-shrink: 0; }
+  .wk-duration-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+  .wk-duration-field label { font-size: 14px; font-weight: 600; }
+  .wk-duration-field input { width: 90px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 15px; padding: 8px 10px; text-align: center; }
   .wk-ex-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-bottom: 12px; }
   .wk-ex-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
   .wk-ex-name { flex: 1; min-width: 0; background: transparent; border: none; color: var(--text); font-size: 15px; font-weight: 700; padding: 2px; }
@@ -1144,7 +1146,7 @@
   .wk-type-sel { display: flex; gap: 6px; margin: 10px 0; }
   .wk-type-btn { flex: 1; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); border-radius: 8px; font-size: 12px; font-weight: 600; padding: 8px; cursor: pointer; }
   .wk-type-btn.active { background: var(--accent, #f5a623); color: #0a1a12; border-color: transparent; }
-  .wk-finish-summary { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; margin-bottom: 14px; }
+  .wk-finish-summary { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 14px; }
   .wk-finish-summary .fs-cell { background: var(--surface2); border-radius: 10px; padding: 12px; text-align: center; }
   .wk-finish-summary .fs-val { font-size: 20px; font-weight: 700; font-family: var(--mono); }
   .wk-finish-summary .fs-lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
@@ -2783,7 +2785,6 @@
     <div class="wk-sess-head">
       <button class="wk-sess-x" onclick="closeSession()" title="Close">✕</button>
       <input class="wk-sess-name" id="sessName" onchange="renameSession(this.value)" aria-label="Workout name">
-      <span class="wk-sess-timer" id="sessTimer">00:00</span>
       <button class="wk-sess-finish" onclick="openFinishSheet()">Finish</button>
     </div>
     <div id="sessExercises"></div>
@@ -2809,6 +2810,10 @@
     <div class="modal-handle"></div>
     <div class="modal-title">Workout complete 💪</div>
     <div id="finishSummary" class="wk-finish-summary"></div>
+    <div class="wk-duration-field">
+      <label for="finishDuration">Duration (minutes)</label>
+      <input type="number" id="finishDuration" min="1" max="600" step="1" inputmode="numeric">
+    </div>
     <div class="wk-finish-save">
       <label class="wk-save-opt"><input type="radio" name="finishSave" value="none" checked onchange="onFinishSaveChange()"> Don't save as template</label>
       <label class="wk-save-opt"><input type="radio" name="finishSave" value="new" onchange="onFinishSaveChange()"> Save as new template</label>
@@ -2869,7 +2874,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v3.2';
+const APP_VERSION = 'v3.3';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -5130,20 +5135,7 @@ function openSessionModal() {
   document.getElementById('addExPanel').style.display = 'none';
   renderSession();
   openModal('sessionModal');
-  startSessionTimer();
 }
-function startSessionTimer() {
-  stopSessionTimer();
-  const tick = () => {
-    const s = Math.max(0, Math.floor((Date.now() - sessionState.startTs) / 1000));
-    const mm = String(Math.floor(s / 60)).padStart(2, '0');
-    const ss = String(s % 60).padStart(2, '0');
-    const el = document.getElementById('sessTimer'); if (el) el.textContent = `${mm}:${ss}`;
-  };
-  tick();
-  sessionState.timer = setInterval(tick, 1000);
-}
-function stopSessionTimer() { if (sessionState && sessionState.timer) { clearInterval(sessionState.timer); sessionState.timer = null; } }
 
 async function refreshLastLabels() {
   if (!sessionState) return;
@@ -5170,7 +5162,6 @@ function renameSession(v) {
   if (sessionState) sessionState.name = v.trim() || sessionState.name;
 }
 async function closeSession() {
-  stopSessionTimer();
   // Discard a session that was started but has no exercises.
   if (sessionState && sessionState.exercises.length === 0) {
     await apiRequest('/workouts/' + sessionState.workoutId, { method: 'DELETE' });
@@ -5354,8 +5345,9 @@ function openFinishSheet() {
   document.getElementById('finishSummary').innerHTML = `
     <div class="fs-cell"><div class="fs-val">${st.exCount}</div><div class="fs-lbl">exercises</div></div>
     <div class="fs-cell"><div class="fs-val">${st.setsDone}</div><div class="fs-lbl">sets done</div></div>
-    <div class="fs-cell"><div class="fs-val">${Math.round(st.volume).toLocaleString()}</div><div class="fs-lbl">volume (${workoutUnit})</div></div>
-    <div class="fs-cell"><div class="fs-val">${st.minutes}</div><div class="fs-lbl">minutes</div></div>`;
+    <div class="fs-cell"><div class="fs-val">${Math.round(st.volume).toLocaleString()}</div><div class="fs-lbl">volume (${workoutUnit})</div></div>`;
+  // Pre-fill duration with the actual elapsed minutes; the user can correct it.
+  document.getElementById('finishDuration').value = st.minutes;
   const sel = document.getElementById('finishTplSelect');
   sel.innerHTML = workoutTemplates.map(t => `<option value="${t.id}">${cfEsc(t.name)}</option>`).join('');
   document.getElementById('finishTplName').value = sessionState.name;
@@ -5382,9 +5374,10 @@ function sessionToTemplateExercises() {
   });
 }
 async function saveAndCloseSession() {
-  const st = sessionStats();
-  const calories = estimateWorkoutCals(5.0, st.minutes);
-  await apiRequest('/workouts/' + sessionState.workoutId, { method: 'PUT', body: JSON.stringify({ name: sessionState.name, minutes: st.minutes, calories }) });
+  const elapsed = sessionStats().minutes;
+  const minutes = Math.max(1, Math.round(parseFloat(document.getElementById('finishDuration').value) || elapsed));
+  const calories = estimateWorkoutCals(5.0, minutes);
+  await apiRequest('/workouts/' + sessionState.workoutId, { method: 'PUT', body: JSON.stringify({ name: sessionState.name, minutes, calories }) });
   const saveOpt = document.querySelector('input[name="finishSave"]:checked').value;
   if (saveOpt === 'new') {
     const name = document.getElementById('finishTplName').value.trim() || sessionState.name;
@@ -5394,7 +5387,6 @@ async function saveAndCloseSession() {
     const t = workoutTemplates.find(x => String(x.id) === String(id));
     if (t) await apiRequest('/workouts/templates/' + id, { method: 'PUT', body: JSON.stringify({ name: t.name, exercises: sessionToTemplateExercises() }) });
   }
-  stopSessionTimer();
   sessionState = null;
   closeModal('finishSheet');
   closeModal('sessionModal');
