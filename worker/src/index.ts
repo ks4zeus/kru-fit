@@ -1190,8 +1190,14 @@ export default {
 
       if (request.method === "GET" && segments[2] === "range") {
         const days = Number(url.searchParams.get("days")) || 365;
+        // `volume` = sum of reps×weight across completed weighted sets in the session.
         const { results } = await db
-          .prepare("SELECT * FROM workouts WHERE user_id = ? AND date >= date('now', ?) ORDER BY date ASC, ts ASC")
+          .prepare(`SELECT w.*, (
+              SELECT COALESCE(SUM(ws.reps * ws.weight), 0)
+              FROM workout_sets ws JOIN workout_exercises we ON we.id = ws.exercise_id
+              WHERE we.workout_id = w.id AND ws.completed = 1 AND ws.weight IS NOT NULL
+            ) AS volume
+            FROM workouts w WHERE w.user_id = ? AND w.date >= date('now', ?) ORDER BY w.date ASC, w.ts ASC`)
           .bind(userEmail, `-${days} days`)
           .all();
         return jsonResponse(results || []);

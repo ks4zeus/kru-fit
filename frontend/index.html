@@ -1088,10 +1088,23 @@
   .workout-row .wk-cals { font-family: var(--mono); font-weight: 700; color: var(--fiber); flex-shrink: 0; }
   .workout-row .wk-del { background: none; border: none; color: var(--muted); font-size: 14px; cursor: pointer; flex-shrink: 0; padding: 2px 4px; }
   .workout-row .wk-del:hover { color: var(--danger); }
-  .wk-date-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 16px 2px 8px; }
-  .wk-date-head:first-child { margin-top: 4px; }
-  .wk-date-head .wk-date-label { font-size: 13px; font-weight: 700; color: var(--text); }
-  .wk-date-head .wk-date-cal { font-size: 12px; font-family: var(--mono); color: var(--fiber); flex-shrink: 0; }
+  /* Recent Workouts — one collapsible row per day */
+  .wk-day { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 8px; overflow: hidden; }
+  .wk-day-head { display: flex; align-items: center; gap: 10px; padding: 13px 14px; cursor: pointer; }
+  .wk-day-head .wk-day-label { font-size: 14px; font-weight: 700; flex-shrink: 0; }
+  .wk-day-head .wk-day-stats { flex: 1; min-width: 0; font-size: 12px; font-family: var(--mono); color: var(--muted); text-align: right; }
+  .wk-day-head .wk-day-chev { font-size: 11px; color: var(--muted); flex-shrink: 0; transition: transform 0.2s ease; }
+  .wk-day.open .wk-day-chev { transform: rotate(180deg); }
+  .wk-day-sessions { display: none; border-top: 1px solid var(--border); padding: 4px 8px 8px; }
+  .wk-day.open .wk-day-sessions { display: block; }
+  .wk-day-sess { display: flex; align-items: center; gap: 10px; padding: 9px 6px; cursor: pointer; border-radius: 9px; }
+  .wk-day-sess:active { background: var(--surface2); }
+  .wk-day-sess .wk-emoji { font-size: 18px; flex-shrink: 0; }
+  .wk-day-sess .wk-main { flex: 1; min-width: 0; }
+  .wk-day-sess .wk-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wk-day-sess .wk-day-sess-meta { font-size: 12px; font-family: var(--mono); color: var(--muted); flex-shrink: 0; }
+  .wk-day-sess .wk-del { background: none; border: none; color: var(--muted); font-size: 13px; cursor: pointer; padding: 2px 4px; flex-shrink: 0; }
+  .wk-day-sess .wk-del:hover { color: var(--danger); }
   .list-toggle-btn { display: block; width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px; margin-top: 4px; color: var(--muted); font-size: 13px; font-family: var(--font); font-weight: 600; cursor: pointer; }
   .list-toggle-btn:active { opacity: 0.7; }
   /* ===== Detailed workout tracking ===== */
@@ -2874,7 +2887,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v3.3';
+const APP_VERSION = 'v3.4';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -4997,7 +5010,7 @@ function renderExercise() {
     drawBarChart('chartMins', labels, [{ label: 'Minutes', data: minData, color: '#a78bfa' }]);
   }
 
-  // Group workouts into sessions (shared ts), newest first.
+  // Group workouts into sessions (activities sharing one ts), then by day.
   const sessions = {};
   workouts.forEach(w => {
     const k = sessionKey(w);
@@ -5005,60 +5018,65 @@ function renderExercise() {
     sessions[k].items.push(w);
   });
   const allSessions = Object.values(sessions).sort((a, b) => (b.ts || 0) - (a.ts || 0));
-  // Rolling window: show sessions from the last `exerciseDaysShown` calendar days;
+  // Rolling window: show days from the last `exerciseDaysShown` calendar days;
   // "Load more" widens the window 14 days at a time.
   const windowStart = new Date(); windowStart.setDate(windowStart.getDate() - (exerciseDaysShown - 1));
   const windowStartKey = dateKey(windowStart);
   const visibleSessions = allSessions.filter(s => s.date >= windowStartKey);
   const hasOlder = allSessions.some(s => s.date < windowStartKey);
 
-  const sessionRow = sess => {
-    if (sess.items.length === 1) {
-      const w = sess.items[0];
-      const meta = workoutMeta(w.name);
-      const parts = [];
-      if (w.minutes) parts.push(Math.round(w.minutes) + ' min');
-      if (w.distance) parts.push(fmtDist(w.distance));
-      return `<div class="workout-row" style="cursor:pointer" onclick="openSessionDetail(${Number(w.id) || 0})">
-        <span class="wk-emoji">${meta.emoji}</span>
-        <div class="wk-main">
-          <div class="wk-name">${cfEsc(w.name)}</div>
-          <div class="wk-sub">${parts.join(' · ')}</div>
-        </div>
-        <span class="wk-cals">${Math.round(w.calories || 0)} cal</span>
-        <button class="wk-del" onclick="event.stopPropagation(); deleteWorkoutSession('${sess.key}')" title="Remove">✕</button>
-      </div>`;
-    }
-    const totMin = sess.items.reduce((s, w) => s + (w.minutes || 0), 0);
-    const totCal = sess.items.reduce((s, w) => s + (w.calories || 0), 0);
-    const nameList = sess.items.map(w => baseWorkoutName(w.name)).join(' + ');
-    const detail = sess.items.map(w => `${workoutMeta(w.name).emoji} ${Math.round(w.minutes || 0)}m`).join(' · ');
-    return `<div class="workout-row">
-      <span class="wk-emoji">🏅</span>
-      <div class="wk-main">
-        <div class="wk-name">${cfEsc(nameList)}</div>
-        <div class="wk-sub">${Math.round(totMin)} min · ${detail}</div>
-      </div>
-      <span class="wk-cals">${Math.round(totCal)} cal</span>
-      <button class="wk-del" onclick="deleteWorkoutSession('${sess.key}')" title="Remove">✕</button>
+  // One expanded sub-row per session within a day (tap → read-only detail).
+  const sessionSubRow = sess => {
+    const primaryId = Number(sess.items[0].id) || 0;   // detailed sessions are a single row
+    const name = sess.items.length === 1 ? sess.items[0].name : sess.items.map(w => baseWorkoutName(w.name)).join(' + ');
+    const min = sess.items.reduce((s, w) => s + (w.minutes || 0), 0);
+    const cal = sess.items.reduce((s, w) => s + (w.calories || 0), 0);
+    const meta = sess.items.length === 1 ? workoutMeta(sess.items[0].name) : { emoji: '🏅' };
+    const bits = [];
+    if (min) bits.push(Math.round(min) + ' min');
+    bits.push(Math.round(cal) + ' cal');
+    return `<div class="wk-day-sess" onclick="openSessionDetail(${primaryId})">
+      <span class="wk-emoji">${meta.emoji}</span>
+      <div class="wk-main"><div class="wk-name">${cfEsc(name)}</div></div>
+      <span class="wk-day-sess-meta">${bits.join(' · ')}</span>
+      <button class="wk-del" onclick="event.stopPropagation(); deleteWorkoutSession('${sess.key}')" title="Remove">✕</button>
     </div>`;
   };
 
-  // Group the visible sessions by date, newest day first, with a per-day header.
+  // Group visible sessions by day → one collapsible row per day.
   const byDate = {};
   visibleSessions.forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
   const orderedDates = Object.keys(byDate).sort().reverse();
-  const groupsHtml = orderedDates.map(date => {
+  const dayRows = orderedDates.map(date => {
     const daySessions = byDate[date];
-    const dayCal = daySessions.reduce((sum, sess) => sum + sess.items.reduce((a, w) => a + (w.calories || 0), 0), 0);
-    const header = `<div class="wk-date-head">
-      <span class="wk-date-label">${dayLabelFor(date)}</span>
-      <span class="wk-date-cal">${Math.round(dayCal)} cal burned</span>
+    const dayItems = daySessions.flatMap(s => s.items);
+    const dayCal = dayItems.reduce((a, w) => a + (w.calories || 0), 0);
+    const dayMin = dayItems.reduce((a, w) => a + (w.minutes || 0), 0);
+    const dayVol = dayItems.reduce((a, w) => a + (Number(w.volume) || 0), 0);
+    const stats = [];
+    if (dayCal) stats.push(`${Math.round(dayCal)} cal`);
+    if (dayVol) stats.push(`${Math.round(dayVol).toLocaleString()} ${workoutUnit}`);
+    if (dayMin) stats.push(`${Math.round(dayMin)} min`);
+    const open = expandedWorkoutDays.has(date);
+    return `<div class="wk-day${open ? ' open' : ''}">
+      <div class="wk-day-head" onclick="toggleWorkoutDay('${date}')">
+        <span class="wk-day-label">${dayLabelFor(date)}</span>
+        <span class="wk-day-stats">${stats.join(' • ')}</span>
+        <span class="wk-day-chev">▼</span>
+      </div>
+      <div class="wk-day-sessions">${daySessions.map(sessionSubRow).join('')}</div>
     </div>`;
-    return header + daySessions.map(sessionRow).join('');
   }).join('');
   const loadMoreHtml = hasOlder ? `<button class="list-toggle-btn" onclick="loadMoreWorkouts()">Load more</button>` : '';
-  document.getElementById('workoutList').innerHTML = groupsHtml + loadMoreHtml;
+  document.getElementById('workoutList').innerHTML = dayRows + loadMoreHtml;
+}
+
+// Which Recent-Workout days are expanded (persists across re-renders).
+const expandedWorkoutDays = new Set();
+function toggleWorkoutDay(date) {
+  if (expandedWorkoutDays.has(date)) expandedWorkoutDays.delete(date);
+  else expandedWorkoutDays.add(date);
+  renderExercise();
 }
 
 function loadMoreWorkouts() {
@@ -5492,7 +5510,14 @@ async function renderProgress() {
   const res = await apiRequest('/workouts/exercise-history/' + encodeURIComponent(name) + '?days=' + progressState.period);
   const data = (res.ok && res.body) ? res.body : { sessions: [], pr: null };
   const sessions = data.sessions || [];
-  const isStrength = sessions.some(s => s.max_weight != null);
+  // Flag a per-session PR: top set strictly heavier than every earlier session's.
+  let prevMax = -Infinity;
+  sessions.forEach(s => {
+    s._isPr = (s.max_weight != null && s.max_weight > prevMax);
+    if (s.max_weight != null) prevMax = Math.max(prevMax, s.max_weight);
+  });
+  // Charts only plot sessions with at least one completed set with weight > 0.
+  const chartSessions = sessions.filter(s => s.max_weight != null && s.max_weight > 0);
   // PR banner
   const prEl = document.getElementById('progressPR');
   if (data.pr && data.pr.weight != null) {
@@ -5506,19 +5531,22 @@ async function renderProgress() {
     document.getElementById('progressSessions').innerHTML = '';
     return;
   }
-  const labels = sessions.map(s => new Date(s.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-  charts.innerHTML =
-    (isStrength ? `<div class="chart-card"><h3>🏋️ Max Weight (${workoutUnit})</h3><canvas id="chartMaxW" height="150"></canvas></div>` : '') +
-    `<div class="chart-card"><h3>📊 Total Volume (${workoutUnit})</h3><canvas id="chartVol" height="150"></canvas></div>` +
-    (isStrength ? `<div class="chart-card"><h3>💪 Est. 1RM (${workoutUnit})</h3><canvas id="chart1rm" height="150"></canvas></div>` : '');
-  if (isStrength) drawWeightChart('chartMaxW', labels, sessions.map(s => Math.round((s.max_weight || 0) * 10) / 10), workoutUnit, null, '#f5a623');
-  drawWeightChart('chartVol', labels, sessions.map(s => Math.round(s.total_volume || 0)), workoutUnit, null, '#60a5fa');
-  if (isStrength) drawWeightChart('chart1rm', labels, sessions.map(s => Math.round((s.estimated_1rm || 0) * 10) / 10), workoutUnit, null, '#4ade80');
-  // Session history (most recent first), PR badge on the all-time PR session.
-  const prDate = data.pr ? data.pr.date : null;
+  if (!chartSessions.length) {
+    charts.innerHTML = `<div class="hist-empty" style="padding:20px 0"><p>No completed weighted sets to chart in this period.</p></div>`;
+  } else {
+    const labels = chartSessions.map(s => new Date(s.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    charts.innerHTML =
+      `<div class="chart-card"><h3>🏋️ Max Weight (${workoutUnit})</h3><canvas id="chartMaxW" height="150"></canvas></div>` +
+      `<div class="chart-card"><h3>📊 Total Volume (${workoutUnit})</h3><canvas id="chartVol" height="150"></canvas></div>` +
+      `<div class="chart-card"><h3>💪 Est. 1RM (${workoutUnit})</h3><canvas id="chart1rm" height="150"></canvas></div>`;
+    drawWeightChart('chartMaxW', labels, chartSessions.map(s => Math.round((s.max_weight || 0) * 10) / 10), workoutUnit, null, '#f5a623');
+    drawWeightChart('chartVol', labels, chartSessions.map(s => Math.round(s.total_volume || 0)), workoutUnit, null, '#60a5fa');
+    drawWeightChart('chart1rm', labels, chartSessions.map(s => Math.round((s.estimated_1rm || 0) * 10) / 10), workoutUnit, null, '#4ade80');
+  }
+  // Session history (most recent first), 🏆 only on sessions that set a new PR.
   document.getElementById('progressSessions').innerHTML = '<h3 style="margin:16px 0 8px">History</h3>' + [...sessions].reverse().map((s, idx) => {
     const d = new Date(s.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    const isPr = prDate && s.date === prDate;
+    const isPr = s._isPr;
     const sets = (s.sets || []).map(x => {
       const desc = x.weight != null ? `${x.reps ?? 0} × ${fmtWeightNum(x.weight)} ${x.weight_unit || workoutUnit}` : (x.duration_seconds != null ? `${Math.round(x.duration_seconds / 60)} min${x.distance ? ' · ' + x.distance + ' ' + (x.distance_unit || 'mi') : ''}` : `${x.reps ?? 0} reps`);
       return `<div class="wk-hist-set ${x.completed ? '' : 'incomplete'}">Set ${x.set_number}: ${desc} ${x.completed ? '✓' : ''}</div>`;
