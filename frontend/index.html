@@ -2887,7 +2887,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v3.4';
+const APP_VERSION = 'v3.5';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -7042,11 +7042,14 @@ function renderWeightTab() {
     const bfArrowCol = bfChange < 0 ? 'var(--protein)' : bfChange > 0 ? AMBER : 'var(--muted)';
     const leanArrow = leanChange > 0 ? '▲' : leanChange < 0 ? '▼' : '→';
     const leanArrowCol = leanChange > 0 ? 'var(--protein)' : leanChange < 0 ? AMBER : 'var(--muted)';
+    // With nothing to compare against, say so plainly — "first entry" implies a
+    // second one exists. A stale value (none in the period) is the latest, not the only.
+    const noTrendSub = filteredBf.length ? 'only entry' : 'latest entry';
     bfCardsHtml = `
     <div class="hist-stat">
       <div class="hs-val" style="color:#a78bfa">${fmt(curBf)}<span style="font-size:0.6em">%</span></div>
       <div class="hs-label">Body Fat %</div>
-      <div class="hs-sub" style="color:${hasBfTrend ? bfArrowCol : 'var(--muted)'}">${hasBfTrend ? `${bfArrow}${fmt(Math.abs(bfChange))} over ${weightPeriod}d` : 'first entry'}</div>
+      <div class="hs-sub" style="color:${hasBfTrend ? bfArrowCol : 'var(--muted)'}">${hasBfTrend ? `${bfArrow}${fmt(Math.abs(bfChange))} over ${weightPeriod}d` : noTrendSub}</div>
     </div>
     <div class="hist-stat">
       <div class="hs-val" style="color:var(--protein)">${fmt(curLean)}</div>
@@ -7295,6 +7298,7 @@ function observedMaintenance(days) {
   const needDays = Math.min(days, 10);
   if (logged.length < needDays) return { ok: false, reason: 'food', loggedDays: logged.length, needDays };
   const avgIntake = logged.reduce((s, d) => s + d.cal, 0) / logged.length;
+  const foodSpan = Math.round((logged[logged.length - 1].date - logged[0].date) / 86400000);
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
   const cutoffKey = dateKey(cutoff);
   const wkeys = Object.keys(weightLog).filter(k => k >= cutoffKey).sort();
@@ -7310,7 +7314,8 @@ function observedMaintenance(days) {
     slopePerWeek: t.slope * 7,
     loggedDays: logged.length,
     weighIns: wkeys.length,
-    span: Math.round(t.spanDays)
+    span: Math.round(t.spanDays),
+    foodSpan
   };
 }
 
@@ -7350,6 +7355,11 @@ function maintenanceCard() {
   if (diff > 50) goalLine = `Your goal of ${goal.toLocaleString()} is ~${diff.toLocaleString()} below maintenance — a deficit (losing).`;
   else if (diff < -50) goalLine = `Your goal of ${goal.toLocaleString()} is ~${Math.abs(diff).toLocaleString()} above maintenance — a surplus (gaining).`;
   else goalLine = `Your goal of ${goal.toLocaleString()} is right around maintenance.`;
+  // The estimate is bounded by the weight trend, so a much longer food-log span
+  // makes the shorter "N day span" read as a mistake. Name the gap instead.
+  const spanNote = m.foodSpan - m.span > 7
+    ? `<div class="maint-sub">Weight entries only span ${m.span} days — log your weight more consistently to improve this estimate.</div>`
+    : '';
   const conf = maintenanceConfidence(m.span, m.weighIns, m.loggedDays);
   const checklist = conf.items.map(it =>
     `<span class="mc-item ${it.good ? 'good' : 'weak'}">${it.good ? '✓' : '⚠'} ${it.label}</span>`
@@ -7358,6 +7368,7 @@ function maintenanceCard() {
     <div class="maint-title">⚖️ Observed Maintenance</div>
     <div class="maint-val">~${m.maintenance.toLocaleString()} <span>kcal/day</span></div>
     <div class="maint-sub">Measured from your last ${m.span} days — avg intake ${m.avgIntake.toLocaleString()}, ${dir}.</div>
+    ${spanNote}
     <div class="maint-goal">${goalLine}</div>
     <div class="maint-conf">
       <div class="mc-level" style="color:${conf.color}">Confidence: ${conf.level}</div>
