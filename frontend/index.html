@@ -2887,7 +2887,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v3.5';
+const APP_VERSION = 'v3.6';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -7290,21 +7290,67 @@ function drawWeightTooltip(canvas, idx) {
   ctx.fillText(text, tx + width / 2, ty + 18);
 }
 
+// Days of history both /food/range and /weight are synced with (see ensureHistory
+// and loadWeightLog) — the most this can ever see, so the most it walks back.
+const MAINT_HORIZON_DAYS = 365;
+const MAINT_MIN_FOOD_DAYS = 10;
+
+// Earliest locally cached food day, so the walk-back below is bounded by real
+// data instead of always paying for a full 365-day scan.
+function earliestFoodKey() {
+  const ls = window.localStorage;
+  let earliest = null;
+  for (let i = 0; i < ls.length; i++) {
+    const k = ls.key(i);
+    if (!k || k.indexOf(STORAGE_KEYS.log) !== 0) continue;
+    const date = k.slice(STORAGE_KEYS.log.length);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    if (!earliest || date < earliest) earliest = date;
+  }
+  return earliest;
+}
+
 // Observed maintenance (TDEE) = avg daily intake − energy from the smoothed
-// weight trend. Empirical, not predicted. Gated on enough food + weight data.
-function observedMaintenance(days) {
-  const data = getHistoryData(days);
-  const logged = data.filter(d => d.hasData);
-  const needDays = Math.min(days, 10);
-  if (logged.length < needDays) return { ok: false, reason: 'food', loggedDays: logged.length, needDays };
-  const avgIntake = logged.reduce((s, d) => s + d.cal, 0) / logged.length;
-  const foodSpan = Math.round((logged[logged.length - 1].date - logged[0].date) / 86400000);
-  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
-  const cutoffKey = dateKey(cutoff);
-  const wkeys = Object.keys(weightLog).filter(k => k >= cutoffKey).sort();
+// weight trend. Empirical, not predicted.
+//
+// Deliberately independent of analysisPeriod: the estimate wants every day it can
+// get, and the period selector only scopes the other Insights cards. It measures
+// over the OVERLAP window — later of (first weigh-in, first logged food day)
+// through today — because avgIntake and the weight slope must describe the same
+// interval or subtracting one from the other is meaningless.
+function observedMaintenance() {
+  const wkeysAll = Object.keys(weightLog).sort();
+  const oldestKey = [wkeysAll[0], earliestFoodKey()].filter(Boolean).sort()[0];
+  const today = new Date();
+  const horizon = oldestKey
+    ? Math.min(MAINT_HORIZON_DAYS,
+        Math.round((today - new Date(oldestKey + 'T12:00:00')) / 86400000) + 1)
+    : 1;
+  const loggedAll = getHistoryData(horizon).filter(d => d.hasData);
+  // Gate on ALL available food first: clipping to the overlap below can shrink the
+  // count, and blaming food for what is really a weigh-in gap sends the user off to
+  // log meals they have already logged.
+  if (loggedAll.length < MAINT_MIN_FOOD_DAYS) {
+    return { ok: false, reason: 'food', loggedDays: loggedAll.length, needDays: MAINT_MIN_FOOD_DAYS };
+  }
+  if (wkeysAll.length < 2) return { ok: false, reason: 'weight' };
+  // Clip both series to the overlap so they cover one shared interval.
+  const startKey = [dateKey(loggedAll[0].date), wkeysAll[0]].sort()[1];
+  const logged = loggedAll.filter(d => dateKey(d.date) >= startKey);
+  const wkeys = wkeysAll.filter(k => k >= startKey);
   if (wkeys.length < 2) return { ok: false, reason: 'weight' };
   const t = weightTrend(wkeys);                 // slope in display-unit/day
   if (!t || t.spanDays < 7) return { ok: false, reason: 'weightspan' };
+  // Food is plentiful (checked above) but the weigh-ins reach across too little of
+  // it — that is a weigh-in problem, so say so rather than re-blaming food.
+  if (logged.length < MAINT_MIN_FOOD_DAYS) {
+    return { ok: false, reason: 'overlap', loggedDays: logged.length, needDays: MAINT_MIN_FOOD_DAYS };
+  }
+  const avgIntake = logged.reduce((s, d) => s + d.cal, 0) / logged.length;
+  // Span of every food day on hand, NOT the clipped set — the overlap window makes
+  // the clipped food and weight spans near-identical by construction, so only the
+  // unclipped figure can reveal food history the weigh-ins failed to reach.
+  const foodSpanAvailable = Math.round((loggedAll[loggedAll.length - 1].date - loggedAll[0].date) / 86400000);
   const kcalPerUnit = weightUnit === 'kg' ? 7700 : 3500;
   const dailyBalance = t.slope * kcalPerUnit;   // negative when losing
   return {
@@ -7315,35 +7361,40 @@ function observedMaintenance(days) {
     loggedDays: logged.length,
     weighIns: wkeys.length,
     span: Math.round(t.spanDays),
-    foodSpan
+    foodSpanAvailable
   };
 }
 
-// Confidence in the observed estimate — span weighted heaviest, then weigh-in
-// frequency and food-log completeness. Returns a Low/Medium/High tier + checklist.
+// Confidence in the observed estimate. Every gate must pass to reach a tier — a
+// long span carried by two weigh-ins is not a confident estimate — so a tier is
+// only as good as its weakest input. Scaled for the uncapped overlap window.
+const MAINT_TIERS = {
+  high: { span: 27, weighIns: 7, loggedDays: 21 },
+  medium: { span: 14, weighIns: 4, loggedDays: 10 }
+};
+
 function maintenanceConfidence(span, weighIns, loggedDays) {
-  const spanScore = span >= 21 ? 2 : span >= 14 ? 1 : 0;
-  const wiScore = weighIns >= 8 ? 2 : weighIns >= 4 ? 1 : 0;
-  const fdScore = loggedDays >= 18 ? 2 : loggedDays >= 12 ? 1 : 0;
-  const total = spanScore * 2 + wiScore + fdScore;   // span double-weighted, max 8
-  const level = total >= 6 ? 'High' : total >= 3 ? 'Medium' : 'Low';
+  const meets = t => span >= t.span && weighIns >= t.weighIns && loggedDays >= t.loggedDays;
+  const level = meets(MAINT_TIERS.high) ? 'High' : meets(MAINT_TIERS.medium) ? 'Medium' : 'Low';
   const color = level === 'High' ? 'var(--protein)' : level === 'Medium' ? 'var(--cal)' : 'var(--fat)';
+  const min = MAINT_TIERS.medium;
   return {
     level, color,
     items: [
-      { label: `${span} day span`, good: spanScore >= 1 },
-      { label: `${weighIns} weigh-in${weighIns !== 1 ? 's' : ''}`, good: wiScore >= 1 },
-      { label: `${loggedDays} days logged`, good: fdScore >= 1 }
+      { label: `${span} day span`, good: span >= min.span },
+      { label: `${weighIns} weigh-in${weighIns !== 1 ? 's' : ''}`, good: weighIns >= min.weighIns },
+      { label: `${loggedDays} days logged`, good: loggedDays >= min.loggedDays }
     ]
   };
 }
 
 function maintenanceCard() {
-  const m = observedMaintenance(Math.max(analysisPeriod, 14));
+  const m = observedMaintenance();
   if (!m.ok) {
     let msg;
     if (m.reason === 'food') msg = `Log food on a few more days (${m.loggedDays}/${m.needDays}) to estimate your real maintenance calories.`;
     else if (m.reason === 'weight') msg = 'Log at least two weigh-ins so I can read your weight trend.';
+    else if (m.reason === 'overlap') msg = `Your weigh-ins only overlap ${m.loggedDays} day${m.loggedDays !== 1 ? 's' : ''} of food logging — weigh in across a longer stretch to unlock the estimate.`;
     else msg = 'About a week of weight history will unlock your maintenance estimate.';
     return `<div class="maint-card"><div class="maint-title">⚖️ Observed Maintenance</div><div class="maint-sub">${msg}</div></div>`;
   }
@@ -7357,7 +7408,7 @@ function maintenanceCard() {
   else goalLine = `Your goal of ${goal.toLocaleString()} is right around maintenance.`;
   // The estimate is bounded by the weight trend, so a much longer food-log span
   // makes the shorter "N day span" read as a mistake. Name the gap instead.
-  const spanNote = m.foodSpan - m.span > 7
+  const spanNote = m.foodSpanAvailable - m.span > 7
     ? `<div class="maint-sub">Weight entries only span ${m.span} days — log your weight more consistently to improve this estimate.</div>`
     : '';
   const conf = maintenanceConfidence(m.span, m.weighIns, m.loggedDays);
