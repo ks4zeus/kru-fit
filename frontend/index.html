@@ -50,6 +50,7 @@
     --fat: #db2777;
     --fiber: #ea7317;
     --sugar: #e11d48;
+    --danger: #dc2626;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -212,6 +213,17 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
+  /* Overage badge inside the ring — only rendered when logged calories pass
+     the goal, so "0 kcal left" never stands in for "you went over". */
+  .ring-center .cal-over {
+    font-size: 10px;
+    font-weight: 700;
+    font-family: var(--mono);
+    color: var(--danger);
+    margin-top: 3px;
+    line-height: 1;
+    white-space: nowrap;
+  }
   .cal-stats {
     flex: 1;
   }
@@ -224,6 +236,10 @@
     color: var(--cal);
     font-weight: 600;
     font-family: var(--mono);
+  }
+  .cal-stats .remaining.over,
+  .cal-stats .remaining.over span {
+    color: var(--danger);
   }
 
   .macro-bars {
@@ -265,6 +281,16 @@
     text-align: right;
     white-space: nowrap;
     flex-shrink: 0;
+  }
+  .macro-row .macro-val.over {
+    color: var(--danger);
+    font-weight: 600;
+  }
+  /* Floor macro at or past its goal — lit in its own colour, set per-row by
+     setMacro() via --macro-color. Positive counterpart to .over. */
+  .macro-row .macro-val.met {
+    color: var(--macro-color);
+    font-weight: 600;
   }
 
   .macro-cards {
@@ -1831,19 +1857,20 @@
     <div class="ring-wrap">
       <svg width="110" height="110" viewBox="0 0 110 110">
         <circle cx="55" cy="55" r="47" fill="none" stroke="#22263a" stroke-width="10"/>
-        <circle cx="55" cy="55" r="47" fill="none" stroke="#f5a623" stroke-width="10"
+        <circle cx="55" cy="55" r="47" fill="none" stroke-width="10"
           stroke-linecap="round"
           stroke-dasharray="295.3"
           stroke-dashoffset="295.3"
-          id="calRing" style="transition: stroke-dashoffset 0.5s ease;"/>
+          id="calRing" style="stroke: var(--cal); transition: stroke-dashoffset 0.5s ease, stroke 0.3s ease;"/>
       </svg>
       <div class="ring-center">
         <div class="cal-num" id="calConsumed">0</div>
         <div class="cal-label">kcal</div>
+        <div class="cal-over" id="calOver" style="display:none"></div>
       </div>
     </div>
     <div class="cal-stats">
-      <div class="remaining"><span id="calRemaining">1800</span> kcal left</div>
+      <div class="remaining" id="calRemainingRow"><span id="calRemaining">1800</span> <span id="calRemainingLabel">kcal left</span></div>
       <div class="macro-bars">
         <div class="macro-row">
           <span class="macro-name">Protein</span>
@@ -2887,7 +2914,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v3.6';
+const APP_VERSION = 'v3.7';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -3983,21 +4010,46 @@ function updateTotals() {
   }, { cal:0, protein:0, carbs:0, fat:0, fiber:0, sugar:0 });
 
   document.getElementById('calConsumed').textContent = Math.round(totals.cal);
-  document.getElementById('calRemaining').textContent = Math.max(0, Math.round(goals.cal - totals.cal));
+
+  // Over goal: the ring fills completely and turns red, and the "left" copy
+  // flips to the overage rather than sitting at a misleading "0 kcal left".
+  const calOver = Math.round(totals.cal) - goals.cal;
+  const isCalOver = calOver > 0;
+  document.getElementById('calRemaining').textContent =
+    isCalOver ? `+${calOver}` : Math.max(0, Math.round(goals.cal - totals.cal));
+  document.getElementById('calRemainingLabel').textContent = isCalOver ? 'over goal' : 'kcal left';
+  document.getElementById('calRemainingRow').classList.toggle('over', isCalOver);
+  const calOverEl = document.getElementById('calOver');
+  calOverEl.textContent = isCalOver ? `+${calOver} over` : '';
+  calOverEl.style.display = isCalOver ? 'block' : 'none';
+
   const pct = Math.min(totals.cal / goals.cal, 1);
   const circ = 295.3;
-  document.getElementById('calRing').setAttribute('stroke-dashoffset', circ - circ * pct);
-  const clamp = (v,g) => Math.min(v / g * 100, 100) + '%';
-  document.getElementById('proteinBar').style.width = clamp(totals.protein, goals.protein);
-  document.getElementById('carbsBar').style.width = clamp(totals.carbs, goals.carbs);
-  document.getElementById('fatBar').style.width = clamp(totals.fat, goals.fat);
-  document.getElementById('fiberBar').style.width = clamp(totals.fiber, goals.fiber || defaultGoals.fiber);
-  document.getElementById('sugarBar').style.width = clamp(totals.sugar, goals.sugar || defaultGoals.sugar);
-  document.getElementById('proteinVal').textContent = `${Math.round(totals.protein)} / ${goals.protein}g`;
-  document.getElementById('carbsVal').textContent = `${Math.round(totals.carbs)} / ${goals.carbs}g`;
-  document.getElementById('fatVal').textContent = `${Math.round(totals.fat)} / ${goals.fat}g`;
-  document.getElementById('fiberVal').textContent = `${Math.round(totals.fiber)} / ${goals.fiber || defaultGoals.fiber}g`;
-  document.getElementById('sugarVal').textContent = `${Math.round(totals.sugar)} / ${goals.sugar || defaultGoals.sugar}g`;
+  const ring = document.getElementById('calRing');
+  ring.setAttribute('stroke-dashoffset', circ - circ * pct);
+  ring.style.stroke = isCalOver ? 'var(--danger)' : 'var(--cal)';
+
+  // Macros whose goal is a ceiling (carbs, fat, sugar) go red — track and value
+  // alike — once they pass it. Protein and fiber are floors: passing the goal is
+  // a win, so they keep their normal colour however far over they run.
+  const setMacro = (barId, valId, val, goal, color, overIsBad) => {
+    const rounded = Math.round(val);
+    const over = overIsBad && rounded > goal;
+    const met = !overIsBad && goal > 0 && rounded >= goal;
+    const bar = document.getElementById(barId);
+    bar.style.width = Math.min(val / goal * 100, 100) + '%';
+    bar.style.background = over ? 'var(--danger)' : color;
+    const valEl = document.getElementById(valId);
+    valEl.textContent = `${rounded} / ${goal}g`;
+    valEl.classList.toggle('over', over);
+    valEl.style.setProperty('--macro-color', color);
+    valEl.classList.toggle('met', met);
+  };
+  setMacro('proteinBar', 'proteinVal', totals.protein, goals.protein, 'var(--protein)', false);
+  setMacro('carbsBar', 'carbsVal', totals.carbs, goals.carbs, 'var(--carbs)', true);
+  setMacro('fatBar', 'fatVal', totals.fat, goals.fat, 'var(--fat)', true);
+  setMacro('fiberBar', 'fiberVal', totals.fiber, goals.fiber || defaultGoals.fiber, 'var(--fiber)', false);
+  setMacro('sugarBar', 'sugarVal', totals.sugar, goals.sugar || defaultGoals.sugar, 'var(--sugar)', true);
   document.getElementById('mcProtein').textContent = Math.round(totals.protein) + 'g';
   document.getElementById('mcCarbs').textContent = Math.round(totals.carbs) + 'g';
   document.getElementById('mcFat').textContent = Math.round(totals.fat) + 'g';
