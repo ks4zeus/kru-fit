@@ -718,6 +718,20 @@ export default {
       }
     }
 
+    // ---- Sign out ----
+    // Authentication here is a stateless per-request Access JWT, so there is no
+    // server-side session to drop — what actually ends the session is Cloudflare's
+    // /cdn-cgi/access/logout, which clears the CF_Authorization cookie. The client
+    // calls this first and redirects there regardless of the result; this route is
+    // the hook for any future server-side cleanup (revocation lists, device rows).
+    if (
+      segments.length === 3 && segments[0] === "api" &&
+      segments[1] === "auth" && segments[2] === "logout" &&
+      request.method === "POST"
+    ) {
+      return jsonResponse({ ok: true });
+    }
+
     if (segments[0] !== "api") {
       return jsonResponse({ error: "Not found" }, 404);
     }

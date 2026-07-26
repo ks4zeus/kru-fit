@@ -746,6 +746,22 @@
     cursor: pointer;
     margin-top: 8px;
   }
+  /* Destructive action: outlined in red, never filled — it sits below everything
+     else in the Profile modal and must not read as the primary action. */
+  .btn-signout {
+    width: 100%;
+    background: none;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    border-radius: 12px;
+    padding: 13px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: var(--font);
+    cursor: pointer;
+    margin-top: 22px;
+  }
+  .btn-signout:hover { background: rgba(239, 68, 68, 0.1); }
 
   .result-card {
     background: var(--surface2);
@@ -2736,6 +2752,7 @@
     </div>
     <button class="btn-primary" onclick="saveSettings()">Save Profile</button>
     <button class="btn-cancel" onclick="closeSettings()">Cancel</button>
+    <button class="btn-signout" onclick="signOut()">🔓 Sign out</button>
     <div class="app-version" id="appVersion"></div>
   </div>
 </div>
@@ -2914,7 +2931,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v3.7';
+const APP_VERSION = 'v3.8';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -3341,13 +3358,23 @@ function updateUserHeader(suffix) {
 
 // Wipe every per-user cache so a different account signing in on this device
 // never sees the previous user's data (logs, goals, weight, etc.). Device-level
-// prefs (theme, weight/distance units) are intentionally kept.
+// prefs (theme, weight/distance/workout units) are intentionally kept.
+//
+// Both app prefixes are scanned: keys predate the fuel-log -> Kru Fit rename, so
+// user data lives under `fuellog_` while newer keys use `krufit_`. Scanning by
+// prefix (rather than an explicit list) means a key added later is cleared by
+// default — the safe direction for a cross-account leak.
 const CACHE_OWNER_KEY = 'fuellog_cache_owner';
+const USER_DATA_PREFIXES = ['fuellog_', 'krufit_'];
 function clearUserScopedData() {
-  const keep = new Set([STORAGE_KEYS.theme, STORAGE_KEYS.weightUnit, STORAGE_KEYS.distUnit, CACHE_OWNER_KEY]);
+  const keep = new Set([
+    STORAGE_KEYS.theme, STORAGE_KEYS.weightUnit, STORAGE_KEYS.distUnit,
+    'krufit_workout_unit', CACHE_OWNER_KEY
+  ]);
   for (let i = window.localStorage.length - 1; i >= 0; i--) {
     const k = window.localStorage.key(i);
-    if (k && k.startsWith('fuellog_') && !keep.has(k)) window.localStorage.removeItem(k);
+    if (!k || keep.has(k)) continue;
+    if (USER_DATA_PREFIXES.some((p) => k.startsWith(p))) window.localStorage.removeItem(k);
   }
   historySynced = false;
 }
@@ -7730,6 +7757,29 @@ function openSettings() {
 
 function closeSettings() {
   document.getElementById('settingsModal').classList.remove('open');
+}
+
+// Cloudflare Access owns the session: its CF_Authorization cookie is what
+// authenticates every request, and only /cdn-cgi/access/logout can clear it. Without
+// this, the Access session outlives any "logout" the app thinks it did — the next
+// person to open the app on this device silently inherits the previous identity.
+//
+// Relative on purpose: the cookie is scoped per hostname, so the logout has to hit
+// the SAME host the user is on. Hardcoding krufit.uk would leave a kru-fit.pages.dev
+// session fully signed in after a "successful" sign-out.
+const ACCESS_LOGOUT_URL = '/cdn-cgi/access/logout';
+
+async function signOut() {
+  if (!confirm("Are you sure you want to sign out? You'll need to verify your email again to log back in.")) return;
+  // Best-effort server call — the redirect below happens either way, so a failed or
+  // offline request can never leave the user stuck in a signed-in-looking state.
+  await apiRequest('/auth/logout', { method: 'POST' });
+  // Drop this account's cached data before handing off, so an interrupted redirect
+  // still can't leave the next account looking at the previous user's numbers.
+  clearUserScopedData();
+  removeLocal(CACHE_OWNER_KEY);
+  currentUser = null;
+  window.location.href = ACCESS_LOGOUT_URL;
 }
 
 function toggleCalc() {

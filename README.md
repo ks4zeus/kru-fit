@@ -105,6 +105,9 @@ curl localhost:8787/api/me -H "Cf-Access-Authenticated-User-Email: you@example.c
 All routes require authentication and scope data to the signed-in user.
 
 - `GET  /api/me`
+- `POST /api/auth/logout`            — returns `{ ok: true }`; the session itself is
+  ended by the client redirecting to `/cdn-cgi/access/logout` (only Cloudflare can
+  clear the `CF_Authorization` cookie). Hook for future server-side cleanup.
 - `GET  /api/food?date=YYYY-MM-DD`
 - `GET  /api/food/range?days=N`      — entries across a window (powers History/Insights)
 - `POST /api/food`
