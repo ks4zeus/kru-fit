@@ -2931,7 +2931,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v3.8';
+const APP_VERSION = 'v3.9';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -4146,24 +4146,87 @@ function closePhotoModal() {
   document.getElementById('photoModal').classList.remove('open');
 }
 
+// Anthropic downsamples anything larger than this on its side, so uploading a
+// full-resolution phone photo (3–8MB) buys no accuracy — it only costs upload
+// time, latency, and tokens, and risks the provider's per-image size limit.
+const PHOTO_MAX_EDGE = 1568;
+const PHOTO_JPEG_QUALITY = 0.85;
+
+function fmtBytes(n) {
+  if (n >= 1048576) return (n / 1048576).toFixed(1) + 'MB';
+  if (n >= 1024) return Math.round(n / 1024) + 'KB';
+  return n + 'B';
+}
+
+// Decoded byte count of a base64 payload (what actually goes over the wire is
+// ~4/3 of this).
+function b64Bytes(b64) {
+  const pad = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
+  return Math.floor((b64.length * 3) / 4) - pad;
+}
+
+// Downscale to PHOTO_MAX_EDGE on the long edge and re-encode as JPEG.
+// Resolves to { dataUrl, w, h }; rejects if the browser can't decode the file.
+function compressPhoto(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const longEdge = Math.max(img.width, img.height);
+      // Never upscale — a small image keeps its native size.
+      const scale = Math.min(1, PHOTO_MAX_EDGE / longEdge);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      try {
+        resolve({
+          dataUrl: canvas.toDataURL('image/jpeg', PHOTO_JPEG_QUALITY),
+          w: canvas.width,
+          h: canvas.height,
+        });
+      } catch (err) {
+        reject(err);   // out of memory on a very large source
+      }
+    };
+    img.onerror = () => reject(new Error('Could not decode image'));
+    img.src = dataUrl;
+  });
+}
+
 function handlePhotoSelect(evt) {
   const file = evt.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = (e) => {
-    photoData = e.target.result.split(',')[1];
-    // Derive the real MIME type from the data URL (e.g. data:image/png;base64,...).
-    // Anthropic supports jpeg/png/gif/webp; anything else falls back to jpeg.
-    const m = /^data:([^;]+);/.exec(e.target.result);
-    const detected = m ? m[1] : 'image/jpeg';
-    photoMime = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(detected) ? detected : 'image/jpeg';
+  reader.onload = async (e) => {
+    const original = e.target.result;
     const img = document.getElementById('previewImg');
-    img.src = e.target.result;
+    // Show the original straight away; the compressed version swaps in below.
+    img.src = original;
     img.style.display = 'block';
     document.getElementById('uploadArea').style.display = 'none';
-    document.getElementById('analyzeBtn').disabled = false;
     document.getElementById('photoResult').classList.remove('show');
     document.getElementById('addPhotoBtn').style.display = 'none';
+    document.getElementById('photoError').classList.remove('show');
+
+    try {
+      const { dataUrl, w, h } = await compressPhoto(original);
+      photoData = dataUrl.split(',')[1];
+      photoMime = 'image/jpeg';   // always JPEG after re-encoding
+      img.src = dataUrl;
+      console.log(`Photo compressed: ${fmtBytes(file.size)} → ${fmtBytes(b64Bytes(photoData))} (${w}×${h})`);
+    } catch (err) {
+      // Decode/encode failed — send the untouched file rather than blocking the
+      // upload. A large original may still be rejected server-side.
+      console.warn('Photo compression failed, sending original', err);
+      photoData = original.split(',')[1];
+      // Derive the real MIME type from the data URL (e.g. data:image/png;base64,...).
+      // Anthropic supports jpeg/png/gif/webp; anything else falls back to jpeg.
+      const m = /^data:([^;]+);/.exec(original);
+      const detected = m ? m[1] : 'image/jpeg';
+      photoMime = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(detected) ? detected : 'image/jpeg';
+    }
+    // Only enable once photoData is populated, so a fast tap can't send null.
+    document.getElementById('analyzeBtn').disabled = false;
   };
   reader.readAsDataURL(file);
 }
@@ -4184,7 +4247,9 @@ async function analyzePhoto() {
       body: JSON.stringify({ image: photoData, media_type: photoMime })
     });
     if (!result.ok || !result.body || result.body.error) {
-      throw new Error(result.body?.error || 'Analysis failed');
+      // Surface the API's own message (timeout / unreachable / service error)
+      // so the user can tell "try again" from "something is broken".
+      throw new Error(result.body?.error || result.error || 'Could not analyze photo. Please try again.');
     }
 
     photoResult = result.body;
@@ -4195,7 +4260,7 @@ async function analyzePhoto() {
     document.getElementById('photoResult').classList.add('show');
     document.getElementById('addPhotoBtn').style.display = 'block';
   } catch (err) {
-    document.getElementById('photoError').textContent = 'Could not analyze photo. Please try again.';
+    document.getElementById('photoError').textContent = err?.message || 'Could not analyze photo. Please try again.';
     document.getElementById('photoError').classList.add('show');
     document.getElementById('analyzeBtn').disabled = false;
   } finally {

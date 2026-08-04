@@ -256,6 +256,26 @@ const AI_PRICING: Record<string, { in: number; out: number }> = {
 const AI_MODEL_VISION = "claude-sonnet-4-6";
 const AI_MODEL_TEXT = "claude-haiku-4-5-20251001";
 
+// Wall-clock ceilings for the Anthropic calls. Without these a hung request
+// waits until Cloudflare's edge gives up (~100s) and the user just sees a
+// spinner; the caps below fail fast enough to retry inside one sitting.
+const AI_TIMEOUT_PHOTO_MS = 45000;   // vision on a photo — slowest of the three
+const AI_TIMEOUT_ESTIMATE_MS = 20000; // food-description estimate (search Tier 3)
+const AI_TIMEOUT_COACH_MS = 30000;   // diet coach
+
+// Map a thrown Anthropic fetch into a clean JSON response. An AbortSignal
+// timeout or a DNS/TLS failure would otherwise escape the handler as an
+// unhandled 500 with no body, which the UI can only show as a generic error.
+function aiFetchErrorResponse(err: any, label: string) {
+  const name = err?.name || "";
+  if (name === "TimeoutError" || name === "AbortError") {
+    console.error(`${label}: Anthropic timed out`, err?.message || err);
+    return jsonResponse({ error: "AI request timed out — please try again" }, 504);
+  }
+  console.error(`${label}: could not reach Anthropic`, err);
+  return jsonResponse({ error: "Could not reach AI service — please try again" }, 502);
+}
+
 // Record one AI call's token usage for the admin dashboard. Best-effort —
 // a logging failure must never break the user-facing response.
 async function recordAiUsage(
@@ -501,6 +521,7 @@ async function aiEstimateFood(env: Env, db: D1Database, userEmail: string, q: st
         system: NUTRITION_SYSTEM_PROMPT + SERVING_DEFAULTS_GUIDANCE,
         messages: [{ role: "user", content: [{ type: "text", text: `Estimate the nutrition for this food and provide it as JSON:\n\n${q}` }] }],
       }),
+      signal: AbortSignal.timeout(AI_TIMEOUT_ESTIMATE_MS),
     });
     if (!resp.ok) { console.error("AI estimate error", resp.status); return null; }
     const data = (await resp.json()) as any;
@@ -514,7 +535,15 @@ async function aiEstimateFood(env: Env, db: D1Database, userEmail: string, q: st
       serving_qty: r.serving_qty > 0 ? r.serving_qty : 1, serving_unit: r.serving_unit || "serving",
       serving_grams: r.serving_grams || null, source: "ai",
     };
-  } catch (e) { console.error("AI estimate failed", e); return null; }
+  } catch (e: any) {
+    // Tier 3 is a best-effort fallback behind cache and USDA, so a timeout or
+    // network failure degrades to "no AI suggestion" rather than failing the
+    // whole search. Distinguish the two in the log so a slow provider is
+    // visible instead of looking like a parse error.
+    if (e?.name === "TimeoutError" || e?.name === "AbortError") console.error("AI estimate timed out", q);
+    else console.error("AI estimate failed", e);
+    return null;
+  }
 }
 
 // Common food aliases USDA doesn't list under the user's term. Keyed lowercase.
@@ -763,25 +792,31 @@ export default {
 
       // Photo needs vision (Sonnet); a written description is text-only → Haiku.
       const model = body?.image ? AI_MODEL_VISION : AI_MODEL_TEXT;
-      const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": env.ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: 1000,
-          system: NUTRITION_SYSTEM_PROMPT + (body?.serving_defaults ? SERVING_DEFAULTS_GUIDANCE : ""),
-          messages: [{ role: "user", content }],
-        }),
-      });
+      let aiResp: Response;
+      try {
+        aiResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": env.ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 1000,
+            system: NUTRITION_SYSTEM_PROMPT + (body?.serving_defaults ? SERVING_DEFAULTS_GUIDANCE : ""),
+            messages: [{ role: "user", content }],
+          }),
+          signal: AbortSignal.timeout(AI_TIMEOUT_PHOTO_MS),
+        });
+      } catch (err) {
+        return aiFetchErrorResponse(err, "analyze");
+      }
 
       if (!aiResp.ok) {
         // Log the provider detail server-side (visible via `wrangler pages deployment tail`).
         console.error("Anthropic error", aiResp.status, await aiResp.text());
-        return jsonResponse({ error: "AI request failed" }, 502);
+        return jsonResponse({ error: "AI service error — please try again" }, 502);
       }
       const data = (await aiResp.json()) as {
         content?: Array<{ text?: string }>;
@@ -851,30 +886,36 @@ export default {
       if (!body?.summary) {
         return jsonResponse({ error: "Missing summary" }, 400);
       }
-      const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": env.ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: AI_MODEL_TEXT,
-          max_tokens: 1024,
-          system: COACH_SYSTEM_PROMPT,
-          messages: [
-            {
-              role: "user",
-              content: [
-                { type: "text", text: `Here is the person's recent eating summary as JSON. Analyze it.\n\n${JSON.stringify(body.summary)}` },
-              ],
-            },
-          ],
-        }),
-      });
+      let aiResp: Response;
+      try {
+        aiResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": env.ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: AI_MODEL_TEXT,
+            max_tokens: 1024,
+            system: COACH_SYSTEM_PROMPT,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: `Here is the person's recent eating summary as JSON. Analyze it.\n\n${JSON.stringify(body.summary)}` },
+                ],
+              },
+            ],
+          }),
+          signal: AbortSignal.timeout(AI_TIMEOUT_COACH_MS),
+        });
+      } catch (err) {
+        return aiFetchErrorResponse(err, "coach");
+      }
       if (!aiResp.ok) {
         console.error("Anthropic error", aiResp.status, await aiResp.text());
-        return jsonResponse({ error: "AI request failed" }, 502);
+        return jsonResponse({ error: "AI service error — please try again" }, 502);
       }
       const data = (await aiResp.json()) as {
         content?: Array<{ text?: string }>;
