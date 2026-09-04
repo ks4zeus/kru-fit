@@ -2025,7 +2025,7 @@
         <div class="chart-card"><h3>🥑 Fat</h3><canvas id="chartFat" height="140"></canvas></div>
       </div>
     </div>
-    <div class="chart-card">
+    <div class="chart-card" id="fiberCard">
       <h3>🌾 Fiber</h3>
       <canvas id="chartFiber" height="160"></canvas>
     </div>
@@ -2955,6 +2955,7 @@ const STORAGE_KEYS = {
   customFoods: 'fuellog_custom_foods',
   mealTemplates: 'fuellog_meal_templates',
   macrosView: 'fuellog_macros_view',
+  goalsHistory: 'fuellog_goals_history',
   theme: 'fuellog_theme',
   workouts: 'fuellog_workouts',
   distUnit: 'fuellog_dist_unit',
@@ -3460,7 +3461,27 @@ async function persistGoals() {
   applyGoalsUI();
   updateProfileNudge();
   if (!currentUser) return;
-  await apiRequest('/goals', { method: 'POST', body: JSON.stringify(goals) });
+  // effective_from is the user's LOCAL day: the server's UTC date can already be
+  // tomorrow when they save in the evening, which would leave today judged by the
+  // old goals.
+  const effective_from = todayKey();
+  const result = await apiRequest('/goals', {
+    method: 'POST',
+    body: JSON.stringify({ ...goals, effective_from })
+  });
+  // Keep the local period list in step so History reflects the new goals from
+  // today onward without waiting for a reload.
+  if (result.ok) {
+    goalsHistory = [
+      {
+        effective_from,
+        cal: goals.cal, protein: goals.protein, carbs: goals.carbs,
+        fat: goals.fat, fiber: goals.fiber, water_oz: goals.water_oz
+      },
+      ...goalsHistory.filter(g => String(g.effective_from) !== effective_from)
+    ];
+    saveLocal(STORAGE_KEYS.goalsHistory, goalsHistory);
+  }
 }
 
 async function loadTodayLog() {
@@ -4812,6 +4833,45 @@ function setAnalysisPeriod(days, btn) {
   renderAnalysis();
 }
 
+// ---- Goal history: judge a past day by the goals in force THAT day ----
+// The goals object holds only the current targets and is overwritten on every
+// save, so History reads the recorded periods instead: a day belongs to the
+// newest period that had already started on that date.
+let goalsHistory = loadLocal(STORAGE_KEYS.goalsHistory, []) || [];
+let goalsHistorySynced = false;
+
+// Only the numeric targets are versioned (matching the goals_history table) —
+// diet, restrictions and goal weight are not per-day judgements.
+const GOAL_PERIOD_KEYS = ['cal', 'protein', 'carbs', 'fat', 'fiber', 'water_oz'];
+
+async function ensureGoalsHistory() {
+  if (goalsHistorySynced || !currentUser) return goalsHistory;
+  const result = await apiRequest('/goals/history');
+  if (result.ok && Array.isArray(result.body)) {
+    // Newest period first, so the first match walking down the list is active.
+    goalsHistory = result.body.slice().sort((a, b) =>
+      String(b.effective_from).localeCompare(String(a.effective_from)));
+    saveLocal(STORAGE_KEYS.goalsHistory, goalsHistory);
+    goalsHistorySynced = true;
+  }
+  return goalsHistory;
+}
+
+// The goals in force on `key` (YYYY-MM-DD). A day older than every recorded
+// period falls back to the OLDEST one — history only reaches so far back, and
+// the earliest record is the closest thing to what was set then. With no history
+// at all (offline, or goals never saved) today's goals are all there is.
+function goalsForDate(key) {
+  if (!goalsHistory.length) return goals;
+  const period = goalsHistory.find(g => String(g.effective_from) <= key)
+    || goalsHistory[goalsHistory.length - 1];
+  const resolved = { ...goals };
+  GOAL_PERIOD_KEYS.forEach(k => {
+    if (period[k] !== null && period[k] !== undefined) resolved[k] = period[k];
+  });
+  return resolved;
+}
+
 function getHistoryData(days) {
   const result = [];
   for (let i = days - 1; i >= 0; i--) {
@@ -4840,51 +4900,73 @@ function getHistoryData(days) {
 
 async function renderHistory() {
   await ensureHistory();
+  await ensureGoalsHistory();
   const data = getHistoryData(histPeriod);
+  // Attach the goals that were in force on each day, so nothing below compares a
+  // June day against goals set in September.
+  data.forEach(d => { d.goals = goalsForDate(dateKey(d.date)); });
   const daysWithData = data.filter(d => d.hasData);
   if (daysWithData.length === 0) {
     document.getElementById('histSummary').innerHTML = '';
     document.getElementById('histEmpty').style.display = 'block';
     document.getElementById('chartCal').style.display = 'none';
     document.getElementById('macroSection').style.display = 'none';
-    document.getElementById('chartFiber').style.display = 'none';
+    document.getElementById('fiberCard').style.display = 'none';
     return;
   }
   document.getElementById('histEmpty').style.display = 'none';
   document.getElementById('chartCal').style.display = 'block';
   document.getElementById('macroSection').style.display = 'block';
-  document.getElementById('chartFiber').style.display = 'block';
   const avgCal = daysWithData.reduce((s, d) => s + d.cal, 0) / daysWithData.length;
   const avgProtein = daysWithData.reduce((s, d) => s + d.protein, 0) / daysWithData.length;
   const avgCarbs = daysWithData.reduce((s, d) => s + d.carbs, 0) / daysWithData.length;
   const avgFat = daysWithData.reduce((s, d) => s + d.fat, 0) / daysWithData.length;
   const avgFiber = daysWithData.reduce((s, d) => s + (d.fiber || 0), 0) / daysWithData.length;
   const streak = calcStreak();
+  // Goal readouts average the goals that were actually active across the period,
+  // and say so when they changed mid-period rather than quoting one of them.
+  const goalOn = (d, k) => Number(d.goals[k] ?? defaultGoals[k]) || 0;
+  const avgGoal = k => Math.round(daysWithData.reduce((s, d) => s + goalOn(d, k), 0) / daysWithData.length);
+  const goalMoved = k => new Set(daysWithData.map(d => goalOn(d, k))).size > 1;
+  const goalSub = (k, unit = '') => `${goalMoved(k) ? 'avg goal' : 'goal'}: ${avgGoal(k)}${unit}`;
+  // Compliance keeps the floor/ceiling split: protein and fiber are hit by
+  // reaching the day's goal, calories/carbs/fat by staying under it.
+  const compSub = (k, isFloor) => {
+    const hit = daysWithData.filter(d => isFloor
+      ? Number(d[k] || 0) >= goalOn(d, k)
+      : Number(d[k] || 0) <= goalOn(d, k)).length;
+    return `${hit}/${daysWithData.length} ${isFloor ? 'hit' : 'under'}`;
+  };
   document.getElementById('histSummary').innerHTML = `
     <div class="hist-stat">
       <div class="hs-val" style="color:var(--cal)">${Math.round(avgCal)}</div>
       <div class="hs-label">Avg Calories</div>
-      <div class="hs-sub">goal: ${goals.cal}</div>
+      <div class="hs-sub">${goalSub('cal')}</div>
+      <div class="hs-sub">${compSub('cal', false)}</div>
     </div>
     <div class="hist-stat">
       <div class="hs-val" style="color:var(--protein)">${Math.round(avgProtein)}g</div>
       <div class="hs-label">Avg Protein</div>
-      <div class="hs-sub">goal: ${goals.protein}g</div>
+      <div class="hs-sub">${goalSub('protein', 'g')}</div>
+      <div class="hs-sub">${compSub('protein', true)}</div>
     </div>
     <div class="hist-stat">
       <div class="hs-val" style="color:var(--carbs)">${Math.round(avgCarbs)}g</div>
       <div class="hs-label">Avg Carbs</div>
-      <div class="hs-sub">goal: ${goals.carbs}g</div>
+      <div class="hs-sub">${goalSub('carbs', 'g')}</div>
+      <div class="hs-sub">${compSub('carbs', false)}</div>
     </div>
     <div class="hist-stat">
       <div class="hs-val" style="color:var(--fat)">${Math.round(avgFat)}g</div>
       <div class="hs-label">Avg Fat</div>
-      <div class="hs-sub">goal: ${goals.fat}g</div>
+      <div class="hs-sub">${goalSub('fat', 'g')}</div>
+      <div class="hs-sub">${compSub('fat', false)}</div>
     </div>
     <div class="hist-stat">
       <div class="hs-val" style="color:var(--fiber)">${Math.round(avgFiber)}g</div>
       <div class="hs-label">Avg Fiber</div>
-      <div class="hs-sub">goal: ${goals.fiber || defaultGoals.fiber}g</div>
+      <div class="hs-sub">${goalSub('fiber', 'g')}</div>
+      <div class="hs-sub">${compSub('fiber', true)}</div>
     </div>
     <div class="hist-stat">
       <div class="hs-val" style="color:var(--text)">🔥 ${streak}</div>
@@ -4897,11 +4979,15 @@ async function renderHistory() {
   const carbsData = data.map(d => d.hasData ? Math.round(d.carbs) : null);
   const fatData = data.map(d => d.hasData ? Math.round(d.fat) : null);
   const fiberData = data.map(d => d.hasData ? Math.round(d.fiber || 0) : null);
-  drawBarChart('chartCal', labels, [{ label: 'Calories', data: calData, color: '#f5a623' }], goals.cal);
+  // Per-day goal lines: the dashed line steps on the day the goal changed, so
+  // last week keeps showing last week's target.
+  const goalLine = k => data.map(d => goalOn(d, k));
+  drawBarChart('chartCal', labels, [{ label: 'Calories', data: calData, color: '#f5a623' }], goalLine('cal'));
   // Macros: separate per-macro charts by default, or one combined chart via the toggle.
   document.getElementById('macrosToggle').textContent = macrosCombined ? 'Separate' : 'Combine';
   document.getElementById('macroCombinedCard').style.display = macrosCombined ? 'block' : 'none';
   document.getElementById('macroSeparateCards').style.display = macrosCombined ? 'none' : 'block';
+  document.getElementById('fiberCard').style.display = macrosCombined ? 'none' : 'block';
   if (macrosCombined) {
     drawLineChart('chartMacros', labels, [
       { label: 'Protein', data: proteinData, color: '#4ade80' },
@@ -4910,11 +4996,12 @@ async function renderHistory() {
       { label: 'Fiber', data: fiberData, color: '#fb923c' }
     ]);
   } else {
-    drawBarChart('chartProtein', labels, [{ label: 'Protein', data: proteinData, color: '#4ade80' }], goals.protein);
-    drawBarChart('chartCarbs', labels, [{ label: 'Carbs', data: carbsData, color: '#60a5fa' }], goals.carbs);
-    drawBarChart('chartFat', labels, [{ label: 'Fat', data: fatData, color: '#f472b6' }], goals.fat);
+    drawBarChart('chartProtein', labels, [{ label: 'Protein', data: proteinData, color: '#4ade80' }], goalLine('protein'));
+    drawBarChart('chartCarbs', labels, [{ label: 'Carbs', data: carbsData, color: '#60a5fa' }], goalLine('carbs'));
+    drawBarChart('chartFat', labels, [{ label: 'Fat', data: fatData, color: '#f472b6' }], goalLine('fat'));
+    // Drawn only in Separate mode — a hidden card has no width to size against.
+    drawBarChart('chartFiber', labels, [{ label: 'Fiber', data: fiberData, color: '#fb923c' }], goalLine('fiber'));
   }
-  drawBarChart('chartFiber', labels, [{ label: 'Fiber', data: fiberData, color: '#fb923c' }], goals.fiber || defaultGoals.fiber);
 }
 
 function toggleMacrosView() {
@@ -5809,7 +5896,15 @@ function drawBarChart(id, labels, datasets, goalLine) {
   const plotW = cssW - pad.left - pad.right;
   const plotH = cssH - pad.top - pad.bottom;
   const allVals = datasets.flatMap(d => d.data.filter(v => v !== null));
-  const maxVal = Math.max(...allVals, goalLine || 0) * 1.15 || 100;
+  // goalLine is either a single number or one value per bar — goals change over
+  // time, so History passes the goal that was in force on each day.
+  const goalVals = Array.isArray(goalLine)
+    ? goalLine.map(v => (Number(v) > 0 ? Number(v) : null))
+    : null;
+  const goalPeak = goalVals
+    ? Math.max(0, ...goalVals.filter(v => v !== null))
+    : (goalLine || 0);
+  const maxVal = Math.max(...allVals, goalPeak) * 1.15 || 100;
   ctx.clearRect(0, 0, cssW, cssH);
   const gridCount = 4;
   ctx.strokeStyle = c.grid;
@@ -5824,12 +5919,29 @@ function drawBarChart(id, labels, datasets, goalLine) {
     ctx.fillText(Math.round((i / gridCount) * maxVal), pad.left - 5, y + 3);
   }
   ctx.setLineDash([]);
-  if (goalLine) {
-    const gy = pad.top + plotH - (goalLine / maxVal) * plotH;
+  if (goalPeak > 0) {
     ctx.strokeStyle = 'rgba(245,166,35,0.4)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([6, 4]);
-    ctx.beginPath(); ctx.moveTo(pad.left, gy); ctx.lineTo(pad.left + plotW, gy); ctx.stroke();
+    ctx.beginPath();
+    if (goalVals) {
+      // Steps across each day's slot, so the line visibly jumps on the day the
+      // goal changed instead of pretending one number covered the whole period.
+      const slot = plotW / goalVals.length;
+      let open = false;
+      goalVals.forEach((g, i) => {
+        if (g === null) { open = false; return; }
+        const y = pad.top + plotH - (g / maxVal) * plotH;
+        const x = pad.left + i * slot;
+        if (open) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+        ctx.lineTo(x + slot, y);
+        open = true;
+      });
+    } else {
+      const gy = pad.top + plotH - (goalLine / maxVal) * plotH;
+      ctx.moveTo(pad.left, gy); ctx.lineTo(pad.left + plotW, gy);
+    }
+    ctx.stroke();
     ctx.setLineDash([]);
   }
   const n = labels.length;

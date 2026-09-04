@@ -1662,7 +1662,26 @@ export default {
       return jsonResponse({ ok: true, user_id: targetId, eligible: !!eligible });
     }
 
-    if (segments[1] === "goals") {
+    // ---- Goal history: what the targets WERE on a given date ----
+    // goals holds only the current numbers, so History reads the periods here to
+    // judge an old day against the goals that were actually in force back then.
+    if (
+      segments[1] === "goals" && segments[2] === "history" &&
+      segments.length === 3 && request.method === "GET"
+    ) {
+      const rows = ((await db
+        .prepare(
+          `SELECT id, cal, protein, carbs, fat, fiber, water_oz, effective_from, created_at
+           FROM goals_history
+           WHERE user_id = ?
+           ORDER BY effective_from DESC, id DESC`
+        )
+        .bind(userEmail)
+        .all()).results || []) as any[];
+      return jsonResponse(rows);
+    }
+
+    if (segments[1] === "goals" && segments.length === 2) {
       if (request.method === "GET") {
         const { results } = await db
           .prepare("SELECT * FROM goals WHERE user_id = ?")
@@ -1725,6 +1744,36 @@ export default {
             body.diet || "none",
             body.restrictions || "",
             body.goal_weight ?? null
+          )
+          .run();
+
+        // Record the period this save opens. Past days are compared against the
+        // goals that were in force *then*, so changing targets today must not
+        // rewrite what June was judged against. effective_from comes from the
+        // client so the period starts on the user's local day, not UTC's.
+        const effectiveFrom = /^\d{4}-\d{2}-\d{2}$/.test(String(body.effective_from || ""))
+          ? String(body.effective_from)
+          : new Date().toISOString().slice(0, 10);
+        // One period per day: saving twice in a day replaces that day's row
+        // rather than leaving two rows sharing an effective_from.
+        await db
+          .prepare("DELETE FROM goals_history WHERE user_id = ? AND effective_from = ?")
+          .bind(userEmail, effectiveFrom)
+          .run();
+        await db
+          .prepare(
+            `INSERT INTO goals_history (user_id, cal, protein, carbs, fat, fiber, water_oz, effective_from)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .bind(
+            userEmail,
+            body.cal ?? 1800,
+            body.protein ?? 180,
+            body.carbs ?? 150,
+            body.fat ?? 60,
+            body.fiber ?? 30,
+            body.water_oz ?? 64,
+            effectiveFrom
           )
           .run();
         return jsonResponse({ user_id: userEmail, cal: body.cal ?? 1800, protein: body.protein ?? 180, carbs: body.carbs ?? 150, fat: body.fat ?? 60, fiber: body.fiber ?? 30, sugar: body.sugar ?? 50, water_oz: body.water_oz ?? 64, objective: body.objective || "maintain", diet: body.diet || "none", restrictions: body.restrictions || "", goal_weight: body.goal_weight ?? null });

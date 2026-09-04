@@ -183,6 +183,25 @@ CREATE TABLE goals (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Goal history (migration 020): what the daily targets WERE on a given date.
+-- goals holds only the CURRENT targets, so every past day would otherwise be
+-- judged against today's numbers. Each goal save appends a period here; a day is
+-- evaluated against the newest period whose effective_from is <= that day.
+CREATE TABLE goals_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  cal INTEGER,
+  protein INTEGER,
+  carbs INTEGER,
+  fat INTEGER,
+  fiber INTEGER,
+  water_oz INTEGER,
+  effective_from TEXT NOT NULL,      -- YYYY-MM-DD, the first day this period applies
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_goals_history_user ON goals_history(user_id, effective_from);
+
 -- Recipes are merged into custom_foods (an item with ingredients + servings).
 
 -- ---- Trainer dashboard (migration 011) ----
