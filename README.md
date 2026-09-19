@@ -122,8 +122,13 @@ All routes require authentication and scope data to the signed-in user.
 - `GET  /api/custom-foods`
 - `POST /api/custom-foods`
 - `DELETE /api/custom-foods/:id`
-- `GET  /api/goals`
-- `POST /api/goals`
+- `GET  /api/goals`                  — includes `vacation_mode` (0/1)
+- `POST /api/goals`                  — omitting `vacation_mode` leaves the switch alone
+- `POST /api/vacation/start`         — switch on + record today
+- `POST /api/vacation/end`           — switch off; recorded days are kept
+- `POST /api/vacation/day`           — `{ date }`, mark a past day by hand
+- `DELETE /api/vacation/day/:date`   — un-mark a day
+- `GET  /api/vacation/days?days=90`  — the recorded dates in the window
 
 ## Notes
 
@@ -132,3 +137,11 @@ All routes require authentication and scope data to the signed-in user.
 - History, the streak, and Insights hydrate the local cache from
   `/api/food/range`, so they reflect data logged on any device.
 - The frontend falls back to `localStorage` whenever the API is unreachable.
+- **Vacation mode** excludes days from the numbers that *judge* the user: History
+  averages and compliance counts, Nutrient Gaps, Observed Maintenance's intake
+  average, the logging heatmap (numerator *and* denominator) and the streak, where
+  a vacation day is neutral rather than a miss. Weigh-ins, food entries, the Today
+  log and workouts are all untouched. While the switch is on, every authenticated
+  call records that day, so a fortnight away is captured even if the app is never
+  opened — which is why the client sends `X-Local-Date` (the server's UTC day is
+  already tomorrow for evening users in the Americas).

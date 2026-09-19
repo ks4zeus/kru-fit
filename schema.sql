@@ -180,8 +180,23 @@ CREATE TABLE goals (
   diet TEXT DEFAULT 'none',
   restrictions TEXT DEFAULT '',
   goal_weight REAL,           -- target weight in lbs (canonical); null = unset
+  vacation_mode INTEGER DEFAULT 0,  -- 1 while the user is away (migration 021)
   updated_at TEXT DEFAULT (datetime('now'))
 );
+
+-- Vacation days (migration 021): dates excluded from the insights that judge the
+-- user's eating. goals.vacation_mode is the live switch; these rows are the
+-- permanent record. Ending vacation mode clears the switch but keeps the days —
+-- weight entries and the food log itself are NOT affected, only the averages.
+CREATE TABLE vacation_days (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  date TEXT NOT NULL,                -- YYYY-MM-DD, the user's LOCAL day
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(user_id, date)
+);
+
+CREATE INDEX idx_vacation_days_user ON vacation_days(user_id, date);
 
 -- Goal history (migration 020): what the daily targets WERE on a given date.
 -- goals holds only the CURRENT targets, so every past day would otherwise be

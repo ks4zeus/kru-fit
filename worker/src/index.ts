@@ -1,7 +1,7 @@
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Cf-Access-Authenticated-User-Email, Cf-Access-Jwt-Assertion",
+  "Access-Control-Allow-Headers": "Content-Type, Cf-Access-Authenticated-User-Email, Cf-Access-Jwt-Assertion, X-Local-Date",
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -143,6 +143,47 @@ async function authenticate(request: Request, env: Env): Promise<string | null> 
 
 function getPathSegments(url: URL) {
   return url.pathname.replace(/^\/+|\/+$/g, "").split("/");
+}
+
+function isDateKey(v: unknown): boolean {
+  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+// The caller's LOCAL calendar day. The server only knows UTC, which is already
+// tomorrow when someone logs in the evening from the Americas — so the client
+// sends its own date and UTC is only the fallback (curl, a stale cached build).
+function clientToday(request: Request): string {
+  const hdr = request.headers.get("X-Local-Date");
+  return isDateKey(hdr) ? (hdr as string) : new Date().toISOString().slice(0, 10);
+}
+
+// Days already auto-logged in this isolate, so a burst of API calls costs one
+// statement rather than one per request. Only ever skips work that is idempotent:
+// /api/vacation/start records today explicitly, so a toggle-on after a cached miss
+// is still captured.
+const vacationAutoLogged = new Set<string>();
+
+// Vacation auto-log: while vacation_mode is on, every authenticated call records
+// today. Without this a two-week holiday where the app is never opened leaves only
+// the day the switch was flipped, and the other thirteen days quietly drag the
+// averages down. One INSERT...SELECT — a no-op when the switch is off.
+async function autoLogVacationDay(db: D1Database, userEmail: string, today: string) {
+  const cacheKey = userEmail + "|" + today;
+  if (vacationAutoLogged.has(cacheKey)) return;
+  try {
+    await db
+      .prepare(
+        `INSERT OR IGNORE INTO vacation_days (user_id, date)
+         SELECT user_id, ? FROM goals WHERE user_id = ? AND vacation_mode = 1`
+      )
+      .bind(today, userEmail)
+      .run();
+    if (vacationAutoLogged.size > 500) vacationAutoLogged.clear();
+    vacationAutoLogged.add(cacheKey);
+  } catch (e) {
+    // Never fail a request over bookkeeping — the worst case is a missing day.
+    console.error("vacation auto-log failed", e);
+  }
 }
 
 // Admin allowlist — comma-separated ADMIN_EMAILS env var, defaulting to the owner.
@@ -716,6 +757,13 @@ export default {
     const userEmail = await authenticate(request, env);
     if (!userEmail) {
       return jsonResponse({ error: "Unauthorized" }, 401);
+    }
+
+    // Keep the vacation record continuous even when the app goes unopened for
+    // days. Runs before dispatch so /api/vacation/end still marks the day it ends
+    // on — the switch turns off from tomorrow, today was still a vacation day.
+    if (segments[0] === "api") {
+      await autoLogVacationDay(db, userEmail, clientToday(request));
     }
 
     if (segments.length === 2 && segments[0] === "api" && segments[1] === "me") {
@@ -1703,6 +1751,7 @@ export default {
           diet: "none",
           restrictions: "",
           goal_weight: null,
+          vacation_mode: 0,
           configured: false,
         });
       }
@@ -1715,8 +1764,9 @@ export default {
 
         await db
           .prepare(
-            `INSERT INTO goals (user_id, cal, protein, carbs, fat, fiber, sugar, water_oz, objective, diet, restrictions, goal_weight, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            `INSERT INTO goals (user_id, cal, protein, carbs, fat, fiber, sugar, water_oz, objective, diet, restrictions, goal_weight, vacation_mode, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                     COALESCE(?, (SELECT vacation_mode FROM goals WHERE user_id = ?), 0), datetime('now'))
              ON CONFLICT(user_id) DO UPDATE SET
                cal = excluded.cal,
                protein = excluded.protein,
@@ -1729,6 +1779,7 @@ export default {
                diet = excluded.diet,
                restrictions = excluded.restrictions,
                goal_weight = excluded.goal_weight,
+               vacation_mode = excluded.vacation_mode,
                updated_at = datetime('now')`
           )
           .bind(
@@ -1743,7 +1794,11 @@ export default {
             body.objective || "maintain",
             body.diet || "none",
             body.restrictions || "",
-            body.goal_weight ?? null
+            body.goal_weight ?? null,
+            // null = "leave it alone": only an explicit 0/1 moves the switch. The
+            // Settings form saves macros without knowing about vacation mode.
+            body.vacation_mode == null ? null : (body.vacation_mode ? 1 : 0),
+            userEmail
           )
           .run();
 
@@ -1776,7 +1831,101 @@ export default {
             effectiveFrom
           )
           .run();
-        return jsonResponse({ user_id: userEmail, cal: body.cal ?? 1800, protein: body.protein ?? 180, carbs: body.carbs ?? 150, fat: body.fat ?? 60, fiber: body.fiber ?? 30, sugar: body.sugar ?? 50, water_oz: body.water_oz ?? 64, objective: body.objective || "maintain", diet: body.diet || "none", restrictions: body.restrictions || "", goal_weight: body.goal_weight ?? null });
+        const saved = await db
+          .prepare("SELECT vacation_mode FROM goals WHERE user_id = ?")
+          .bind(userEmail)
+          .first<{ vacation_mode: number | null }>();
+        return jsonResponse({ user_id: userEmail, cal: body.cal ?? 1800, protein: body.protein ?? 180, carbs: body.carbs ?? 150, fat: body.fat ?? 60, fiber: body.fiber ?? 30, sugar: body.sugar ?? 50, water_oz: body.water_oz ?? 64, objective: body.objective || "maintain", diet: body.diet || "none", restrictions: body.restrictions || "", goal_weight: body.goal_weight ?? null, vacation_mode: saved?.vacation_mode ? 1 : 0 });
+      }
+    }
+
+    // ---- Vacation mode ----
+    // A holiday is not a failed diet. These dates are dropped from the numbers that
+    // JUDGE the user — averages, nutrient gaps, observed maintenance, logging
+    // consistency — while the entries themselves, the weigh-ins and the workouts all
+    // stay exactly as logged. Ending vacation mode never deletes days: a fortnight in
+    // Spain stays excluded next year too.
+    if (segments[1] === "vacation") {
+      const today = clientToday(request);
+
+      // Turn the switch on and claim today. The goals row may not exist yet (a user
+      // who never saved goals), so this upserts rather than updates.
+      if (segments[2] === "start" && segments.length === 3 && request.method === "POST") {
+        await db
+          .prepare(
+            `INSERT INTO goals (user_id, vacation_mode, updated_at) VALUES (?, 1, datetime('now'))
+             ON CONFLICT(user_id) DO UPDATE SET vacation_mode = 1, updated_at = datetime('now')`
+          )
+          .bind(userEmail)
+          .run();
+        await db
+          .prepare("INSERT OR IGNORE INTO vacation_days (user_id, date) VALUES (?, ?)")
+          .bind(userEmail, today)
+          .run();
+        return jsonResponse({ vacation_mode: 1, started: today });
+      }
+
+      // Turn the switch off. The recorded days stay — today included, since the
+      // auto-log above already claimed it before this route ran.
+      if (segments[2] === "end" && segments.length === 3 && request.method === "POST") {
+        await db
+          .prepare(
+            `INSERT INTO goals (user_id, vacation_mode, updated_at) VALUES (?, 0, datetime('now'))
+             ON CONFLICT(user_id) DO UPDATE SET vacation_mode = 0, updated_at = datetime('now')`
+          )
+          .bind(userEmail)
+          .run();
+        return jsonResponse({ vacation_mode: 0 });
+      }
+
+      // Mark a past date by hand — for the trip the user only remembered to flag
+      // once they were home.
+      if (segments[2] === "day" && segments.length === 3 && request.method === "POST") {
+        const body = await parseJson(request);
+        const date = body?.date;
+        if (!isDateKey(date)) {
+          return jsonResponse({ error: "Invalid date (expected YYYY-MM-DD)" }, 400);
+        }
+        if (date > today) {
+          return jsonResponse({ error: "Cannot mark a future date" }, 400);
+        }
+        await db
+          .prepare("INSERT OR IGNORE INTO vacation_days (user_id, date) VALUES (?, ?)")
+          .bind(userEmail, date)
+          .run();
+        return jsonResponse({ date, vacation: true });
+      }
+
+      // Un-mark a date the user flagged by mistake.
+      if (segments[2] === "day" && segments.length === 4 && request.method === "DELETE") {
+        const date = segments[3];
+        if (!isDateKey(date)) {
+          return jsonResponse({ error: "Invalid date (expected YYYY-MM-DD)" }, 400);
+        }
+        await db
+          .prepare("DELETE FROM vacation_days WHERE user_id = ? AND date = ?")
+          .bind(userEmail, date)
+          .run();
+        return jsonResponse({ date, vacation: false });
+      }
+
+      // The dates in the window, oldest first — the frontend marks these on the
+      // logging heatmap and drops them from its own averages.
+      if (segments[2] === "days" && segments.length === 3 && request.method === "GET") {
+        const raw = parseInt(url.searchParams.get("days") || "90", 10);
+        const days = Math.min(Math.max(Number.isFinite(raw) ? raw : 90, 1), 3650);
+        const cutoff = new Date(new Date(today + "T12:00:00Z").getTime() - (days - 1) * 86400000)
+          .toISOString()
+          .slice(0, 10);
+        const rows = ((await db
+          .prepare(
+            `SELECT date FROM vacation_days
+             WHERE user_id = ? AND date >= ?
+             ORDER BY date ASC`
+          )
+          .bind(userEmail, cutoff)
+          .all()).results || []) as { date: string }[];
+        return jsonResponse(rows.map((r) => r.date));
       }
     }
 

@@ -484,6 +484,13 @@
     background: rgba(245, 166, 35, 0.12); border: 1px solid rgba(245, 166, 35, 0.3);
     color: #f5a623; font-size: 12px; text-align: center;
   }
+  /* Vacation banner - same shape as the past-day banner above, sky blue rather
+     than amber, and only ever one of the two is shown. */
+  .vacation-day-banner {
+    margin: 8px 20px 0; padding: 8px 12px; border-radius: 9px;
+    background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.28);
+    color: #38bdf8; font-size: 12px; text-align: center;
+  }
   /* Comfortable 44px tap targets for the date arrows on touch devices. */
   @media (pointer: coarse) {
     .day-arrow { width: 44px; height: 44px; font-size: 20px; }
@@ -980,6 +987,24 @@
   .profile-box select:focus, .profile-box input:focus { border-color: var(--carbs); }
   .prof-note { font-size: 10px; color: var(--muted); font-style: italic; margin-top: 4px; }
 
+  .vacation-toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .vacation-label { font-size: 14px; color: var(--text); font-weight: 500; }
+  .vacation-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .vacation-active-msg {
+    font-size: 12px;
+    color: #38bdf8;
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: rgba(56, 189, 248, 0.08);
+    border-radius: 8px;
+    border: 1px solid rgba(56, 189, 248, 0.2);
+  }
+
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 
   .tab-bar {
@@ -1048,6 +1073,14 @@
   .log-heatmap { display: flex; flex-wrap: wrap; gap: 5px; }
   .log-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border); }
   .log-dot.on { background: var(--protein); border-color: var(--protein); }
+  /* Excluded, not missed - a vacation day must not read as a grey blank. */
+  .log-dot.vac { background: #38bdf8; border-color: #38bdf8; }
+  .lp-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-size: 11px; color: var(--muted); }
+  .lp-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .lp-key { width: 10px; height: 10px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border); }
+  .lp-key.on { background: var(--protein); border-color: var(--protein); }
+  .lp-key.vac { background: #38bdf8; border-color: #38bdf8; }
+  .hist-vacation-note { margin: 0 20px 12px; font-size: 11px; color: var(--muted); font-style: italic; }
   .wow-row { display: flex; flex-wrap: wrap; gap: 8px; }
   .wow-metric { font-size: 13px; font-weight: 700; padding: 6px 10px; border-radius: 8px; background: var(--surface2); font-family: var(--mono); white-space: nowrap; }
   .wow-good { color: var(--protein); }
@@ -1865,6 +1898,7 @@
     <button class="day-today-btn" id="dayTodayBtn" onclick="goToday()" style="display:none">Today</button>
   </div>
   <div class="past-day-banner" id="pastDayBanner" style="display:none"></div>
+  <div class="vacation-day-banner" id="vacationBanner" style="display:none"></div>
   <div class="trainer-banner" id="trainerBanner" style="display:none">
     <div>👤 Connected to <strong id="tbOrg"></strong></div>
     <div class="tb-sub" id="tbTrainer"></div>
@@ -2007,6 +2041,7 @@
       <button class="period-btn" onclick="setPeriod(30,this)">30 days</button>
     </div>
     <div class="hist-summary" id="histSummary"></div>
+    <div class="hist-vacation-note" id="histVacationNote" style="display:none"></div>
     <div class="chart-card">
       <h3>🔥 Calories</h3>
       <canvas id="chartCal" height="160"></canvas>
@@ -2628,6 +2663,22 @@
       </div>
       <div class="prof-note">Used to tailor diet analysis and food suggestions.</div>
     </div>
+    <div class="profile-box">
+      <div class="calc-sub">Vacation mode</div>
+      <div class="vacation-toggle-row">
+        <div>
+          <div class="vacation-label">🏖️ Vacation mode</div>
+          <div class="vacation-sub">Vacation days are excluded from insights and maintenance calculations</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="vacationModeToggle" onchange="toggleVacationMode()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div id="vacationActiveMsg" style="display:none" class="vacation-active-msg">
+        ✈️ Vacation mode is on — today will not count towards your insights
+      </div>
+    </div>
     <div class="calc-sub" style="color:var(--muted)">Daily goals</div>
     <button class="calc-toggle" id="calcToggle" onclick="toggleCalc()">🧮 Help me calculate my macros</button>
     <div class="calc-box" id="calcBox" style="display:none">
@@ -2931,7 +2982,7 @@
 const API_BASE = '/api';
 // Build version shown at the bottom of the profile page. Bump with each deploy
 // (keep in sync with CACHE_VERSION in sw.js) so users can confirm a fresh build.
-const APP_VERSION = 'v4.0';
+const APP_VERSION = 'v4.1';
 
 // Escape user/client-supplied strings before injecting into innerHTML. Client
 // data (names, food names, notes, grocery items) is untrusted — a client could
@@ -2946,7 +2997,7 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
-const defaultGoals = { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, sugar: 50, water_oz: 64, objective: 'maintain', diet: 'none', restrictions: '', goal_weight: null };
+const defaultGoals = { cal: 1800, protein: 180, carbs: 150, fat: 60, fiber: 30, sugar: 50, water_oz: 64, objective: 'maintain', diet: 'none', restrictions: '', goal_weight: null, vacation_mode: 0 };
 const STORAGE_KEYS = {
   user: 'fuellog_user',
   goals: 'fuellog_goals',
@@ -2956,6 +3007,7 @@ const STORAGE_KEYS = {
   mealTemplates: 'fuellog_meal_templates',
   macrosView: 'fuellog_macros_view',
   goalsHistory: 'fuellog_goals_history',
+  vacationDays: 'fuellog_vacation_days',
   theme: 'fuellog_theme',
   workouts: 'fuellog_workouts',
   distUnit: 'fuellog_dist_unit',
@@ -3162,7 +3214,9 @@ let showNetCarbs = false;
 let waterGoalOz = defaultGoals.water_oz;
 
 function apiHeaders() {
-  return { 'Content-Type': 'application/json' };
+  // The server runs on UTC, which is already tomorrow when someone logs in the
+  // evening - the vacation auto-log needs the user's real day, not UTC's.
+  return { 'Content-Type': 'application/json', 'X-Local-Date': todayKey() };
 }
 
 async function apiRequest(path, options = {}) {
@@ -3264,11 +3318,7 @@ async function loadViewDate() {
   document.getElementById('dayPrev').disabled = viewDate <= minViewKey();
   const todayBtn = document.getElementById('dayTodayBtn');
   if (todayBtn) todayBtn.style.display = isToday ? 'none' : '';
-  const banner = document.getElementById('pastDayBanner');
-  if (banner) {
-    banner.style.display = isToday ? 'none' : '';
-    if (!isToday) banner.textContent = `Viewing ${dayNavLabel(viewDate)} — entries will be logged to this date`;
-  }
+  updateDayBanners();
   document.getElementById('logHeading').textContent = isToday ? "Today's Log" : dayLabelFor(viewDate) + ' · Log';
   // Past days within the 7-day window are fully loggable — load that date's data.
   await loadDayLog(viewDate);
@@ -3444,6 +3494,7 @@ async function loadGoals() {
     goals = { ...defaultGoals, ...loadLocal(STORAGE_KEYS.goals, defaultGoals) };
   }
   applyGoalsUI();
+  applyVacationUI();
   updateProfileNudge();
   return goals;
 }
@@ -3482,6 +3533,90 @@ async function persistGoals() {
     ];
     saveLocal(STORAGE_KEYS.goalsHistory, goalsHistory);
   }
+}
+
+// ---- Vacation mode ----
+// A holiday should not read as a fortnight of failure. Days recorded here are
+// dropped from everything that JUDGES the eating - the History averages, nutrient
+// gaps, observed maintenance, the logging heatmap and the streak - while the food
+// entries, weigh-ins and workouts stay exactly as logged and keep displaying
+// normally. Ending vacation mode stops NEW days being recorded; the days already
+// taken stay excluded for good.
+let vacationDays = new Set(loadLocal(STORAGE_KEYS.vacationDays, []) || []);
+
+function isVacationDay(key) {
+  return vacationDays.has(key);
+}
+
+function saveVacationDays() {
+  saveLocal(STORAGE_KEYS.vacationDays, [...vacationDays]);
+}
+
+async function loadVacationDays() {
+  const result = await apiRequest('/vacation/days?days=365');
+  if (result.ok && Array.isArray(result.body)) {
+    vacationDays = new Set(result.body);
+    saveVacationDays();
+  }
+  applyVacationUI();
+  return vacationDays;
+}
+
+// Reflect the current state everywhere it shows: the Settings switch, the message
+// under it, and the Today banner.
+function applyVacationUI() {
+  const on = vacationModeOn();
+  const toggle = document.getElementById('vacationModeToggle');
+  if (toggle) toggle.checked = on;
+  const msg = document.getElementById('vacationActiveMsg');
+  if (msg) msg.style.display = on ? 'block' : 'none';
+  updateDayBanners();
+}
+
+function vacationModeOn() {
+  return goals.vacation_mode === 1 || goals.vacation_mode === true;
+}
+
+// The Today tab shows at most ONE banner. Viewing a past day is the more urgent
+// fact (entries land on that date), so it wins when both apply.
+function updateDayBanners() {
+  const isToday = viewDate === todayKey();
+  const past = document.getElementById('pastDayBanner');
+  const vac = document.getElementById('vacationBanner');
+  if (past) {
+    past.style.display = isToday ? 'none' : '';
+    if (!isToday) past.textContent = `Viewing ${dayNavLabel(viewDate)} — entries will be logged to this date`;
+  }
+  if (vac) {
+    // The recorded day is the truth; the switch covers the moment before the
+    // first sync has landed.
+    const show = isToday && (isVacationDay(viewDate) || vacationModeOn());
+    vac.style.display = show ? '' : 'none';
+    if (show) vac.textContent = "🏖️ Vacation mode — today won't affect your insights";
+  }
+}
+
+async function toggleVacationMode() {
+  const toggle = document.getElementById('vacationModeToggle');
+  const on = toggle.checked;
+  toggle.disabled = true;
+  const result = await apiRequest(on ? '/vacation/start' : '/vacation/end', { method: 'POST' });
+  toggle.disabled = false;
+  if (!result.ok) {
+    // Never leave the switch showing a state the server did not accept.
+    toggle.checked = !on;
+    alert("Could not change vacation mode — check your connection and try again.");
+    return;
+  }
+  goals.vacation_mode = on ? 1 : 0;
+  saveLocal(STORAGE_KEYS.goals, goals);
+  // Starting claims today immediately, so the banner and heatmap update without
+  // waiting for the next sync.
+  if (on) { vacationDays.add(todayKey()); saveVacationDays(); }
+  applyVacationUI();
+  // Re-render whatever is on screen whose numbers just changed shape.
+  if (document.getElementById('tabContentHistory')?.classList.contains('active')) renderHistory();
+  if (document.getElementById('tabContentAnalysis')?.classList.contains('active')) renderAnalysis();
 }
 
 async function loadTodayLog() {
@@ -4904,10 +5039,25 @@ async function renderHistory() {
   const data = getHistoryData(histPeriod);
   // Attach the goals that were in force on each day, so nothing below compares a
   // June day against goals set in September.
-  data.forEach(d => { d.goals = goalsForDate(dateKey(d.date)); });
-  const daysWithData = data.filter(d => d.hasData);
+  data.forEach(d => {
+    d.goals = goalsForDate(dateKey(d.date));
+    d.vacation = isVacationDay(dateKey(d.date));
+  });
+  // Vacation days are excluded from every average and compliance count below. The
+  // charts still plot them: seeing the holiday is useful, being judged on it is not.
+  const daysWithData = data.filter(d => d.hasData && !d.vacation);
+  const vacationInPeriod = data.filter(d => d.vacation).length;
+  const vacNote = document.getElementById('histVacationNote');
   if (daysWithData.length === 0) {
     document.getElementById('histSummary').innerHTML = '';
+    const allVacation = vacationInPeriod > 0 && data.some(d => d.hasData);
+    if (vacNote) {
+      vacNote.style.display = allVacation ? '' : 'none';
+      if (allVacation) {
+        vacNote.textContent = 'Every logged day in this period was a vacation day'
+          + ` (${vacationInPeriod} excluded) — nothing to average yet.`;
+      }
+    }
     document.getElementById('histEmpty').style.display = 'block';
     document.getElementById('chartCal').style.display = 'none';
     document.getElementById('macroSection').style.display = 'none';
@@ -4973,6 +5123,13 @@ async function renderHistory() {
       <div class="hs-label">Day Streak</div>
       <div class="hs-sub">days logged</div>
     </div>`;
+  if (vacNote) {
+    vacNote.style.display = vacationInPeriod ? '' : 'none';
+    if (vacationInPeriod) {
+      vacNote.textContent = `Averaged over ${daysWithData.length} logged day${daysWithData.length !== 1 ? 's' : ''}`
+        + ` (${vacationInPeriod} vacation day${vacationInPeriod !== 1 ? 's' : ''} excluded)`;
+    }
+  }
   const labels = data.map(d => d.label);
   const calData = data.map(d => d.hasData ? Math.round(d.cal) : null);
   const proteinData = data.map(d => d.hasData ? Math.round(d.protein) : null);
@@ -5849,9 +6006,12 @@ function calcStreak() {
   for (let i = 0; i < 365; i++) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const key = STORAGE_KEYS.log + dateKey(d);
-    const saved = window.localStorage.getItem(key);
+    const dk = dateKey(d);
+    const saved = window.localStorage.getItem(STORAGE_KEYS.log + dk);
     if (saved && JSON.parse(saved).length > 0) streak++;
+    // A vacation day is neutral: it neither extends the streak nor breaks it, so
+    // Mon logged / Tue away / Wed logged is still a 2-day streak.
+    else if (isVacationDay(dk)) continue;
     else if (i > 0) break;
   }
   return streak;
@@ -7582,7 +7742,10 @@ function observedMaintenance() {
     ? Math.min(MAINT_HORIZON_DAYS,
         Math.round((today - new Date(oldestKey + 'T12:00:00')) / 86400000) + 1)
     : 1;
-  const loggedAll = getHistoryData(horizon).filter(d => d.hasData);
+  // Vacation days leave the INTAKE average only. The weigh-ins on those days stay
+  // in the trend below - a holiday still moves the scale, and that movement is
+  // exactly what the estimate reads.
+  const loggedAll = getHistoryData(horizon).filter(d => d.hasData && !isVacationDay(dateKey(d.date)));
   // Gate on ALL available food first: clipping to the overlap below can shrink the
   // count, and blaming food for what is really a weigh-in gap sends the user off to
   // log meals they have already logged.
@@ -7703,17 +7866,33 @@ function nutrientGapsCard(total, loggedDays) {
   return `<div class="insight-card"><h3>🎯 Nutrient gaps</h3>${body}</div>`;
 }
 
-// Calendar heatmap of logging consistency (green = logged, grey = no entries).
+// Calendar heatmap of logging consistency (green = logged, blue = vacation,
+// grey = no entries). Vacation days leave the denominator too: counting them as
+// days the user failed to log is exactly the judgement the feature exists to stop.
 function loggingPatternCard(days) {
-  const loggedCount = days.filter(d => d.logged).length;
+  const counted = days.filter(d => !d.vacation);
+  const loggedCount = counted.filter(d => d.logged).length;
+  const vacationCount = days.length - counted.length;
   const dots = [...days].reverse().map(d => {   // oldest → newest, left to right
     const lbl = new Date(d.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    return `<span class="log-dot ${d.logged ? 'on' : ''}" title="${lbl}${d.logged ? '' : ' · no entries'}"></span>`;
+    const note = d.vacation ? ' · vacation' : d.logged ? '' : ' · no entries';
+    return `<span class="log-dot ${d.vacation ? 'vac' : d.logged ? 'on' : ''}" title="${lbl}${note}"></span>`;
   }).join('');
+  const vacSuffix = vacationCount
+    ? ` (${vacationCount} vacation day${vacationCount !== 1 ? 's' : ''})`
+    : '';
+  const legend = vacationCount
+    ? `<div class="lp-legend">
+         <span><i class="lp-key on"></i>Logged</span>
+         <span><i class="lp-key vac"></i>Vacation</span>
+         <span><i class="lp-key"></i>Not logged</span>
+       </div>`
+    : '';
   return `<div class="insight-card">
     <h3>📅 Logging pattern</h3>
-    <div class="lp-sub">Logged ${loggedCount} of ${days.length} day${days.length !== 1 ? 's' : ''}</div>
+    <div class="lp-sub">Logged ${loggedCount} of ${counted.length} day${counted.length !== 1 ? 's' : ''}${vacSuffix}</div>
     <div class="log-heatmap">${dots}</div>
+    ${legend}
   </div>`;
 }
 
@@ -7783,8 +7962,12 @@ async function renderAnalysis() {
     let de = [];
     try { de = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.log + dateKey(d)) || '[]'); } catch (e) {}
     const t = de.reduce((a, e) => { a.cal += e.cal || 0; a.protein += e.protein || 0; a.carbs += e.carbs || 0; a.fat += e.fat || 0; a.fiber += e.fiber || 0; return a; }, { cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 });
-    days.push({ date: dateKey(d), logged: de.length > 0, cal: t.cal, protein: t.protein, carbs: t.carbs, fat: t.fat, fiber: t.fiber });
-    if (de.length) { loggedDays++; anyEntries += de.length; total.cal += t.cal; total.protein += t.protein; total.carbs += t.carbs; total.fat += t.fat; total.fiber += t.fiber; }
+    const onVacation = isVacationDay(dateKey(d));
+    days.push({ date: dateKey(d), logged: de.length > 0, vacation: onVacation, cal: t.cal, protein: t.protein, carbs: t.carbs, fat: t.fat, fiber: t.fiber });
+    // Entries logged on holiday still count as "there is data here" (so the tab
+    // does not claim to be empty), but they never reach the averages or the gaps.
+    if (de.length) anyEntries += de.length;
+    if (de.length && !onVacation) { loggedDays++; total.cal += t.cal; total.protein += t.protein; total.carbs += t.carbs; total.fat += t.fat; total.fiber += t.fiber; }
   }
 
   const ex = gatherExerciseSummary(analysisPeriod);
@@ -7927,6 +8110,7 @@ function openSettings() {
   document.getElementById('profObjective').value = goals.objective || 'maintain';
   document.getElementById('profDiet').value = goals.diet || 'none';
   document.getElementById('profRestrictions').value = goals.restrictions || '';
+  applyVacationUI();   // the switch matches the stored vacation_mode
   prefillCalc();
   applyTrainerVisibility();   // re-gate the coaching box each time (fail-closed)
   document.getElementById('settingsModal').classList.add('open');
@@ -8247,7 +8431,8 @@ async function saveSettings() {
     objective: document.getElementById('profObjective').value || 'maintain',
     diet: document.getElementById('profDiet').value || 'none',
     restrictions: document.getElementById('profRestrictions').value.trim(),
-    goal_weight: goals.goal_weight ?? null   // preserve — set on the Weight tab, not here
+    goal_weight: goals.goal_weight ?? null,  // preserve — set on the Weight tab, not here
+    vacation_mode: goals.vacation_mode ?? 0  // preserve — owned by the toggle above, not this form
   };
   await persistGoals();
   // Save the display name if it changed.
@@ -9086,6 +9271,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   applyAdminVisibility();
   applyTrainerVisibility();
   await loadGoals();
+  await loadVacationDays();
   await loadTodayLog();
   await loadWater();
   await loadCustomFoods();
