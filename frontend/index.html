@@ -3588,9 +3588,10 @@ function updateDayBanners() {
     if (!isToday) past.textContent = `Viewing ${dayNavLabel(viewDate)} — entries will be logged to this date`;
   }
   if (vac) {
-    // The recorded day is the truth; the switch covers the moment before the
-    // first sync has landed.
-    const show = isToday && (isVacationDay(viewDate) || vacationModeOn());
+    // The banner follows the switch alone. Ending vacation mode leaves today in
+    // vacation_days (the server never deletes recorded days), so keying off the
+    // recorded day kept the banner up after the switch was turned off.
+    const show = isToday && vacationModeOn();
     vac.style.display = show ? '' : 'none';
     if (show) vac.textContent = "🏖️ Vacation mode — today won't affect your insights";
   }
